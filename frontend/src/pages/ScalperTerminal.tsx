@@ -154,17 +154,28 @@ export default function ScalperTerminal() {
     strikeRows,
   ])
 
-  // 6. Live Spot Price via WebSocket
-  const spotEnabled = !!(underlying.symbol && underlying.exchange)
+  // 6. Live Spot / Future Price via WebSocket (resolves near-month FUT for MCX/commodities)
+  const activeSpotSymbol = strikesResp?.underlying_symbol || underlying.symbol
+  const activeSpotExchange = strikesResp?.underlying_exchange || underlying.exchange
+
+  const spotEnabled = !!(activeSpotSymbol && activeSpotExchange)
   const { data: spotMarketData } = useMarketData({
-    symbols: spotEnabled ? [{ symbol: underlying.symbol, exchange: underlying.exchange }] : [],
+    symbols: spotEnabled
+      ? [
+          { symbol: activeSpotSymbol, exchange: activeSpotExchange },
+          ...(activeSpotSymbol !== underlying.symbol
+            ? [{ symbol: underlying.symbol, exchange: underlying.exchange }]
+            : []),
+        ]
+      : [],
     mode: 'LTP',
     enabled: spotEnabled,
   })
   const spotTick = spotEnabled
-    ? spotMarketData.get(`${underlying.exchange}:${underlying.symbol}`)
+    ? spotMarketData.get(`${activeSpotExchange}:${activeSpotSymbol}`) ||
+      spotMarketData.get(`${underlying.exchange}:${underlying.symbol}`)
     : undefined
-  const spotLtp = spotTick?.data?.ltp ?? null
+  const spotLtp = spotTick?.data?.ltp ?? strikesResp?.underlying_ltp ?? null
 
   // 7. Calculate ATM Strike
   const currentAtm = useMemo<number | null>(() => {
@@ -330,11 +341,11 @@ export default function ScalperTerminal() {
 
   const spotSymbolObj = useMemo(
     () => ({
-      symbol: underlying.symbol,
-      exchange: underlying.exchange,
-      name: underlying.name,
+      symbol: activeSpotSymbol,
+      exchange: activeSpotExchange,
+      name: activeSpotSymbol !== underlying.symbol ? `${underlying.name} (${activeSpotSymbol})` : underlying.name,
     }),
-    [underlying.symbol, underlying.exchange, underlying.name]
+    [activeSpotSymbol, activeSpotExchange, underlying.symbol, underlying.name]
   )
 
   const callSymbolObj = useMemo(() => {
@@ -519,9 +530,9 @@ export default function ScalperTerminal() {
   const handleRefreshAllCharts = () => {
     if (underlying && terminalsRef.current['scalper-spot']) {
       void terminalsRef.current['scalper-spot'].loadSymbol({
-        symbol: underlying.symbol,
-        exchange: underlying.exchange,
-        name: underlying.name,
+        symbol: activeSpotSymbol,
+        exchange: activeSpotExchange,
+        name: activeSpotSymbol !== underlying.symbol ? `${underlying.name} (${activeSpotSymbol})` : underlying.name,
       })
     }
     if (callSymbol && terminalsRef.current['scalper-call']) {
@@ -1218,7 +1229,7 @@ export default function ScalperTerminal() {
           exchange={underlying.foExchange}
           callLtp={callLtp}
           putLtp={putLtp}
-          lotSize={underlying.lotSize}
+          lotSize={selectedCallRow?.ce?.lotsize || selectedPutRow?.pe?.lotsize || underlying.lotSize || 1}
           positions={positions}
           onExecuteOrder={handleExecuteOrder}
           appMode={appMode}

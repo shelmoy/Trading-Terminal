@@ -86,7 +86,7 @@ export const SCALPER_UNDERLYINGS: ScalperUnderlying[] = [
     exchange: 'MCX',
     foExchange: 'MCX',
     strikeStep: 50,
-    lotSize: 1,
+    lotSize: 100,
     decimals: 2,
   },
   {
@@ -96,7 +96,7 @@ export const SCALPER_UNDERLYINGS: ScalperUnderlying[] = [
     exchange: 'MCX',
     foExchange: 'MCX',
     strikeStep: 50,
-    lotSize: 1,
+    lotSize: 10,
     decimals: 2,
   },
   {
@@ -106,7 +106,7 @@ export const SCALPER_UNDERLYINGS: ScalperUnderlying[] = [
     exchange: 'MCX',
     foExchange: 'MCX',
     strikeStep: 5,
-    lotSize: 1,
+    lotSize: 1250,
     decimals: 2,
   },
   {
@@ -126,7 +126,7 @@ export const SCALPER_UNDERLYINGS: ScalperUnderlying[] = [
     exchange: 'MCX',
     foExchange: 'MCX',
     strikeStep: 100,
-    lotSize: 1,
+    lotSize: 100,
     decimals: 2,
   },
   {
@@ -136,7 +136,7 @@ export const SCALPER_UNDERLYINGS: ScalperUnderlying[] = [
     exchange: 'MCX',
     foExchange: 'MCX',
     strikeStep: 500,
-    lotSize: 1,
+    lotSize: 30,
     decimals: 2,
   },
   {
@@ -146,7 +146,7 @@ export const SCALPER_UNDERLYINGS: ScalperUnderlying[] = [
     exchange: 'MCX',
     foExchange: 'MCX',
     strikeStep: 500,
-    lotSize: 1,
+    lotSize: 5,
     decimals: 2,
   },
 ]

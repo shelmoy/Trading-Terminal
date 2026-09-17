@@ -81,6 +81,14 @@ SUPPORTED_UNDERLYINGS = {
     "NIFTYNXT50": {"index_exchange": "NSE_INDEX", "fo_exchange": "NFO"},
     "SENSEX": {"index_exchange": "BSE_INDEX", "fo_exchange": "BFO"},
     "BANKEX": {"index_exchange": "BSE_INDEX", "fo_exchange": "BFO"},
+    # Commodities (MCX)
+    "CRUDEOIL": {"index_exchange": "MCX", "fo_exchange": "MCX"},
+    "CRUDEOILM": {"index_exchange": "MCX", "fo_exchange": "MCX"},
+    "NATURALGAS": {"index_exchange": "MCX", "fo_exchange": "MCX"},
+    "GOLD": {"index_exchange": "MCX", "fo_exchange": "MCX"},
+    "GOLDM": {"index_exchange": "MCX", "fo_exchange": "MCX"},
+    "SILVER": {"index_exchange": "MCX", "fo_exchange": "MCX"},
+    "SILVERM": {"index_exchange": "MCX", "fo_exchange": "MCX"},
 }
 
 
@@ -96,7 +104,16 @@ def _underlying_quote(underlying: str, fo_exchange: str):
         return underlying, ("NSE_INDEX" if underlying in _NSE_INDEX_UNDERLYINGS else "NSE")
     if fo_exchange == "BFO":
         return underlying, ("BSE_INDEX" if underlying in _BSE_INDEX_UNDERLYINGS else "BSE")
-    return None, None  # MCX/CDS underlying is the current-month future (set separately)
+    if fo_exchange in ("MCX", "CDS"):
+        try:
+            from services.option_symbol_service import resolve_underlying_quote
+
+            res = resolve_underlying_quote(underlying, fo_exchange)
+            if res:
+                return res[0], res[1]
+        except Exception:
+            pass
+    return underlying, fo_exchange
 
 
 def _current_mode() -> str:
@@ -360,10 +377,13 @@ def _mcx_cds_option_chain(underlying, exchange, expiry_ddmmmyy, strike_count, ap
     if not futs:
         return False, {"status": "error", "message": f"No futures for {underlying} on {exchange}"}, 400
     fut_symbol = futs[0].symbol
-    ok, qresp, _qc = get_quotes(symbol=fut_symbol, exchange=exchange, api_key=api_key)
-    ltp = float((qresp.get("data") or {}).get("ltp") or 0) if ok and isinstance(qresp, dict) else 0
-    if ltp <= 0:
-        return False, {"status": "error", "message": f"No LTP for {fut_symbol}"}, 400
+    ltp = 0.0
+    try:
+        ok, qresp, _qc = get_quotes(symbol=fut_symbol, exchange=exchange, api_key=api_key)
+        qdata = qresp.get("data") if ok and isinstance(qresp, dict) else {}
+        ltp = float(qdata.get("ltp") or qdata.get("prev_close") or qdata.get("close") or 0)
+    except Exception as e:
+        logger.warning(f"Error fetching quote for {fut_symbol}: {e}")
 
     opts = (
         symbol_session.query(SymToken)
@@ -382,6 +402,10 @@ def _mcx_cds_option_chain(underlying, exchange, expiry_ddmmmyy, strike_count, ap
     all_strikes = sorted(by_strike)
     if not all_strikes:
         return False, {"status": "error", "message": "No option strikes for that expiry"}, 400
+
+    if ltp <= 0 and all_strikes:
+        # Fallback to median strike if live/prev LTP is not available
+        ltp = all_strikes[len(all_strikes) // 2]
 
     atm = min(all_strikes, key=lambda s: abs(s - ltp))
     atm_idx = all_strikes.index(atm)

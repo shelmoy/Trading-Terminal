@@ -186,6 +186,32 @@ def get_history_with_auth(
         # Sanitize candle data to ensure it strictly obeys chart invariants
         df = sanitize_candles(df)
 
+        # If candles are empty for commodity / spot-less exchanges, synthesize a live bar from quotes if available
+        if df.empty and exchange.upper() in ("MCX", "CDS", "BCD", "NCDEX", "NCO"):
+            try:
+                from services.quotes_service import get_quotes
+                q_ok, q_res, _ = get_quotes(symbol=symbol, exchange=exchange, auth_token=auth_token)
+                q_data = q_res.get("data", {}) if q_ok and isinstance(q_res, dict) else {}
+                ltp = float(q_data.get("ltp") or 0)
+                if ltp > 0:
+                    open_p = float(q_data.get("open") or ltp)
+                    high_p = float(q_data.get("high") or max(open_p, ltp))
+                    low_p = float(q_data.get("low") or min(open_p, ltp))
+                    vol = float(q_data.get("volume") or 0)
+                    oi = int(q_data.get("oi") or 0)
+                    now_ts = int(time.time())
+                    df = pd.DataFrame([{
+                        "timestamp": now_ts,
+                        "open": open_p,
+                        "high": high_p,
+                        "low": low_p,
+                        "close": ltp,
+                        "volume": vol,
+                        "oi": oi
+                    }])
+            except Exception as qe:
+                logger.debug(f"Live quote fallback candle synthesis skipped for {symbol}: {qe}")
+
         # Ensure all responses include 'oi' field, set to 0 if not present
         if "oi" not in df.columns:
             df["oi"] = 0
@@ -193,6 +219,34 @@ def get_history_with_auth(
         return True, {"status": "success", "data": df.to_dict(orient="records")}, 200
     except Exception as e:
         logger.exception(f"Error in broker_module.get_history: {e}")
+        # For MCX and other spot-less exchanges, degrade gracefully rather than breaking the chart
+        if exchange.upper() in ("MCX", "CDS", "BCD", "NCDEX", "NCO"):
+            try:
+                from services.quotes_service import get_quotes
+                q_ok, q_res, _ = get_quotes(symbol=symbol, exchange=exchange, auth_token=auth_token)
+                q_data = q_res.get("data", {}) if q_ok and isinstance(q_res, dict) else {}
+                ltp = float(q_data.get("ltp") or 0)
+                if ltp > 0:
+                    open_p = float(q_data.get("open") or ltp)
+                    high_p = float(q_data.get("high") or max(open_p, ltp))
+                    low_p = float(q_data.get("low") or min(open_p, ltp))
+                    vol = float(q_data.get("volume") or 0)
+                    oi = int(q_data.get("oi") or 0)
+                    now_ts = int(time.time())
+                    df = pd.DataFrame([{
+                        "timestamp": now_ts,
+                        "open": open_p,
+                        "high": high_p,
+                        "low": low_p,
+                        "close": ltp,
+                        "volume": vol,
+                        "oi": oi
+                    }])
+                    return True, {"status": "success", "data": df.to_dict(orient="records")}, 200
+            except Exception as qe:
+                logger.debug(f"Quote fallback failed: {qe}")
+            return True, {"status": "success", "data": []}, 200
+
         return False, {"status": "error", "message": str(e)}, 500
 
 

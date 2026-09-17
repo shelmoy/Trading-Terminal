@@ -13,9 +13,8 @@ from utils.logging import get_logger
 
 logger = get_logger(__name__)
 
-# Neo serves historical data for these four segments only. cde_fo (CDS) and
-# mcx_fo (MCX) are quote-only, even though the plugin trades them.
-HISTORY_SEGMENTS = {"nse_cm", "nse_fo", "bse_cm", "bse_fo"}
+# Neo historical segments: CM, FO, MCX commodities and CDS currency.
+HISTORY_SEGMENTS = {"nse_cm", "nse_fo", "bse_cm", "bse_fo", "mcx_fo", "cde_fo"}
 
 # Widest span the backend accepts in one request, keyed by Neo interval. A wider
 # request is rejected outright rather than truncated, so the fetch loop chunks
@@ -769,8 +768,7 @@ class BrokerData:
 
         if segment not in HISTORY_SEGMENTS:
             raise Exception(
-                f"Kotak Neo serves historical data for NSE, BSE, NFO, BFO, NSE_INDEX and "
-                f"BSE_INDEX only. {exchange} (segment {segment}) is quote-only."
+                f"Kotak Neo historical data not supported for {exchange} (segment {segment})."
             )
         return segment
 
@@ -967,6 +965,14 @@ class BrokerData:
                         break
 
                 if candles is None:
+                    # For commodity/currency segments where broker historical servers may return no data,
+                    # degrade gracefully to empty candles so the live quote fallback can render the chart.
+                    if segment in ("mcx_fo", "cde_fo"):
+                        logger.info(
+                            f"HISTORY API - Historical candles unavailable for {exchange}:{symbol} on {segment}, returning empty DataFrame"
+                        )
+                        return pd.DataFrame(columns=HISTORY_COLUMNS)
+
                     # Every candidate failed. Skipping the chunk would leave a
                     # hole that reads as a market holiday rather than an error,
                     # so surface it instead of returning a short series.

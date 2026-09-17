@@ -169,6 +169,8 @@ class BrokerSymbolCache:
         # are legitimate trade-able instruments.
         self.tradable_underlyings_by_exchange: dict[str, set[str]] = defaultdict(set)
         self.expiries_by_exchange_underlying: dict[tuple[str, str], set[str]] = defaultdict(set)
+        # Fast lookup mapping for spot-less exchanges (MCX, CDS): maps (underlying, exchange) -> near-month future SymbolData
+        self.near_futures_by_underlying: dict[tuple[str, str], SymbolData] = {}
 
         # Cache statistics
         self.stats = CacheStats()
@@ -225,6 +227,8 @@ class BrokerSymbolCache:
                 return parsed
 
             # Build in-memory structures
+            no_spot_futs: dict[tuple[str, str], list[tuple[Any, SymbolData]]] = defaultdict(list)
+
             for sym in symbols:
                 # Extract underlying from OpenAlgo symbol format for FNO exchanges
                 underlying = None
@@ -279,6 +283,17 @@ class BrokerSymbolCache:
                         exp_date = _exp_to_date(sym.expiry)
                         if exp_date and exp_date >= ist_today:
                             self.tradable_underlyings_by_exchange[sym.exchange].add(underlying)
+                            # Index near-month futures for spot-less exchanges (e.g. MCX, CDS)
+                            if sym.exchange in ("MCX", "CDS", "BCD", "NCDEX", "NCO"):
+                                und_name = underlying or sym.name
+                                if und_name:
+                                    no_spot_futs[(und_name.upper(), sym.exchange.upper())].append((exp_date, symbol_data))
+
+            # Store nearest future contract for each spot-less commodity underlying
+            self.near_futures_by_underlying.clear()
+            for k, f_list in no_spot_futs.items():
+                f_list.sort(key=lambda x: x[0])
+                self.near_futures_by_underlying[k] = f_list[0][1]
 
             # Update cache metadata
             self.active_broker = broker
@@ -348,6 +363,11 @@ class BrokerSymbolCache:
         if key in self.by_symbol_exchange:
             return self.by_symbol_exchange[key].token
 
+        # Check nearest active future for spot-less exchanges (e.g. CRUDEOIL on MCX)
+        norm_key = (symbol.upper(), exchange.upper())
+        if norm_key in self.near_futures_by_underlying:
+            return self.near_futures_by_underlying[norm_key].token
+
         self.stats.hits -= 1
         self.stats.misses += 1
         return None
@@ -369,6 +389,10 @@ class BrokerSymbolCache:
         key = (symbol, exchange)
         if key in self.by_symbol_exchange:
             return self.by_symbol_exchange[key].brsymbol
+
+        norm_key = (symbol.upper(), exchange.upper())
+        if norm_key in self.near_futures_by_underlying:
+            return self.near_futures_by_underlying[norm_key].brsymbol
 
         self.stats.hits -= 1
         self.stats.misses += 1
@@ -392,6 +416,10 @@ class BrokerSymbolCache:
         if key in self.by_symbol_exchange:
             return self.by_symbol_exchange[key].brexchange
 
+        norm_key = (symbol.upper(), exchange.upper())
+        if norm_key in self.near_futures_by_underlying:
+            return self.near_futures_by_underlying[norm_key].brexchange
+
         self.stats.hits -= 1
         self.stats.misses += 1
         return None
@@ -402,6 +430,10 @@ class BrokerSymbolCache:
         key = (symbol, exchange)
         if key in self.by_symbol_exchange:
             return self.by_symbol_exchange[key]
+
+        norm_key = (symbol.upper(), exchange.upper())
+        if norm_key in self.near_futures_by_underlying:
+            return self.near_futures_by_underlying[norm_key]
 
         self.stats.hits -= 1
         self.stats.misses += 1
@@ -705,6 +737,7 @@ class BrokerSymbolCache:
         self.underlyings_by_exchange.clear()
         self.tradable_underlyings_by_exchange.clear()
         self.expiries_by_exchange_underlying.clear()
+        self.near_futures_by_underlying.clear()
         self.cache_loaded = False
         self.active_broker = None
         logger.debug("Cache cleared")
@@ -831,12 +864,29 @@ def get_symbol_info(symbol: str, exchange: str) -> SymbolData | None:
 
 
 # Database fallback functions (imported from original token_db)
+def _find_fallback_future_token(symbol: str, exchange: str):
+    """Fallback helper to resolve near-month future for spot-less exchanges (MCX, CDS, etc.)"""
+    if exchange and exchange.upper() in ("MCX", "CDS", "BCD", "NCDEX", "NCO"):
+        try:
+            from services.option_symbol_service import find_near_month_futures
+            from database.symbol import SymToken
+
+            fut = find_near_month_futures(symbol, exchange.upper())
+            if fut:
+                return SymToken.query.filter_by(symbol=fut["symbol"], exchange=exchange).first()
+        except Exception:
+            pass
+    return None
+
+
 def get_token_dbquery(symbol: str, exchange: str) -> str | None:
     """Query database for token by symbol and exchange"""
     try:
         from database.symbol import SymToken
 
         sym_token = SymToken.query.filter_by(symbol=symbol, exchange=exchange).first()
+        if not sym_token:
+            sym_token = _find_fallback_future_token(symbol, exchange)
         if sym_token:
             return sym_token.token
         else:
@@ -867,6 +917,8 @@ def get_br_symbol_dbquery(symbol: str, exchange: str) -> str | None:
         from database.symbol import SymToken
 
         sym_token = SymToken.query.filter_by(symbol=symbol, exchange=exchange).first()
+        if not sym_token:
+            sym_token = _find_fallback_future_token(symbol, exchange)
         if sym_token:
             return sym_token.brsymbol
         else:
@@ -897,6 +949,8 @@ def get_brexchange_dbquery(symbol: str, exchange: str) -> str | None:
         from database.symbol import SymToken
 
         sym_token = SymToken.query.filter_by(symbol=symbol, exchange=exchange).first()
+        if not sym_token:
+            sym_token = _find_fallback_future_token(symbol, exchange)
         if sym_token:
             return sym_token.brexchange
         else:
@@ -912,6 +966,8 @@ def get_symbol_info_dbquery(symbol: str, exchange: str) -> SymbolData | None:
         from database.symbol import SymToken
 
         sym_token = SymToken.query.filter_by(symbol=symbol, exchange=exchange).first()
+        if not sym_token:
+            sym_token = _find_fallback_future_token(symbol, exchange)
         if sym_token:
             # Convert SymToken database object to SymbolData
             return SymbolData(
@@ -926,6 +982,7 @@ def get_symbol_info_dbquery(symbol: str, exchange: str) -> SymbolData | None:
                 lotsize=sym_token.lotsize,
                 instrumenttype=sym_token.instrumenttype,
                 tick_size=sym_token.tick_size,
+                contract_value=getattr(sym_token, 'contract_value', None),
             )
         else:
             return None
