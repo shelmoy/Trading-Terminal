@@ -422,16 +422,25 @@ export default function ScalperTerminal() {
     term?.redoDraw()
   }
 
-  // 10. LinkGroup for 3 Charts Synchronized Parallel Crosshair
+  // 10. LinkGroup for 3 Charts Synchronized Parallel Crosshair & Viewport (Time & Zoom Sync)
   const linkRef = useRef<LinkGroup | null>(null)
   if (linkRef.current === null) {
     linkRef.current = createLinkGroup({
       crosshair: true,
-      viewport: false,
+      viewport: true,
       symbol: false,
       whenMissing: 'nearest',
     })
   }
+
+  useEffect(() => {
+    linkRef.current?.setOptions({
+      crosshair: true,
+      viewport: true,
+      symbol: false,
+      whenMissing: 'nearest',
+    })
+  }, [])
 
   useEffect(() => {
     const grp = linkRef.current
@@ -451,23 +460,25 @@ export default function ScalperTerminal() {
     return () => clearTimeout(t)
   }, [layoutMode])
 
-  // 11. Native TradingTerminals Registry
-  const terminalsRef = useRef<Record<string, TradingTerminal | null>>({})
-
-  const noteTerminal = useCallback((paneId: string, terminal: TradingTerminal | null) => {
-    if (terminal) {
-      terminalsRef.current[paneId] = terminal
-    } else {
-      delete terminalsRef.current[paneId]
-    }
-  }, [])
-
-  // 11B. Universal Chart Controls (Timeframe, Chart Type, Indicators, Refresh)
+  // 11. Universal Chart Controls (Timeframe, Chart Type, Indicators, Refresh)
   const [universalInterval, setUniversalInterval] = useState('1m')
   const [universalChartType, setUniversalChartType] = useState('candlestick')
   const [indicatorPickerOpen, setIndicatorPickerOpen] = useState(false)
   const [catalog, setCatalog] = useState<{ id: string; name: string; category: string }[]>([])
   const [universalIndicators, setUniversalIndicators] = useState<{ id: string; name: string }[]>([])
+
+  // 11B. Native TradingTerminals Registry
+  const terminalsRef = useRef<Record<string, TradingTerminal | null>>({})
+
+  const noteTerminal = useCallback((paneId: string, terminal: TradingTerminal | null) => {
+    if (terminal) {
+      terminalsRef.current[paneId] = terminal
+      terminal.setInterval(universalInterval)
+      terminal.setChartType(universalChartType)
+    } else {
+      delete terminalsRef.current[paneId]
+    }
+  }, [universalInterval, universalChartType])
 
   // Inherit indicators from native trading chart (oa-trading-p0-indicators)
   useEffect(() => {
@@ -488,6 +499,13 @@ export default function ScalperTerminal() {
 
   const handleSetUniversalInterval = (iv: string) => {
     setUniversalInterval(iv)
+    ;['scalper-spot', 'scalper-call', 'scalper-put'].forEach((pid) => {
+      try {
+        localStorage.setItem(`oa-trading-${pid}-interval`, iv)
+      } catch {
+        // ignore
+      }
+    })
     Object.values(terminalsRef.current).forEach((t) => {
       t?.setInterval(iv)
     })
@@ -495,6 +513,13 @@ export default function ScalperTerminal() {
 
   const handleSetUniversalChartType = (ct: string) => {
     setUniversalChartType(ct)
+    ;['scalper-spot', 'scalper-call', 'scalper-put'].forEach((pid) => {
+      try {
+        localStorage.setItem(`oa-trading-${pid}-chart-type`, ct)
+      } catch {
+        // ignore
+      }
+    })
     Object.values(terminalsRef.current).forEach((t) => {
       t?.setChartType(ct)
     })
