@@ -241,6 +241,10 @@ interface Props {
   initialSymbol?: { symbol: string; exchange: string; name?: string }
   /** Declarative symbol to keep the pane charted on. */
   symbol?: { symbol: string; exchange: string; name?: string }
+  /** Additional CSS classes for the chart pane. */
+  className?: string
+  /** Whether this chart pane is currently focused / active. */
+  isFocused?: boolean
 }
 
 /**
@@ -270,6 +274,8 @@ export function ChartPane({
   paneTitle,
   initialSymbol,
   symbol,
+  className,
+  isFocused = false,
 }: Props) {
   const chartRef = useRef<HTMLDivElement>(null)
   const legendRef = useRef<HTMLDivElement>(null)
@@ -651,22 +657,44 @@ export function ChartPane({
     <section
       ref={paneRef}
       data-trading-dialog-open={paneDialogOpen ? 'true' : undefined}
+      data-focused={isFocused ? 'true' : undefined}
       style={style}
-      className="relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border bg-card"
+      className={cn(
+        'relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border bg-card transition-[border-color,box-shadow,ring] duration-75 select-none',
+        'hover:border-primary/80 hover:ring-2 hover:ring-primary/40 hover:shadow-md hover:z-20',
+        isFocused && 'border-primary ring-2 ring-primary/80 shadow-md z-10',
+        className
+      )}
+      onPointerEnter={() => onFocusPane?.(terminalRef.current, paneId)}
       onPointerDownCapture={() => onFocusPane?.(terminalRef.current, paneId)}
     >
       {/* Per-pane control row. One line: the row scrolls rather than wrapping,
           so the view actions stay beside the instrument controls instead of
           dropping to a second row and eating chart height. */}
       {hideToolbar ? (
-        <div className="flex h-7 shrink-0 items-center justify-between border-b bg-background/90 px-2 text-xs select-none">
+        <div
+          className={cn(
+            'flex h-7 shrink-0 items-center justify-between border-b px-2 text-xs select-none transition-colors duration-75',
+            isFocused ? 'bg-accent/70 border-primary/40' : 'bg-background/90 border-border/60'
+          )}
+        >
           <div className="flex items-center gap-1.5 min-w-0">
-            <span className="font-bold text-[11px] truncate text-foreground">
+            <span
+              className={cn(
+                'font-bold text-[11px] truncate',
+                isFocused ? 'text-primary font-extrabold' : 'text-foreground'
+              )}
+            >
               {paneTitle || sym?.symbol || paneId}
             </span>
             {sym?.exchange && (
               <span className="rounded bg-muted px-1.5 py-0.5 text-[9px] font-medium text-muted-foreground">
                 {sym.exchange}
+              </span>
+            )}
+            {isFocused && (
+              <span className="rounded-full bg-primary/20 text-primary px-1.5 py-0.2 text-[9px] font-bold uppercase tracking-wider animate-pulse">
+                Active
               </span>
             )}
           </div>
