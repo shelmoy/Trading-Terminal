@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { createLinkGroup, type LinkGroup } from 'openalgo-charts'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Activity, ChevronDown, RefreshCw, Search, TrendingUp, X } from 'lucide-react'
+import { Activity, ChevronDown, ChevronUp, RefreshCw, Search, TrendingUp, X } from 'lucide-react'
 import { scalpingApi } from '@/api/scalping'
 import { tradingApi } from '@/api/trading'
 import {
@@ -33,7 +33,7 @@ import type { TradingTerminal } from '@/lib/trading/terminal'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/authStore'
 import { broadcastCrossTabEvent, onModeChange, useThemeStore } from '@/stores/themeStore'
-import { SCALPER_UNDERLYINGS, type ScalperUnderlying } from '@/types/scalper'
+import { MCX_FUTURE_MAP, SCALPER_UNDERLYINGS, type ScalperUnderlying } from '@/types/scalper'
 import type { OptionChainRow } from '@/types/scalping'
 import type { Order, Position } from '@/types/trading'
 import { showToast } from '@/utils/toast'
@@ -100,6 +100,7 @@ export default function ScalperTerminal() {
   // 2. Active Tab & Layout Mode
   const [activeTab, setActiveTab] = useState<ScalperTab>('scalper')
   const [layoutMode, setLayoutMode] = useState<ScalperLayoutMode>('grid')
+  const [deckCollapsed, setDeckCollapsed] = useState(false)
 
   // 3. Active Underlying Asset (Indices & Commodities)
   const [underlying, setUnderlying] = useState<ScalperUnderlying>(SCALPER_UNDERLYINGS[0])
@@ -155,7 +156,8 @@ export default function ScalperTerminal() {
   ])
 
   // 6. Live Spot / Future Price via WebSocket (resolves near-month FUT for MCX/commodities)
-  const activeSpotSymbol = strikesResp?.underlying_symbol || underlying.symbol
+  const resolvedCommodityFuture = MCX_FUTURE_MAP[underlying.symbol]
+  const activeSpotSymbol = strikesResp?.underlying_symbol || resolvedCommodityFuture || underlying.symbol
   const activeSpotExchange = strikesResp?.underlying_exchange || underlying.exchange
 
   const spotEnabled = !!(activeSpotSymbol && activeSpotExchange)
@@ -804,6 +806,8 @@ export default function ScalperTerminal() {
           setUnderlying(u)
           setSelectedCallStrike(null)
           setSelectedPutStrike(null)
+          const savedExp = localStorage.getItem(`oa-scalper-expiry-${u.symbol}`) || ''
+          setSelectedExpiry(savedExp)
         }}
         expiries={expiries}
         selectedExpiry={selectedExpiry}
@@ -1204,10 +1208,33 @@ export default function ScalperTerminal() {
           initialQuery={activeSymbol.symbol}
         />
 
+        {/* EXPAND / MINIMIZE HANDLE BETWEEN CHARTS AND EXECUTION DECK */}
+        <div className="h-2 w-full flex items-center justify-center relative bg-border/40 hover:bg-primary/20 transition-colors group cursor-pointer select-none">
+          <button
+            type="button"
+            onClick={() => setDeckCollapsed((c) => !c)}
+            className="absolute -top-1.5 px-3 py-0.5 rounded-full bg-background/95 border border-border/80 text-[10px] text-muted-foreground group-hover:text-primary group-hover:border-primary/50 shadow-xs flex items-center gap-1 transition-all z-30 cursor-pointer"
+            title={deckCollapsed ? 'Expand Execution Deck' : 'Minimize Execution Deck'}
+          >
+            {deckCollapsed ? (
+              <>
+                <ChevronUp className="h-3 w-3" />
+                <span className="font-semibold text-[9px] uppercase tracking-wider">Expand Deck</span>
+              </>
+            ) : (
+              <>
+                <ChevronDown className="h-3 w-3" />
+                <span className="font-semibold text-[9px] uppercase tracking-wider">Minimize Deck</span>
+              </>
+            )}
+          </button>
+        </div>
+
         {/* MINIMALIST EXECUTION DECK BELOW CHARTS */}
         <ScalperMiniDeck
           atmStrike={currentAtm ?? 0}
           strikes={availableStrikes}
+          strikeRows={strikeRows}
           callStrike={selectedCallStrike ?? currentAtm ?? 0}
           putStrike={selectedPutStrike ?? currentAtm ?? 0}
           onSelectCallStrike={(s) => setSelectedCallStrike(s)}
@@ -1221,6 +1248,8 @@ export default function ScalperTerminal() {
           positions={positions}
           onExecuteOrder={handleExecuteOrder}
           appMode={appMode}
+          collapsed={deckCollapsed}
+          onToggleCollapse={() => setDeckCollapsed((c) => !c)}
         />
       </div>
 

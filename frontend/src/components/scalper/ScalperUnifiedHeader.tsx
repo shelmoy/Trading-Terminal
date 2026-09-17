@@ -1,3 +1,4 @@
+import { useQuery } from '@tanstack/react-query'
 import {
   BarChart3,
   CandlestickChart,
@@ -10,8 +11,9 @@ import {
   Minimize2,
   Zap,
 } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router'
+import { tradingApi, type QuotesData } from '@/api/trading'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -22,12 +24,15 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { useLivePrice } from '@/hooks/useLivePrice'
+import { useAuthStore } from '@/stores/authStore'
+import { useMarketData } from '@/hooks/useMarketData'
 import { showToast } from '@/utils/toast'
 import { cn, formatIndianNumber } from '@/lib/utils'
 import { useThemeStore } from '@/stores/themeStore'
 import {
   SCALPER_UNDERLYINGS,
+  getUnderlyingQuoteSymbol,
+  getUnderlyingQuoteExchange,
   type ScalperUnderlying,
 } from '@/types/scalper'
 
@@ -73,30 +78,85 @@ export function ScalperUnifiedHeader({
   appMode: propAppMode,
   availableMargin,
 }: Props) {
+  const { apiKey } = useAuthStore()
   const { appMode: storeAppMode, toggleAppMode, isTogglingMode } = useThemeStore()
   const appMode = propAppMode || storeAppMode
 
-  // Live prices for underlying indices/commodities
-  const tickerItems = useMemo(
-    () =>
-      SCALPER_UNDERLYINGS.map((u) => ({
-        symbol: u.symbol,
-        exchange: u.exchange,
-      })),
-    []
-  )
+  // Real-time market data symbols for all underlyings (including MCX near-month futures)
+  const streamSymbols = useMemo(() => {
+    const list: Array<{ symbol: string; exchange: string }> = []
+    const seen = new Set<string>()
+    for (const u of SCALPER_UNDERLYINGS) {
+      const qSym = getUnderlyingQuoteSymbol(u)
+      const qEx = getUnderlyingQuoteExchange(u)
+      const key = `${qEx}:${qSym}`
+      if (!seen.has(key)) {
+        seen.add(key)
+        list.push({ symbol: qSym, exchange: qEx })
+      }
+      const rawKey = `${u.exchange}:${u.symbol}`
+      if (!seen.has(rawKey)) {
+        seen.add(rawKey)
+        list.push({ symbol: u.symbol, exchange: u.exchange })
+      }
+    }
+    return list
+  }, [])
 
-  const { data: quoteMap } = useLivePrice(tickerItems, {
+  // 1. Shared WebSocket feed (0-1ms latency)
+  const { data: wsMarketData } = useMarketData({
+    symbols: streamSymbols,
+    mode: 'Quote',
     enabled: true,
-    useMultiQuotesFallback: true,
-    multiQuotesRefreshInterval: 5000,
-    pauseWhenHidden: true,
   })
 
-  const currentKey = `${activeUnderlying.exchange}:${activeUnderlying.symbol}`
-  const currentQuote = (quoteMap as Record<string, any>)?.[currentKey]
-  const currentLtp = currentQuote?.ltp ?? null
-  const currentChg = currentQuote?.changePercent ?? 0
+  // 2. Initial MultiQuotes fetch for instant baseline display
+  const { data: multiQuotesResp } = useQuery({
+    queryKey: ['scalper', 'underlyings-multiquotes', apiKey],
+    queryFn: () =>
+      apiKey
+        ? tradingApi.getMultiQuotes(apiKey, streamSymbols)
+        : Promise.resolve({ status: 'success', results: [] } as any),
+    enabled: !!apiKey,
+    staleTime: 15000,
+    refetchInterval: 30000,
+  })
+
+  const mqMap = useMemo(() => {
+    const map = new Map<string, QuotesData>()
+    if (multiQuotesResp?.results) {
+      for (const item of multiQuotesResp.results) {
+        map.set(`${item.exchange}:${item.symbol}`, item.data)
+      }
+    }
+    return map
+  }, [multiQuotesResp])
+
+  // Helper to extract live LTP, previous close, and day % change for any underlying
+  const getUnderlyingQuote = useCallback(
+    (u: ScalperUnderlying) => {
+      const qSym = getUnderlyingQuoteSymbol(u)
+      const qEx = getUnderlyingQuoteExchange(u)
+      const tick = wsMarketData.get(`${qEx}:${qSym}`) || wsMarketData.get(`${u.exchange}:${u.symbol}`)
+      const mq = mqMap.get(`${qEx}:${qSym}`) || mqMap.get(`${u.exchange}:${u.symbol}`)
+
+      const ltp: number | null = tick?.data?.ltp ?? mq?.ltp ?? null
+      const prevClose: number | null = tick?.data?.close ?? mq?.prev_close ?? null
+      let chgPct = 0
+      if (tick?.data?.change_percent !== undefined) {
+        chgPct = tick.data.change_percent
+      } else if (prevClose && prevClose > 0 && ltp) {
+        chgPct = ((ltp - prevClose) / prevClose) * 100
+      }
+
+      return { ltp, prevClose, chgPct }
+    },
+    [wsMarketData, mqMap]
+  )
+
+  const currentQuote = getUnderlyingQuote(activeUnderlying)
+  const currentLtp = currentQuote.ltp
+  const currentChg = currentQuote.chgPct
   const isUp = currentChg >= 0
 
   const isProfit = netPnl >= 0
@@ -225,13 +285,16 @@ export function ScalperUnifiedHeader({
               <span className="font-bold text-primary">{activeUnderlying.name}</span>
               {currentLtp != null && (
                 <span className="font-mono tabular-nums text-foreground ml-0.5">
-                  {currentLtp.toFixed(activeUnderlying.decimals)}
+                  {currentLtp.toLocaleString('en-IN', {
+                    minimumFractionDigits: activeUnderlying.decimals,
+                    maximumFractionDigits: activeUnderlying.decimals,
+                  })}
                 </span>
               )}
-              {currentChg !== 0 && (
+              {currentLtp != null && (
                 <span
                   className={cn(
-                    'text-[10px] tabular-nums font-semibold flex items-center',
+                    'text-[10px] tabular-nums font-semibold flex items-center font-mono',
                     isUp ? 'text-emerald-500' : 'text-rose-500'
                   )}
                 >
@@ -242,19 +305,20 @@ export function ScalperUnifiedHeader({
               <ChevronDown className="h-3 w-3 text-muted-foreground ml-0.5" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-64 max-h-80 overflow-y-auto">
+          <DropdownMenuContent align="start" className="w-72 max-h-80 overflow-y-auto">
             <DropdownMenuLabel className="text-[10px] uppercase text-muted-foreground tracking-wider">
               Indian Indices (NSE / BSE)
             </DropdownMenuLabel>
             {SCALPER_UNDERLYINGS.filter((u) => u.category === 'INDICES').map((u) => {
-              const q = (quoteMap as Record<string, any>)?.[`${u.exchange}:${u.symbol}`]
+              const q = getUnderlyingQuote(u)
               const isSelected = u.symbol === activeUnderlying.symbol
+              const isItemUp = q.chgPct >= 0
               return (
                 <DropdownMenuItem
                   key={u.symbol}
                   onClick={() => onSelectUnderlying(u)}
                   className={cn(
-                    'flex items-center justify-between text-xs cursor-pointer py-1.5',
+                    'flex items-center justify-between text-xs cursor-pointer py-1.5 px-2.5',
                     isSelected && 'bg-primary/10 font-bold text-primary'
                   )}
                 >
@@ -262,8 +326,21 @@ export function ScalperUnifiedHeader({
                     <span className="font-semibold">{u.name}</span>
                     <span className="text-[10px] text-muted-foreground ml-1.5">({u.exchange})</span>
                   </div>
-                  <div className="text-right font-mono tabular-nums text-[11px]">
-                    {q?.ltp ? q.ltp.toFixed(u.decimals) : '—'}
+                  <div className="text-right font-mono tabular-nums text-[11px] flex flex-col items-end">
+                    <span className="font-semibold text-foreground">
+                      {q.ltp != null
+                        ? q.ltp.toLocaleString('en-IN', {
+                            minimumFractionDigits: u.decimals,
+                            maximumFractionDigits: u.decimals,
+                          })
+                        : '—'}
+                    </span>
+                    {q.ltp != null && (
+                      <span className={cn('text-[10px] font-semibold', isItemUp ? 'text-emerald-500' : 'text-rose-500')}>
+                        {isItemUp ? '+' : ''}
+                        {q.chgPct.toFixed(2)}%
+                      </span>
+                    )}
                   </div>
                 </DropdownMenuItem>
               )
@@ -275,14 +352,15 @@ export function ScalperUnifiedHeader({
               MCX Commodities
             </DropdownMenuLabel>
             {SCALPER_UNDERLYINGS.filter((u) => u.category === 'COMMODITIES').map((u) => {
-              const q = (quoteMap as Record<string, any>)?.[`${u.exchange}:${u.symbol}`]
+              const q = getUnderlyingQuote(u)
               const isSelected = u.symbol === activeUnderlying.symbol
+              const isItemUp = q.chgPct >= 0
               return (
                 <DropdownMenuItem
                   key={u.symbol}
                   onClick={() => onSelectUnderlying(u)}
                   className={cn(
-                    'flex items-center justify-between text-xs cursor-pointer py-1.5',
+                    'flex items-center justify-between text-xs cursor-pointer py-1.5 px-2.5',
                     isSelected && 'bg-primary/10 font-bold text-primary'
                   )}
                 >
@@ -292,8 +370,21 @@ export function ScalperUnifiedHeader({
                       MCX
                     </Badge>
                   </div>
-                  <div className="text-right font-mono tabular-nums text-[11px]">
-                    {q?.ltp ? q.ltp.toFixed(u.decimals) : '—'}
+                  <div className="text-right font-mono tabular-nums text-[11px] flex flex-col items-end">
+                    <span className="font-semibold text-foreground">
+                      {q.ltp != null
+                        ? q.ltp.toLocaleString('en-IN', {
+                            minimumFractionDigits: u.decimals,
+                            maximumFractionDigits: u.decimals,
+                          })
+                        : '—'}
+                    </span>
+                    {q.ltp != null && (
+                      <span className={cn('text-[10px] font-semibold', isItemUp ? 'text-emerald-500' : 'text-rose-500')}>
+                        {isItemUp ? '+' : ''}
+                        {q.chgPct.toFixed(2)}%
+                      </span>
+                    )}
                   </div>
                 </DropdownMenuItem>
               )

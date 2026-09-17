@@ -152,14 +152,18 @@ def _normalize_expiry(expiry: str) -> str:
 @check_session_validity
 def underlyings():
     """Return the supported index underlyings and their exchanges for the dropdown."""
-    data = [
-        {
-            "underlying": name,
-            "index_exchange": cfg["index_exchange"],
-            "fo_exchange": cfg["fo_exchange"],
-        }
-        for name, cfg in SUPPORTED_UNDERLYINGS.items()
-    ]
+    data = []
+    for name, cfg in SUPPORTED_UNDERLYINGS.items():
+        q_sym, q_ex = _underlying_quote(name, cfg["fo_exchange"])
+        data.append(
+            {
+                "underlying": name,
+                "index_exchange": cfg["index_exchange"],
+                "fo_exchange": cfg["fo_exchange"],
+                "quote_symbol": q_sym,
+                "quote_exchange": q_ex,
+            }
+        )
     return jsonify({"status": "success", "data": data})
 
 
@@ -413,12 +417,38 @@ def _mcx_cds_option_chain(underlying, exchange, expiry_ddmmmyy, strike_count, ap
     hi = min(len(all_strikes), atm_idx + strike_count + 1)
 
     chain = []
+    quote_syms = []
+    for s in all_strikes[lo:hi]:
+        ce_obj = by_strike[s].get("CE")
+        pe_obj = by_strike[s].get("PE")
+        if ce_obj and getattr(ce_obj, "symbol", None):
+            quote_syms.append({"symbol": ce_obj.symbol, "exchange": exchange})
+        if pe_obj and getattr(pe_obj, "symbol", None):
+            quote_syms.append({"symbol": pe_obj.symbol, "exchange": exchange})
+
+    quotes_map = {}
+    if quote_syms and api_key:
+        try:
+            from services.quotes_service import get_multiquotes
+
+            q_ok, q_res, _ = get_multiquotes(quote_syms, api_key=api_key)
+            if q_ok and isinstance(q_res, dict):
+                results = q_res.get("data", []) or q_res.get("results", []) or []
+                for item in results:
+                    s_name = item.get("symbol")
+                    q_data = item.get("data") or item
+                    quotes_map[s_name] = float(q_data.get("ltp") or q_data.get("prev_close") or 0)
+        except Exception as e:
+            logger.debug(f"Could not fetch bulk quotes for MCX chain: {e}")
+
     for s in all_strikes[lo:hi]:
         n = all_strikes.index(s) - atm_idx
         ce_label = "ATM" if n == 0 else (f"ITM{abs(n)}" if n < 0 else f"OTM{n}")
         pe_label = "ATM" if n == 0 else (f"OTM{abs(n)}" if n < 0 else f"ITM{n}")
         ce = by_strike[s].get("CE")
         pe = by_strike[s].get("PE")
+        ce_ltp = quotes_map.get(ce.symbol) if ce else None
+        pe_ltp = quotes_map.get(pe.symbol) if pe else None
         chain.append(
             {
                 "strike": s,
@@ -427,12 +457,14 @@ def _mcx_cds_option_chain(underlying, exchange, expiry_ddmmmyy, strike_count, ap
                     "label": ce_label,
                     "lotsize": ce.lotsize if ce else None,
                     "tick_size": ce.tick_size if ce else None,
+                    "ltp": ce_ltp,
                 },
                 "pe": {
                     "symbol": pe.symbol if pe else None,
                     "label": pe_label,
                     "lotsize": pe.lotsize if pe else None,
                     "tick_size": pe.tick_size if pe else None,
+                    "ltp": pe_ltp,
                 },
             }
         )
