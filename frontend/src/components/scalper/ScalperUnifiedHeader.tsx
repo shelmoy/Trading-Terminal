@@ -122,7 +122,13 @@ export function ScalperUnifiedHeader({
   }
 
   useEffect(() => {
-    const handleFsChange = () => setIsFullscreen(!!document.fullscreenElement)
+    const handleFsChange = () => {
+      setIsFullscreen(!!document.fullscreenElement)
+      window.dispatchEvent(new Event('resize'))
+      requestAnimationFrame(() => window.dispatchEvent(new Event('resize')))
+      setTimeout(() => window.dispatchEvent(new Event('resize')), 50)
+      setTimeout(() => window.dispatchEvent(new Event('resize')), 150)
+    }
     document.addEventListener('fullscreenchange', handleFsChange)
     return () => document.removeEventListener('fullscreenchange', handleFsChange)
   }, [])

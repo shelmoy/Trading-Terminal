@@ -614,9 +614,39 @@ export function ChartPane({
   // button reflects state (including Esc-to-exit) and so every menu in the pane
   // can be portalled inside the fullscreen element while it is active.
   useEffect(() => {
-    const sync = () => setFullscreen(document.fullscreenElement === paneRef.current)
+    const sync = () => {
+      setFullscreen(document.fullscreenElement === paneRef.current)
+      window.dispatchEvent(new Event('resize'))
+      requestAnimationFrame(() => {
+        window.dispatchEvent(new Event('resize'))
+      })
+      setTimeout(() => {
+        window.dispatchEvent(new Event('resize'))
+      }, 50)
+      setTimeout(() => {
+        window.dispatchEvent(new Event('resize'))
+      }, 150)
+    }
     document.addEventListener('fullscreenchange', sync)
     return () => document.removeEventListener('fullscreenchange', sync)
+  }, [])
+
+  // Ensure canvas geometry remains responsive and never blank during layout toggles or minimizes
+  useEffect(() => {
+    const el = paneRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    let rafId: number | null = null
+    const ro = new ResizeObserver(() => {
+      if (rafId) cancelAnimationFrame(rafId)
+      rafId = requestAnimationFrame(() => {
+        window.dispatchEvent(new Event('resize'))
+      })
+    })
+    ro.observe(el)
+    return () => {
+      if (rafId) cancelAnimationFrame(rafId)
+      ro.disconnect()
+    }
   }, [])
   // Menu is w-56 (224) and the submenu w-36 (144); opening right needs both
   // plus the gap, so near the right edge it opens left instead.
