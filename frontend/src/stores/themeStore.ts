@@ -17,7 +17,7 @@ export type ThemeColor =
   | 'yellow'
   | 'violet'
 
-// Event emitter for mode changes
+// Event emitter for mode changes (in-tab)
 type ModeChangeCallback = (newMode: AppMode) => void
 const modeChangeListeners: Set<ModeChangeCallback> = new Set()
 
@@ -32,6 +32,59 @@ const notifyModeChange = (newMode: AppMode) => {
   modeChangeListeners.forEach((cb) => cb(newMode))
 }
 
+// ── UNIVERSAL CROSS-TAB BUSES (0-1ms INTER-TAB LATENCY) ─────────────────
+const MODE_CHANNEL_NAME = 'oa-mode-sync-channel'
+const EVENTS_CHANNEL_NAME = 'oa-events-sync-channel'
+
+let modeChannel: BroadcastChannel | null = null
+let eventsChannel: BroadcastChannel | null = null
+
+if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+  try {
+    modeChannel = new BroadcastChannel(MODE_CHANNEL_NAME)
+    eventsChannel = new BroadcastChannel(EVENTS_CHANNEL_NAME)
+  } catch {
+    modeChannel = null
+    eventsChannel = null
+  }
+}
+
+/** Broadcast an action event (e.g. order placed, position closed) to all other open tabs in 0ms */
+export const broadcastCrossTabEvent = (eventName: string, payload?: unknown) => {
+  if (eventsChannel) {
+    try {
+      eventsChannel.postMessage({ event: eventName, payload, timestamp: Date.now() })
+    } catch {
+      // ignore
+    }
+  }
+}
+
+/** Listen for action events broadcast from other tabs */
+export const onCrossTabEvent = (callback: (eventName: string, payload?: unknown) => void): (() => void) => {
+  if (typeof window === 'undefined' || !('BroadcastChannel' in window)) {
+    return () => {}
+  }
+  let localChannel: BroadcastChannel | null = null
+  try {
+    localChannel = new BroadcastChannel(EVENTS_CHANNEL_NAME)
+    localChannel.onmessage = (e) => {
+      if (e.data?.event) {
+        callback(e.data.event, e.data.payload)
+      }
+    }
+  } catch {
+    return () => {}
+  }
+  return () => {
+    try {
+      localChannel?.close()
+    } catch {
+      // ignore
+    }
+  }
+}
+
 interface ThemeStore {
   mode: ThemeMode
   color: ThemeColor
@@ -40,7 +93,7 @@ interface ThemeStore {
 
   setMode: (mode: ThemeMode) => void
   setColor: (color: ThemeColor) => void
-  setAppMode: (appMode: AppMode) => void
+  setAppMode: (appMode: AppMode, broadcast?: boolean) => void
   toggleMode: () => void
   toggleAppMode: () => Promise<{ success: boolean; message?: string }>
   syncAppMode: () => Promise<void>
@@ -74,7 +127,7 @@ export const useThemeStore = create<ThemeStore>()(
         }
       },
 
-      setAppMode: (appMode) => {
+      setAppMode: (appMode, broadcast = true) => {
         const previousMode = get().appMode
         set({ appMode })
         if (typeof document !== 'undefined') {
@@ -90,7 +143,17 @@ export const useThemeStore = create<ThemeStore>()(
             document.documentElement.classList.add('analyzer')
           }
         }
-        // Notify listeners if mode changed
+
+        // Broadcast to other open windows and tabs in 0ms
+        if (broadcast && modeChannel) {
+          try {
+            modeChannel.postMessage({ type: 'MODE_CHANGE', appMode, timestamp: Date.now() })
+          } catch {
+            // ignore
+          }
+        }
+
+        // Notify in-tab listeners if mode changed
         if (previousMode !== appMode) {
           notifyModeChange(appMode)
         }
@@ -194,3 +257,33 @@ export const useThemeStore = create<ThemeStore>()(
     }
   )
 )
+
+// ── SETUP CROSS-TAB LISTENERS (0ms LATENCY) ──────────────────────────────
+if (typeof window !== 'undefined') {
+  // 1. Listen for instant BroadcastChannel events from other open tabs/windows
+  if (modeChannel) {
+    modeChannel.onmessage = (event) => {
+      if (event.data?.type === 'MODE_CHANGE' && event.data?.appMode) {
+        const incoming = event.data.appMode as AppMode
+        if (useThemeStore.getState().appMode !== incoming) {
+          useThemeStore.getState().setAppMode(incoming, false)
+        }
+      }
+    }
+  }
+
+  // 2. Listen for storage event as backup cross-tab synchronization
+  window.addEventListener('storage', (e) => {
+    if (e.key === 'openalgo-theme' && e.newValue) {
+      try {
+        const parsed = JSON.parse(e.newValue)
+        const storedMode = parsed?.state?.appMode as AppMode
+        if (storedMode && storedMode !== useThemeStore.getState().appMode) {
+          useThemeStore.getState().setAppMode(storedMode, false)
+        }
+      } catch {
+        // ignore
+      }
+    }
+  })
+}

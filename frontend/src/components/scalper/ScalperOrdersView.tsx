@@ -53,7 +53,7 @@ import { type OrderEventType, useOrderEventRefresh } from '@/hooks/useOrderEvent
 import { useSupportedExchanges } from '@/hooks/useSupportedExchanges'
 import { cn, makeFormatCurrency, sanitizeCSV } from '@/lib/utils'
 import { useAuthStore } from '@/stores/authStore'
-import { onModeChange } from '@/stores/themeStore'
+import { broadcastCrossTabEvent, onModeChange, useThemeStore } from '@/stores/themeStore'
 import type { Order } from '@/types/trading'
 import { showToast } from '@/utils/toast'
 
@@ -149,9 +149,11 @@ export function ScalperOrdersView({
   onCancelAll,
   onRefresh,
   loading: parentLoading,
-  appMode = 'live',
+  appMode: propAppMode,
 }: Props) {
   const { apiKey, user } = useAuthStore()
+  const { appMode: storeAppMode } = useThemeStore()
+  const appMode = propAppMode || storeAppMode
   const { isCrypto } = useSupportedExchanges()
   const formatCurrency = useMemo(() => makeFormatCurrency(user?.broker), [user?.broker])
 
@@ -348,6 +350,7 @@ export function ScalperOrdersView({
       if (response.status === 'success') {
         showToast.success(`Order cancelled: ${orderid}`, 'orders')
         setTimeout(() => fetchOrders(true), 1000)
+        broadcastCrossTabEvent('ORDER_OR_POSITION_CHANGED')
       } else {
         showToast.error(response.message || 'Failed to cancel order', 'orders')
       }

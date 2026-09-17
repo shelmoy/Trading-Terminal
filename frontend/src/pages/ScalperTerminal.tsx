@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { createLinkGroup, type LinkGroup } from 'openalgo-charts'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Activity, ChevronDown, RefreshCw, Search, TrendingUp, X } from 'lucide-react'
@@ -32,7 +32,7 @@ import { CHART_TYPE_GROUPS, CHART_TYPES, chartTypeIcon } from '@/lib/trading/cha
 import type { TradingTerminal } from '@/lib/trading/terminal'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/authStore'
-import { onModeChange, useThemeStore } from '@/stores/themeStore'
+import { broadcastCrossTabEvent, onModeChange, useThemeStore } from '@/stores/themeStore'
 import { SCALPER_UNDERLYINGS, type ScalperUnderlying } from '@/types/scalper'
 import type { OptionChainRow } from '@/types/scalping'
 import type { Order, Position } from '@/types/trading'
@@ -69,13 +69,7 @@ function UndoIcon({ className, flip }: { className?: string; flip?: boolean }) {
 export default function ScalperTerminal() {
   const { apiKey: storeApiKey } = useAuthStore()
   const { appMode } = useThemeStore()
-
-  // Scalper terminal defaults to Live mode
-  useEffect(() => {
-    if (useThemeStore.getState().appMode === 'analyzer') {
-      void useThemeStore.getState().toggleAppMode()
-    }
-  }, [])
+  const queryClient = useQueryClient()
 
   // 1. WebSocket config & API key (shares same auth as native Trading page)
   const [apiKey, setApiKey] = useState<string | null>(storeApiKey ?? null)
@@ -638,6 +632,15 @@ export default function ScalperTerminal() {
         refetchPositions()
         refetchOrders()
         refetchFunds()
+        // Invalidate universal app-wide query caches immediately
+        void queryClient.invalidateQueries({ queryKey: ['trading-dock'] })
+        void queryClient.invalidateQueries({ queryKey: ['positions'] })
+        void queryClient.invalidateQueries({ queryKey: ['orders'] })
+        void queryClient.invalidateQueries({ queryKey: ['funds'] })
+        void queryClient.invalidateQueries({ queryKey: ['orderbook'] })
+        void queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+        // Broadcast across all other open windows/tabs in 0ms
+        broadcastCrossTabEvent('ORDER_OR_POSITION_CHANGED')
       } else {
         showToast.error(resp?.message || 'Order failed')
       }
@@ -658,6 +661,15 @@ export default function ScalperTerminal() {
       })
       showToast.success(`Closed position for ${pos.symbol}`)
       refetchPositions()
+      refetchOrders()
+      refetchFunds()
+      void queryClient.invalidateQueries({ queryKey: ['trading-dock'] })
+      void queryClient.invalidateQueries({ queryKey: ['positions'] })
+      void queryClient.invalidateQueries({ queryKey: ['orders'] })
+      void queryClient.invalidateQueries({ queryKey: ['funds'] })
+      void queryClient.invalidateQueries({ queryKey: ['orderbook'] })
+      void queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+      broadcastCrossTabEvent('ORDER_OR_POSITION_CHANGED')
     } catch (e: any) {
       showToast.error(e?.message || 'Failed to close position')
     }
@@ -669,6 +681,11 @@ export default function ScalperTerminal() {
       await tradingApi.cancelOrder(orderId)
       showToast.success(`Order ${orderId} cancelled`)
       refetchOrders()
+      refetchFunds()
+      void queryClient.invalidateQueries({ queryKey: ['trading-dock'] })
+      void queryClient.invalidateQueries({ queryKey: ['orders'] })
+      void queryClient.invalidateQueries({ queryKey: ['orderbook'] })
+      broadcastCrossTabEvent('ORDER_OR_POSITION_CHANGED')
     } catch (e: any) {
       showToast.error(e?.message || 'Failed to cancel order')
     }
@@ -687,6 +704,11 @@ export default function ScalperTerminal() {
       await Promise.all(workingOrders.map((o) => tradingApi.cancelOrder(o.orderid)))
       showToast.success(`Cancelled ${workingOrders.length} working orders`)
       refetchOrders()
+      refetchFunds()
+      void queryClient.invalidateQueries({ queryKey: ['trading-dock'] })
+      void queryClient.invalidateQueries({ queryKey: ['orders'] })
+      void queryClient.invalidateQueries({ queryKey: ['orderbook'] })
+      broadcastCrossTabEvent('ORDER_OR_POSITION_CHANGED')
     } catch (e: any) {
       showToast.error(e?.message || 'Failed to cancel all orders')
     }
@@ -701,6 +723,14 @@ export default function ScalperTerminal() {
         showToast.success('Exit all positions requested')
         refetchPositions()
         refetchOrders()
+        refetchFunds()
+        void queryClient.invalidateQueries({ queryKey: ['trading-dock'] })
+        void queryClient.invalidateQueries({ queryKey: ['positions'] })
+        void queryClient.invalidateQueries({ queryKey: ['orders'] })
+        void queryClient.invalidateQueries({ queryKey: ['funds'] })
+        void queryClient.invalidateQueries({ queryKey: ['orderbook'] })
+        void queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+        broadcastCrossTabEvent('ORDER_OR_POSITION_CHANGED')
       } else {
         showToast.error(resp?.message || 'Exit all failed')
       }

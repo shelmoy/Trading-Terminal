@@ -2,6 +2,7 @@ import { ChevronDown, ChevronUp, Minus, Plus } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { cn, formatIndianNumber } from '@/lib/utils'
+import { useThemeStore } from '@/stores/themeStore'
 import type { Position } from '@/types/trading'
 
 interface Props {
@@ -47,8 +48,10 @@ export function ScalperMiniDeck({
   positions = [],
   onExecuteOrder,
   disabled = false,
-  appMode = 'live',
+  appMode: propAppMode,
 }: Props) {
+  const { appMode: storeAppMode } = useThemeStore()
+  const appMode = propAppMode || storeAppMode
   const [collapsed, setCollapsed] = useState(false)
   const [callLots, setCallLots] = useState(1)
   const [putLots, setPutLots] = useState(1)

@@ -47,13 +47,30 @@ def set_mode(mode):
             else:
                 logger.warning(f"Failed to stop execution engine: {message}")
 
-        return jsonify(
+        # Emit socket event to notify all connected clients in real time
+        try:
+            from extensions import socketio
+
+            socketio.emit(
+                "mode_changed",
+                {
+                    "mode": "analyze" if mode else "live",
+                    "analyze_mode": bool(mode),
+                },
+            )
+        except Exception as emit_err:
+            logger.debug(f"Failed to emit mode_changed from settings: {emit_err}")
+
+        resp = jsonify(
             {
                 "success": True,
                 "analyze_mode": bool(mode),
                 "message": f"Switched to {mode_name} Mode",
             }
         )
+        resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
+        resp.headers["Pragma"] = "no-cache"
+        return resp
     except Exception as e:
         logger.exception(f"Error setting analyze mode: {str(e)}")
         return jsonify({"error": "Failed to set analyze mode"}), 500

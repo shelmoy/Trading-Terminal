@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import { type AlertCategories, useAlertStore } from '@/stores/alertStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useSessionStore } from '@/stores/sessionStore'
+import { type AppMode, useThemeStore } from '@/stores/themeStore'
 
 // Audio throttling configuration
 const AUDIO_THROTTLE_MS = 1000
@@ -258,6 +259,15 @@ export function useSocket() {
     // Active sessions update (event-driven, no polling)
     socket.on('active_sessions_update', (data: { count: number }) => {
       useSessionStore.getState().setActiveSessionCount(data.count)
+    })
+
+    // Universal SDK app mode sync across all clients and tabs
+    socket.on('mode_changed', (data: { mode?: string; analyze_mode?: boolean }) => {
+      const targetMode: AppMode = data.analyze_mode ? 'analyzer' : 'live'
+      const current = useThemeStore.getState().appMode
+      if (current !== targetMode) {
+        useThemeStore.getState().setAppMode(targetMode, false)
+      }
     })
 
     // Analyzer update notification

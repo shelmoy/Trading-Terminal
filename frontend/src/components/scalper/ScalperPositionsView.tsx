@@ -56,7 +56,7 @@ import { usePageVisibility } from '@/hooks/usePageVisibility'
 import { useSupportedExchanges } from '@/hooks/useSupportedExchanges'
 import { cn, makeFormatCurrency, sanitizeCSV } from '@/lib/utils'
 import { useAuthStore } from '@/stores/authStore'
-import { onModeChange, useThemeStore } from '@/stores/themeStore'
+import { broadcastCrossTabEvent, onModeChange, useThemeStore } from '@/stores/themeStore'
 import type { MarginData, Position } from '@/types/trading'
 import { showToast } from '@/utils/toast'
 import { EmptyState } from '@/components/ui/empty-state'
@@ -531,6 +531,7 @@ export function ScalperPositionsView({
       if (response.status === 'success') {
         showToast.success(response.message || `Position closed for ${position.symbol}`, 'positions')
         fetchPositions(true)
+        broadcastCrossTabEvent('ORDER_OR_POSITION_CHANGED')
       } else {
         showToast.error(response.message || 'Failed to close position', 'positions')
       }

@@ -1129,7 +1129,7 @@ def get_analyzer_mode_status():
 
         current_mode = get_analyze_mode()
 
-        return jsonify(
+        resp = jsonify(
             {
                 "status": "success",
                 "data": {
@@ -1138,6 +1138,9 @@ def get_analyzer_mode_status():
                 },
             }
         )
+        resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
+        resp.headers["Pragma"] = "no-cache"
+        return resp
     except Exception as e:
         logger.exception(f"Error getting analyzer mode: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
@@ -1187,7 +1190,21 @@ def toggle_analyzer_mode_session():
                 "Analyzer mode disabled - Execution engine and square-off scheduler stopped"
             )
 
-        return jsonify(
+        # Emit socket event to notify all connected client tabs in real time
+        try:
+            from extensions import socketio
+
+            socketio.emit(
+                "mode_changed",
+                {
+                    "mode": "analyze" if new_mode else "live",
+                    "analyze_mode": new_mode,
+                },
+            )
+        except Exception as emit_err:
+            logger.debug(f"Failed to emit mode_changed: {emit_err}")
+
+        resp = jsonify(
             {
                 "status": "success",
                 "data": {
@@ -1197,6 +1214,9 @@ def toggle_analyzer_mode_session():
                 },
             }
         )
+        resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
+        resp.headers["Pragma"] = "no-cache"
+        return resp
 
     except Exception as e:
         logger.exception(f"Error toggling analyzer mode: {e}")

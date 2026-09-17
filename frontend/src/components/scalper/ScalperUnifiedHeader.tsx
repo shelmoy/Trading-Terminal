@@ -70,9 +70,12 @@ export function ScalperUnifiedHeader({
   netPnl,
   onExitAll,
   exitLoading = false,
-  appMode = 'live',
+  appMode: propAppMode,
   availableMargin,
 }: Props) {
+  const { appMode: storeAppMode, toggleAppMode, isTogglingMode } = useThemeStore()
+  const appMode = propAppMode || storeAppMode
+
   // Live prices for underlying indices/commodities
   const tickerItems = useMemo(
     () =>
@@ -99,7 +102,6 @@ export function ScalperUnifiedHeader({
   const isProfit = netPnl >= 0
 
   const [isFullscreen, setIsFullscreen] = useState(false)
-  const { toggleAppMode, isTogglingMode } = useThemeStore()
 
   const handleModeToggle = async () => {
     if (isTogglingMode) return

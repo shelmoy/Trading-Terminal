@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { io, type Socket } from 'socket.io-client'
 import { useSocketContext } from '@/components/socket/SocketProvider'
+import { onCrossTabEvent } from '@/stores/themeStore'
 
 /**
  * Supported Socket.IO event types for order-related updates
@@ -98,6 +99,17 @@ export function useOrderEventRefresh(
       })
     }
   }, [socket, eventsKey, delay, enabled])
+
+  // 0-1ms instant cross-tab action event sync across open windows/tabs
+  useEffect(() => {
+    if (!enabled) return
+    const unsubscribe = onCrossTabEvent((eventName) => {
+      if (eventName === 'ORDER_OR_POSITION_CHANGED') {
+        refreshFnRef.current()
+      }
+    })
+    return () => unsubscribe()
+  }, [enabled])
 }
 
 /**
