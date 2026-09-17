@@ -25,6 +25,7 @@ import {
 import { Switch } from '@/components/ui/switch'
 import { useSupportedExchanges } from '@/hooks/useSupportedExchanges'
 import Plot from '@/lib/Plot2D'
+import { cn } from '@/lib/utils'
 import { useThemeStore } from '@/stores/themeStore'
 import { showToast } from '@/utils/toast'
 
@@ -34,6 +35,15 @@ import { showToast } from '@/utils/toast'
 const DEFAULT_AROUND = 10
 const AROUND_OPTIONS = [5, 10, 15, 20] as const
 const AUTO_REFRESH_MS = 60_000
+
+export interface OIRangeProps {
+  initialExchange?: string
+  initialUnderlying?: string
+  initialExpiry?: string
+  className?: string
+  isEmbedded?: boolean
+  onSelectStrike?: (strike: number) => void
+}
 
 function convertExpiryForAPI(expiry: string): string {
   if (!expiry) return ''
@@ -51,7 +61,14 @@ function formatNumber(num: number): string {
   return num.toString()
 }
 
-export default function OIRange() {
+export default function OIRange({
+  initialExchange,
+  initialUnderlying,
+  initialExpiry,
+  className,
+  isEmbedded = false,
+  onSelectStrike,
+}: OIRangeProps = {}) {
   const { mode, appMode } = useThemeStore()
   const {
     toolsFnoExchanges: fnoExchanges,
@@ -61,13 +78,14 @@ export default function OIRange() {
   const isAnalyzer = appMode === 'analyzer'
   const isDark = mode === 'dark' || isAnalyzer
 
-  const [selectedExchange, setSelectedExchange] = useState(defaultFnoExchange)
+  const effectiveInitialExchange = initialExchange || defaultFnoExchange
+  const [selectedExchange, setSelectedExchange] = useState(effectiveInitialExchange)
   const [underlyings, setUnderlyings] = useState<string[]>(
-    defaultUnderlyings[defaultFnoExchange] || []
+    defaultUnderlyings[effectiveInitialExchange] || []
   )
   const [underlyingOpen, setUnderlyingOpen] = useState(false)
   const [selectedUnderlying, setSelectedUnderlying] = useState(
-    defaultUnderlyings[defaultFnoExchange]?.[0] || ''
+    initialUnderlying || defaultUnderlyings[effectiveInitialExchange]?.[0] || ''
   )
   const [expiries, setExpiries] = useState<string[]>([])
   const [selectedExpiry, setSelectedExpiry] = useState('')
@@ -83,18 +101,35 @@ export default function OIRange() {
   const [autoRefresh, setAutoRefresh] = useState(false)
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
 
-  // Re-sync exchange when broker capabilities load asynchronously
+  // Re-sync exchange when initialExchange changes or broker capabilities load
   useEffect(() => {
+    if (initialExchange) {
+      if (initialExchange !== selectedExchange) {
+        setSelectedExchange(initialExchange)
+      }
+      return
+    }
     setSelectedExchange((prev) =>
       prev && fnoExchanges.some((ex) => ex.value === prev) ? prev : defaultFnoExchange
     )
-  }, [defaultFnoExchange, fnoExchanges])
+  }, [defaultFnoExchange, fnoExchanges, initialExchange])
+
+  // Sync initialUnderlying if changed from parent
+  useEffect(() => {
+    if (initialUnderlying && initialUnderlying !== selectedUnderlying) {
+      setSelectedUnderlying(initialUnderlying)
+    }
+  }, [initialUnderlying])
 
   // Fetch underlyings when exchange changes
   useEffect(() => {
     const defaults = defaultUnderlyings[selectedExchange] || []
     setUnderlyings(defaults)
-    setSelectedUnderlying(defaults[0] || '')
+    if (initialUnderlying && (defaults.includes(initialUnderlying) || selectedExchange === initialExchange)) {
+      setSelectedUnderlying(initialUnderlying)
+    } else {
+      setSelectedUnderlying(defaults[0] || '')
+    }
     setExpiries([])
     setSelectedExpiry('')
     setOiData(null)
@@ -108,7 +143,9 @@ export default function OIRange() {
         if (cancelled) return
         if (response.status === 'success' && response.underlyings.length > 0) {
           setUnderlyings(response.underlyings)
-          if (!response.underlyings.includes(defaults[0])) {
+          if (initialUnderlying && response.underlyings.includes(initialUnderlying)) {
+            setSelectedUnderlying(initialUnderlying)
+          } else if (!response.underlyings.includes(defaults[0])) {
             setSelectedUnderlying(response.underlyings[0])
           }
         }
@@ -120,7 +157,7 @@ export default function OIRange() {
     return () => {
       cancelled = true
     }
-  }, [selectedExchange, defaultUnderlyings[selectedExchange]])
+  }, [selectedExchange, defaultUnderlyings[selectedExchange], initialUnderlying, initialExchange])
 
   // Fetch expiries when underlying changes
   useEffect(() => {
@@ -138,7 +175,15 @@ export default function OIRange() {
         if (cancelled) return
         if (response.status === 'success' && response.expiries.length > 0) {
           setExpiries(response.expiries)
-          setSelectedExpiry(response.expiries[0])
+          let picked = response.expiries[0]
+          if (initialExpiry) {
+            const normalizedInitial = convertExpiryForAPI(initialExpiry)
+            const matched = response.expiries.find(
+              (e) => convertExpiryForAPI(e) === normalizedInitial
+            )
+            if (matched) picked = matched
+          }
+          setSelectedExpiry(picked)
         } else {
           setExpiries([])
           setSelectedExpiry('')
@@ -153,7 +198,18 @@ export default function OIRange() {
     return () => {
       cancelled = true
     }
-  }, [selectedUnderlying, selectedExchange])
+  }, [selectedUnderlying, selectedExchange, initialExpiry])
+
+  // Sync initialExpiry when changed from parent
+  useEffect(() => {
+    if (initialExpiry && expiries.length > 0) {
+      const normalizedInitial = convertExpiryForAPI(initialExpiry)
+      const matched = expiries.find((e) => convertExpiryForAPI(e) === normalizedInitial)
+      if (matched && matched !== selectedExpiry) {
+        setSelectedExpiry(matched)
+      }
+    }
+  }, [initialExpiry, expiries, selectedExpiry])
 
   // Fetch OI data - uses requestIdRef to discard stale responses
   const fetchOIData = useCallback(async () => {
@@ -476,10 +532,10 @@ export default function OIRange() {
   const hasData = oiData?.status === 'success' && (oiData.chain?.length ?? 0) > 0
 
   return (
-    <div className="py-6 space-y-4">
+    <div className={cn('space-y-4', isEmbedded ? 'p-3 sm:p-5' : 'py-6', className)}>
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <h1 className="text-2xl font-bold">OI Range</h1>
+        <h1 className={cn('font-bold', isEmbedded ? 'text-xl' : 'text-2xl')}>OI Range</h1>
         <div className="flex flex-wrap items-center gap-3">
           {/* Exchange selector */}
           <Select value={selectedExchange} onValueChange={setSelectedExchange}>
@@ -739,7 +795,21 @@ export default function OIRange() {
               layout={plotData.layout}
               config={plotConfig}
               useResizeHandler
-              style={{ width: '100%', height: '500px' }}
+              style={{ width: '100%', height: isEmbedded ? '540px' : '500px' }}
+              onClick={(event: any) => {
+                if (onSelectStrike && event?.points?.[0]) {
+                  const pt = event.points[0]
+                  const strike =
+                    typeof pt.text === 'string'
+                      ? parseFloat(pt.text)
+                      : typeof pt.x === 'number'
+                      ? visibleChain[pt.x]?.strike
+                      : null
+                  if (strike != null && !isNaN(strike)) {
+                    onSelectStrike(strike)
+                  }
+                }
+              }}
             />
           ) : (
             <div className="flex items-center justify-center h-[500px] text-muted-foreground">

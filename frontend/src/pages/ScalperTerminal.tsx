@@ -25,7 +25,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import OIRange from '@/pages/OIRange'
 import { useMarketData } from '@/hooks/useMarketData'
 import { useOrderEventRefresh } from '@/hooks/useOrderEventRefresh'
 import { CHART_TYPE_GROUPS, CHART_TYPES, chartTypeIcon } from '@/lib/trading/chartTypes'
@@ -1261,97 +1261,21 @@ export default function ScalperTerminal() {
         />
       )}
 
-      {/* 2D. OPEN INTEREST / OPTION CHAIN WORKSPACE TAB */}
+      {/* 2D. OPEN INTEREST / OPTION CHAIN WORKSPACE TAB (OI RANGE) */}
       {activeTab === 'oi' && (
-        <div className="flex-1 min-h-0 flex flex-col bg-background text-foreground overflow-hidden">
-          <div className="px-6 py-2.5 border-b border-border flex items-center justify-between shrink-0 bg-card/30">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                Option Chain Matrix
-              </span>
-              <span className="font-semibold text-xs text-foreground">{underlying.name}</span>
-              {selectedExpiry && (
-                <span className="text-xs text-emerald-400 font-mono font-medium">
-                  ({selectedExpiry})
-                </span>
-              )}
-            </div>
-            <div className="text-xs text-muted-foreground">
-              {spotLtp && (
-                <span>
-                  Spot LTP: <span className="font-bold text-foreground">₹{spotLtp.toFixed(2)}</span>
-                </span>
-              )}
-            </div>
-          </div>
-
-          <div className="flex-1 overflow-auto">
-            <Table>
-              <TableHeader className="sticky top-0 bg-background/95 backdrop-blur-xs z-10">
-                <TableRow className="border-b border-border/60">
-                  <TableHead className="text-center font-bold text-emerald-400 text-xs" colSpan={2}>
-                    CALL (CE)
-                  </TableHead>
-                  <TableHead className="text-center font-bold text-foreground text-xs">
-                    STRIKE
-                  </TableHead>
-                  <TableHead className="text-center font-bold text-rose-400 text-xs" colSpan={2}>
-                    PUT (PE)
-                  </TableHead>
-                </TableRow>
-                <TableRow className="border-b border-border/40 text-[11px] text-muted-foreground">
-                  <TableHead className="pl-6">Symbol</TableHead>
-                  <TableHead className="text-right">LTP (₹)</TableHead>
-                  <TableHead className="text-center font-mono">Strike Price</TableHead>
-                  <TableHead className="text-left">LTP (₹)</TableHead>
-                  <TableHead className="pr-6 text-right">Symbol</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {strikeRows.map((row) => {
-                  const isAtm = row.strike === currentAtm
-                  return (
-                    <TableRow
-                      key={`oi-strike-${row.strike}`}
-                      className={cn(
-                        'border-b border-border/30 hover:bg-muted/30 transition-colors cursor-pointer text-xs',
-                        isAtm && 'bg-amber-500/10 hover:bg-amber-500/15'
-                      )}
-                      onClick={() => {
-                        setSelectedCallStrike(row.strike)
-                        setSelectedPutStrike(row.strike)
-                        setActiveTab('scalper')
-                        showToast.info(`Loaded ${row.strike} ATM strike into Scalper charts`)
-                      }}
-                    >
-                      <TableCell className="pl-6 font-mono text-muted-foreground text-[11px]">
-                        {row.ce?.symbol || '-'}
-                      </TableCell>
-                      <TableCell className="text-right font-mono font-bold text-emerald-400">
-                        {row.ce?.ltp ? `₹${row.ce.ltp.toFixed(2)}` : '-'}
-                      </TableCell>
-                      <TableCell className="text-center font-mono font-bold text-foreground">
-                        <span
-                          className={cn(
-                            'px-2 py-0.5 rounded text-xs',
-                            isAtm ? 'bg-amber-500 text-black font-extrabold' : ''
-                          )}
-                        >
-                          {row.strike} {isAtm ? '★' : ''}
-                        </span>
-                      </TableCell>
-                      <TableCell className="text-left font-mono font-bold text-rose-400">
-                        {row.pe?.ltp ? `₹${row.pe.ltp.toFixed(2)}` : '-'}
-                      </TableCell>
-                      <TableCell className="pr-6 text-right font-mono text-muted-foreground text-[11px]">
-                        {row.pe?.symbol || '-'}
-                      </TableCell>
-                    </TableRow>
-                  )
-                })}
-              </TableBody>
-            </Table>
-          </div>
+        <div className="flex-1 min-h-0 flex flex-col bg-background text-foreground overflow-y-auto">
+          <OIRange
+            isEmbedded={true}
+            initialExchange={underlying.foExchange}
+            initialUnderlying={underlying.symbol}
+            initialExpiry={selectedExpiry}
+            onSelectStrike={(strike) => {
+              setSelectedCallStrike(strike)
+              setSelectedPutStrike(strike)
+              setActiveTab('scalper')
+              showToast.info(`Loaded ${strike} strike into Scalper charts`)
+            }}
+          />
         </div>
       )}
     </div>
