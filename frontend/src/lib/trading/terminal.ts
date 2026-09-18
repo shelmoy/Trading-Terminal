@@ -279,6 +279,7 @@ export interface TerminalCallbacks {
   onDrawChange?(stats: DrawStats): void
   /** The live indicator list changed. */
   onIndicatorsChange?(list: { id: string; name: string }[]): void
+  onIndicatorRecordsChange?(records: SavedIndicatorRecord[]): void
   /**
    * The gear on an indicator's on-chart legend was clicked. The engine is
    * canvas-only and ships no DOM, so the form is ours to render.
@@ -706,6 +707,8 @@ export class TradingTerminal {
   /** True once a drawing control has been touched — gates the lazy tier fetch. */
   private drawEnabled = false
   private activeIndicators: SavedIndicatorRecord[] = []
+  private isLiveCounting = false
+  private lastLiveTickTime = 0
   private indicatorsLoaded = false
   /** Guards syncIndicators while applyIndicators is mid-flight. */
   private applyingIndicators = false
@@ -1606,7 +1609,7 @@ export class TradingTerminal {
       // ago. A live trading terminal is the case they are for, so this host opts
       // in. The clock reads the exchange's wall time through the chart's
       // configured timezone, which is what a trader is actually watching.
-      axisChrome: { sessionClock: { showOffset: true }, barCountdown: true },
+      axisChrome: { sessionClock: { showOffset: true }, barCountdown: this.isLiveCounting },
       // The library's built-in screenshot command calls its own
       // `downloadScreenshot()`, which knows nothing about this terminal's DOM
       // OHLC readout or its trade panel. Unbind it and claim the same chord for
@@ -2861,12 +2864,46 @@ export class TradingTerminal {
     if (!sameIndicatorRecords(this.activeIndicators, next)) {
       this.activeIndicators = next
       this.lsSet('indicators', JSON.stringify(this.activeIndicators))
+      this.cb.onIndicatorRecordsChange?.(this.activeIndicators)
     }
     const announced = this.listIndicators().map(({ id, name }) => ({ id, name }))
     if (!sameIndicatorInstances(this.announcedIndicators, announced)) {
       this.announcedIndicators = announced
       this.cb.onIndicatorsChange?.(announced)
     }
+  }
+
+  getIndicatorRecords(): SavedIndicatorRecord[] {
+    return [...this.activeIndicators]
+  }
+
+  async syncIndicatorRecords(records: SavedIndicatorRecord[]): Promise<void> {
+    if (!this.chart || this.destroyed) return
+    if (sameIndicatorRecords(this.activeIndicators, records)) return
+    this.activeIndicators = [...records]
+    this.lsSet('indicators', JSON.stringify(this.activeIndicators))
+    const current = this.chart.indicators()
+    if (
+      current.length === records.length &&
+      current.every((inst, idx) => inst.indicatorId === records[idx].indicatorId)
+    ) {
+      for (let i = 0; i < current.length; i++) {
+        const inst = current[i]
+        const rec = records[i]
+        if (inst.visible() !== (rec.visible !== false)) {
+          inst.setVisible(rec.visible !== false)
+        }
+        if (rec.settings && JSON.stringify(inst.settings()) !== JSON.stringify(rec.settings)) {
+          inst.setSettings(rec.settings)
+        }
+      }
+      this.syncIndicators()
+      return
+    }
+    for (const inst of current) {
+      this.chart.removeIndicator(inst.id)
+    }
+    await this.applyIndicators()
   }
 
   async addIndicatorById(indicatorId: string): Promise<void> {
@@ -3424,6 +3461,13 @@ export class TradingTerminal {
   /* single tick path shared by WS pushes and the REST fallback */
   private onTick(e: { symbol?: string; ltp: number; ltq?: number; timeSec?: number }) {
     if (!this.sym || (e.symbol && e.symbol !== this.sym.symbol)) return
+    if (this.ws) {
+      this.lastLiveTickTime = Date.now()
+      if (!this.isLiveCounting) {
+        this.isLiveCounting = true
+        this.chart?.setAxisChromeOptions({ barCountdown: true })
+      }
+    }
     this.lastLtp = e.ltp
     this.cb.onLtp(e.ltp)
     // Recolour with the price: the line belongs to the forming candle, so it
@@ -3852,6 +3896,8 @@ export class TradingTerminal {
     // that snapshot back. Carrying it across a symbol change would restore the
     // previous instrument's data onto the new one.
     this.stopReplay()
+    this.isLiveCounting = false
+    this.chart?.setAxisChromeOptions({ barCountdown: false })
     // swap the live stream: drop the previous symbol's subscription
     if (
       this.ws &&
@@ -4411,6 +4457,10 @@ export class TradingTerminal {
     this.offWsState = this.ws.onState((s) => {
       if (this.destroyed) return
       this.cb.onWsState(s)
+      if (s !== 'open') {
+        this.isLiveCounting = false
+        this.chart?.setAxisChromeOptions({ barCountdown: false })
+      }
       if (s === 'closed' || s === 'error' || s === 'reconnecting') this.startLtpFallback()
       // Back on the wire after a break: whatever closed between the drop and
       // now was never built from ticks, so reconcile at once instead of waiting
@@ -4462,7 +4512,13 @@ export class TradingTerminal {
     this.ws.subscribeOrders()
 
     if (this.bookTimer) clearInterval(this.bookTimer)
-    this.bookTimer = setInterval(() => this.pollBook(), 8000)
+    this.bookTimer = setInterval(() => {
+      this.pollBook()
+      if (this.isLiveCounting && Date.now() - this.lastLiveTickTime > 15000) {
+        this.isLiveCounting = false
+        this.chart?.setAxisChromeOptions({ barCountdown: false })
+      }
+    }, 8000)
 
     // restore initialSymbol or last symbol; fall back to BHEL/NSE if it's gone or has no data.
     let loaded = false
@@ -4544,5 +4600,7 @@ export class TradingTerminal {
     this.chart = null
     this.ws = null
     this.screenshotExcluded.length = 0
+    this.isLiveCounting = false
+    this.lastLiveTickTime = 0
   }
 }

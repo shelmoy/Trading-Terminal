@@ -29,6 +29,7 @@ import {
   type IndicatorSettingsRequest,
   type OrderTicketRequest,
   type ReplayState,
+  type SavedIndicatorRecord,
   type SymbolView,
   type TerminalCallbacks,
   TradingTerminal,
@@ -249,6 +250,7 @@ interface Props {
   hideBranding?: boolean
   /** Hide indicator description text on canvas while keeping calculations/drawings active. */
   hideIndicatorLegends?: boolean
+  onIndicatorRecordsChange?(paneId: string, records: SavedIndicatorRecord[]): void
 }
 
 /**
@@ -282,6 +284,7 @@ export function ChartPane({
   isFocused = false,
   hideBranding,
   hideIndicatorLegends,
+  onIndicatorRecordsChange,
 }: Props) {
   const chartRef = useRef<HTMLDivElement>(null)
   const legendRef = useRef<HTMLDivElement>(null)
@@ -304,6 +307,8 @@ export function ChartPane({
   terminalCbRef.current = onTerminalChange
   const objectsCbRef = useRef(onObjectsChange)
   objectsCbRef.current = onObjectsChange
+  const indicatorRecordsCbRef = useRef(onIndicatorRecordsChange)
+  indicatorRecordsCbRef.current = onIndicatorRecordsChange
   // The flag as it stands when the terminal boots; the effect below tracks it
   // from then on. Read through a ref so the boot effect does not re-run and
   // rebuild the terminal on every toggle.
@@ -437,6 +442,10 @@ export function ChartPane({
         noteHistory(s)
       },
       onIndicatorsChange: (list) => aliveRef.current && setIndicators(list),
+      onIndicatorRecordsChange: (records) => {
+        if (!aliveRef.current) return
+        indicatorRecordsCbRef.current?.(paneId, records)
+      },
       onIndicatorSettings: (req) => aliveRef.current && setIndSettings(req),
       onChartSettings: (req) => aliveRef.current && setChartSettings(req),
       onObjectsChange: (objects) => objectsCbRef.current?.(paneId, objects),

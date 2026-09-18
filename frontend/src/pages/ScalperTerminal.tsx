@@ -29,7 +29,7 @@ import OIRange from '@/pages/OIRange'
 import { useMarketData } from '@/hooks/useMarketData'
 import { useOrderEventRefresh } from '@/hooks/useOrderEventRefresh'
 import { CHART_TYPE_GROUPS, CHART_TYPES, chartTypeIcon } from '@/lib/trading/chartTypes'
-import type { TradingTerminal } from '@/lib/trading/terminal'
+import type { SavedIndicatorRecord, TradingTerminal } from '@/lib/trading/terminal'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/authStore'
 import { broadcastCrossTabEvent, onModeChange, useThemeStore } from '@/stores/themeStore'
@@ -511,25 +511,50 @@ export default function ScalperTerminal() {
       terminalsRef.current[paneId] = terminal
       terminal.setInterval(universalInterval)
       terminal.setChartType(universalChartType)
+      if (paneId !== 'scalper-spot') {
+        const spot = terminalsRef.current['scalper-spot']
+        if (spot) {
+          const recs = spot.getIndicatorRecords()
+          if (recs.length > 0) {
+            void terminal.syncIndicatorRecords(recs)
+          }
+        }
+      }
     } else {
       delete terminalsRef.current[paneId]
     }
   }, [universalInterval, universalChartType])
 
-  // Inherit indicators from native trading chart (oa-trading-p0-indicators)
   useEffect(() => {
-    const tradingIndicators = localStorage.getItem('oa-trading-p0-indicators')
-    if (tradingIndicators) {
+    const spotIndicators = localStorage.getItem('oa-trading-scalper-spot-indicators')
+    const sourceIndicators = spotIndicators || localStorage.getItem('oa-trading-p0-indicators')
+    if (sourceIndicators) {
       try {
-        const parsed = JSON.parse(tradingIndicators)
+        const parsed = JSON.parse(sourceIndicators)
         if (Array.isArray(parsed) && parsed.length > 0) {
           ;['scalper-spot', 'scalper-call', 'scalper-put'].forEach((paneId) => {
-            localStorage.setItem(`oa-trading-${paneId}-indicators`, tradingIndicators)
+            localStorage.setItem(`oa-trading-${paneId}-indicators`, sourceIndicators)
           })
         }
       } catch {
-        // ignore
       }
+    }
+  }, [])
+
+  const handleIndicatorRecordsChange = useCallback((paneId: string, records: SavedIndicatorRecord[]) => {
+    if (paneId !== 'scalper-spot') return
+    const callTerm = terminalsRef.current['scalper-call']
+    const putTerm = terminalsRef.current['scalper-put']
+    if (callTerm) void callTerm.syncIndicatorRecords(records)
+    if (putTerm) void putTerm.syncIndicatorRecords(records)
+    try {
+      localStorage.setItem('oa-trading-scalper-call-indicators', JSON.stringify(records))
+      localStorage.setItem('oa-trading-scalper-put-indicators', JSON.stringify(records))
+    } catch {
+    }
+    const spot = terminalsRef.current['scalper-spot']
+    if (spot) {
+      setUniversalIndicators(spot.listIndicators().map((i) => ({ id: i.id, name: i.name })))
     }
   }, [])
 
@@ -539,7 +564,6 @@ export default function ScalperTerminal() {
       try {
         localStorage.setItem(`oa-trading-${pid}-interval`, iv)
       } catch {
-        // ignore
       }
     })
     Object.values(terminalsRef.current).forEach((t) => {
@@ -553,7 +577,6 @@ export default function ScalperTerminal() {
       try {
         localStorage.setItem(`oa-trading-${pid}-chart-type`, ct)
       } catch {
-        // ignore
       }
     })
     Object.values(terminalsRef.current).forEach((t) => {
@@ -572,33 +595,36 @@ export default function ScalperTerminal() {
         setCatalog(cat)
         setUniversalIndicators(t.listIndicators().map((i) => ({ id: i.id, name: i.name })))
       } catch {
-        // fallback
       }
     }
     setIndicatorPickerOpen(true)
   }
 
   const handleAddUniversalIndicator = async (indicatorId: string) => {
-    await Promise.all(
-      Object.values(terminalsRef.current).map((t) => t?.addIndicatorById(indicatorId))
-    )
-    const t =
-      terminalsRef.current['scalper-spot'] ||
-      terminalsRef.current['scalper-call'] ||
-      terminalsRef.current['scalper-put']
+    const spot = terminalsRef.current['scalper-spot']
+    if (spot) {
+      await spot.addIndicatorById(indicatorId)
+    } else {
+      await Promise.all(
+        Object.values(terminalsRef.current).map((t) => t?.addIndicatorById(indicatorId))
+      )
+    }
+    const t = spot || Object.values(terminalsRef.current)[0]
     if (t) {
       setUniversalIndicators(t.listIndicators().map((i) => ({ id: i.id, name: i.name })))
     }
   }
 
   const handleRemoveUniversalIndicator = (instanceId: string) => {
-    Object.values(terminalsRef.current).forEach((t) => {
-      t?.removeIndicatorById(instanceId)
-    })
-    const t =
-      terminalsRef.current['scalper-spot'] ||
-      terminalsRef.current['scalper-call'] ||
-      terminalsRef.current['scalper-put']
+    const spot = terminalsRef.current['scalper-spot']
+    if (spot) {
+      spot.removeIndicatorById(instanceId)
+    } else {
+      Object.values(terminalsRef.current).forEach((t) => {
+        t?.removeIndicatorById(instanceId)
+      })
+    }
+    const t = spot || Object.values(terminalsRef.current)[0]
     if (t) {
       setUniversalIndicators(t.listIndicators().map((i) => ({ id: i.id, name: i.name })))
     }
@@ -1079,6 +1105,7 @@ export default function ScalperTerminal() {
                       linkGroup={linkRef.current}
                       onTerminalChange={noteTerminal}
                       onFocusPane={(_, pid) => pid && setFocusedPaneId(pid)}
+                      onIndicatorRecordsChange={handleIndicatorRecordsChange}
                       armed={armed}
                       hideToolbar={true}
                       hideBranding={false}
@@ -1112,6 +1139,7 @@ export default function ScalperTerminal() {
                       linkGroup={linkRef.current}
                       onTerminalChange={noteTerminal}
                       onFocusPane={(_, pid) => pid && setFocusedPaneId(pid)}
+                      onIndicatorRecordsChange={handleIndicatorRecordsChange}
                       armed={armed}
                       hideToolbar={true}
                       hideBranding={true}
@@ -1145,6 +1173,7 @@ export default function ScalperTerminal() {
                       linkGroup={linkRef.current}
                       onTerminalChange={noteTerminal}
                       onFocusPane={(_, pid) => pid && setFocusedPaneId(pid)}
+                      onIndicatorRecordsChange={handleIndicatorRecordsChange}
                       armed={armed}
                       hideToolbar={true}
                       hideBranding={true}

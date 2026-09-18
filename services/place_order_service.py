@@ -13,11 +13,24 @@ from utils.constants import (
     VALID_PRICE_TYPES,
     VALID_PRODUCT_TYPES,
 )
+from marshmallow import ValidationError
+
 from utils.event_bus import bus
 from utils.logging import get_logger
 
 # Initialize logger
 logger = get_logger(__name__)
+
+_order_schema = None
+
+
+def get_order_schema():
+    global _order_schema
+    if _order_schema is None:
+        from restx_api.schemas import OrderSchema
+
+        _order_schema = OrderSchema()
+    return _order_schema
 
 
 @lru_cache(maxsize=32)
@@ -108,8 +121,10 @@ def validate_order_data(data: dict[str, Any]) -> tuple[bool, dict[str, Any] | No
 
     # Validate and deserialize input
     try:
-        order_data = order_schema.load(data)
+        order_data = get_order_schema().load(data)
         return True, order_data, None
+    except ValidationError as err:
+        return False, None, str(err.messages)
     except Exception as err:
         return False, None, str(err)
 
