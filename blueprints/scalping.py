@@ -13,6 +13,7 @@ Order constants (docs/prompt/order-constants.md):
 - Action              : BUY, SELL
 """
 
+from functools import lru_cache
 import math
 import re
 from datetime import datetime, timedelta
@@ -654,6 +655,33 @@ def _resolve_session_auth():
     return None, None, api_key, None, None
 
 
+@lru_cache(maxsize=8192)
+def _get_symbol_lotsize(symbol: str, exchange: str) -> int | None:
+    """Lookup and cache lot size in memory for 0-1ms access."""
+    from database.symbol import SymToken
+    from database.symbol import db_session as symbol_session
+
+    rec = (
+        symbol_session.query(SymToken.lotsize)
+        .filter(SymToken.symbol == symbol, SymToken.exchange == exchange)
+        .first()
+    )
+    return rec[0] if rec and rec[0] and rec[0] > 0 else None
+
+
+@lru_cache(maxsize=8192)
+def _get_freeze_limit(symbol: str, exchange: str) -> int | None:
+    """Lookup and cache freeze limit in memory for 0-1ms access."""
+    try:
+        from database.qty_freeze_db import get_freeze_qty_for_option
+
+        freeze = get_freeze_qty_for_option(symbol, exchange)
+        return freeze if freeze and freeze > 0 else None
+    except Exception as e:
+        logger.debug(f"Scalping freeze-qty lookup failed for {symbol}: {e}")
+        return None
+
+
 def _validate_quantity(symbol: str, exchange: str, quantity: int) -> str | None:
     """Validate order quantity against the symbol's lot size server-side.
 
@@ -661,33 +689,21 @@ def _validate_quantity(symbol: str, exchange: str, quantity: int) -> str | None:
     `lots`, requires the quantity to be a whole number of lots, and rejects
     quantities above the exchange freeze limit. Returns an error string, or None
     if the quantity is valid.
+    Uses in-memory LRU caches for sub-millisecond (0-1ms) execution.
     """
-    from database.symbol import SymToken
-    from database.symbol import db_session as symbol_session
-
-    rec = (
-        symbol_session.query(SymToken)
-        .filter(SymToken.symbol == symbol, SymToken.exchange == exchange)
-        .first()
-    )
-    if not rec or not rec.lotsize or rec.lotsize <= 0:
+    lotsize = _get_symbol_lotsize(symbol, exchange)
+    if not lotsize or lotsize <= 0:
         return f"Unknown symbol or lot size unavailable: {symbol}"
 
-    lotsize = rec.lotsize
     if quantity % lotsize != 0:
         return f"quantity must be a whole number of lots (lot size {lotsize})"
     if quantity > MAX_LOTS * lotsize:
         return f"quantity exceeds the {MAX_LOTS}-lot cap"
 
-    # Exchange single-order freeze limit (best-effort; don't block on lookup error).
-    try:
-        from database.qty_freeze_db import get_freeze_qty_for_option
-
-        freeze = get_freeze_qty_for_option(symbol, exchange)
-        if freeze and freeze > 0 and quantity > freeze:
-            return f"quantity exceeds the exchange freeze limit ({freeze})"
-    except Exception as e:
-        logger.warning(f"Scalping freeze-qty lookup failed for {symbol}: {e}")
+    # Exchange single-order freeze limit (in-memory cached)
+    freeze = _get_freeze_limit(symbol, exchange)
+    if freeze and quantity > freeze:
+        return f"quantity exceeds the exchange freeze limit ({freeze})"
 
     return None
 

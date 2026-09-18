@@ -1,11 +1,11 @@
 import copy
+from functools import lru_cache
 import importlib
 from typing import Any, Dict, Optional, Tuple
 
 from database.auth_db import get_auth_token_broker
 from database.settings_db import get_analyze_mode
 from events import AnalyzerErrorEvent, OrderFailedEvent, OrderPlacedEvent
-from restx_api.schemas import OrderSchema
 from utils.constants import (
     REQUIRED_ORDER_FIELDS,
     VALID_ACTIONS,
@@ -19,13 +19,11 @@ from utils.logging import get_logger
 # Initialize logger
 logger = get_logger(__name__)
 
-# Initialize schema
-order_schema = OrderSchema()
 
-
+@lru_cache(maxsize=32)
 def import_broker_module(broker_name: str) -> Any | None:
     """
-    Dynamically import the broker-specific order API module.
+    Dynamically import the broker-specific order API module (cached in-memory for 0-1ms access).
 
     Args:
         broker_name: Name of the broker

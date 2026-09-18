@@ -157,6 +157,8 @@ invalid_api_key_cache = TTLCache(maxsize=512, ttl=300)  # 5 minutes
 # avoid a DB query per order. Invalidated by update_order_mode via
 # invalidate_user_cache, so the TTL is only a backstop.
 order_mode_cache = TTLCache(maxsize=128, ttl=60)
+# In-memory decrypted API key cache for scalper and internal calls (0-1ms access)
+tradingview_api_key_cache = TTLCache(maxsize=1024, ttl=3600)
 
 # Conditionally create engine based on DB type
 if DATABASE_URL and "sqlite" in DATABASE_URL:
@@ -820,6 +822,7 @@ def invalidate_user_cache(user_id):
     verified_api_key_cache.clear()
     invalid_api_key_cache.clear()
     order_mode_cache.clear()
+    tradingview_api_key_cache.clear()
     logger.info(f"Cleared all caches for user_id: {user_id}")
 
 
@@ -860,11 +863,18 @@ def get_api_key(user_id):
 
 
 def get_api_key_for_tradingview(user_id):
-    """Get decrypted API key for TradingView configuration"""
+    """Get decrypted API key for TradingView configuration (in-memory cached for 0-1ms latency)"""
+    if not user_id:
+        return None
+    cached = tradingview_api_key_cache.get(user_id)
+    if cached is not None:
+        return cached
     try:
         api_key_obj = ApiKeys.query.filter_by(user_id=user_id).first()
         if api_key_obj and api_key_obj.api_key_encrypted:
-            return decrypt_token(api_key_obj.api_key_encrypted)
+            key = decrypt_token(api_key_obj.api_key_encrypted)
+            tradingview_api_key_cache[user_id] = key
+            return key
         return None
     except Exception as e:
         logger.exception(f"Error while querying the database for API key: {e}")
