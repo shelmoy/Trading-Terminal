@@ -1028,14 +1028,13 @@ export default function ScalperTerminal() {
                   <div
                     onClick={() => setFocusedPaneId('scalper-spot')}
                     className={cn(
-                      'relative h-full w-full bg-background overflow-hidden transition-[ring,box-shadow] duration-75 rounded-lg p-0.5',
+                      'relative h-full w-full bg-background overflow-hidden transition-all duration-100 rounded-lg p-0.5 border border-border/80',
                       layoutMode === 'grid' && 'col-span-1 row-span-2',
                       layoutMode === 'columns' && 'order-2 col-span-1',
                       layoutMode === 'spot' && 'flex-1',
                       (layoutMode === 'call' || layoutMode === 'put') && 'hidden',
-                      'hover:ring-2 hover:ring-sky-500 hover:z-20 hover:shadow-[0_0_15px_rgba(14,165,233,0.35)]',
-                      focusedPaneId === 'scalper-spot' &&
-                        'ring-2 ring-sky-500 shadow-[0_0_12px_rgba(14,165,233,0.25)] z-10'
+                      'hover:border-primary/50',
+                      focusedPaneId === 'scalper-spot' && 'ring-1.5 ring-primary border-primary z-10'
                     )}
                   >
                     <ChartPane
@@ -1051,10 +1050,7 @@ export default function ScalperTerminal() {
                       initialSymbol={spotSymbolObj}
                       symbol={spotSymbolObj}
                       isFocused={focusedPaneId === 'scalper-spot'}
-                      className={cn(
-                        'hover:border-sky-500',
-                        focusedPaneId === 'scalper-spot' && 'border-sky-500 ring-1 ring-sky-500/80'
-                      )}
+                      className={cn(focusedPaneId === 'scalper-spot' && 'border-primary')}
                     />
                   </div>
 
@@ -1062,14 +1058,13 @@ export default function ScalperTerminal() {
                   <div
                     onClick={() => setFocusedPaneId('scalper-call')}
                     className={cn(
-                      'relative h-full w-full bg-background overflow-hidden transition-[ring,box-shadow] duration-75 rounded-lg p-0.5',
+                      'relative h-full w-full bg-background overflow-hidden transition-all duration-100 rounded-lg p-0.5 border border-border/80',
                       layoutMode === 'grid' && 'col-span-1 row-span-1',
                       layoutMode === 'columns' && 'order-1 col-span-1',
                       layoutMode === 'call' && 'flex-1',
                       (layoutMode === 'spot' || layoutMode === 'put') && 'hidden',
-                      'hover:ring-2 hover:ring-emerald-500 hover:z-20 hover:shadow-[0_0_15px_rgba(16,185,129,0.35)]',
-                      focusedPaneId === 'scalper-call' &&
-                        'ring-2 ring-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.25)] z-10'
+                      'hover:border-primary/50',
+                      focusedPaneId === 'scalper-call' && 'ring-1.5 ring-primary border-primary z-10'
                     )}
                   >
                     <ChartPane
@@ -1085,10 +1080,7 @@ export default function ScalperTerminal() {
                       initialSymbol={callSymbolObj}
                       symbol={callSymbolObj}
                       isFocused={focusedPaneId === 'scalper-call'}
-                      className={cn(
-                        'hover:border-emerald-500',
-                        focusedPaneId === 'scalper-call' && 'border-emerald-500 ring-1 ring-emerald-500/80'
-                      )}
+                      className={cn(focusedPaneId === 'scalper-call' && 'border-primary')}
                     />
                   </div>
 
@@ -1096,14 +1088,13 @@ export default function ScalperTerminal() {
                   <div
                     onClick={() => setFocusedPaneId('scalper-put')}
                     className={cn(
-                      'relative h-full w-full bg-background overflow-hidden transition-[ring,box-shadow] duration-75 rounded-lg p-0.5',
+                      'relative h-full w-full bg-background overflow-hidden transition-all duration-100 rounded-lg p-0.5 border border-border/80',
                       layoutMode === 'grid' && 'col-span-1 row-span-1',
                       layoutMode === 'columns' && 'order-3 col-span-1',
                       layoutMode === 'put' && 'flex-1',
                       (layoutMode === 'spot' || layoutMode === 'call') && 'hidden',
-                      'hover:ring-2 hover:ring-rose-500 hover:z-20 hover:shadow-[0_0_15px_rgba(244,63,94,0.35)]',
-                      focusedPaneId === 'scalper-put' &&
-                        'ring-2 ring-rose-500 shadow-[0_0_12px_rgba(244,63,94,0.25)] z-10'
+                      'hover:border-primary/50',
+                      focusedPaneId === 'scalper-put' && 'ring-1.5 ring-primary border-primary z-10'
                     )}
                   >
                     <ChartPane
@@ -1119,10 +1110,7 @@ export default function ScalperTerminal() {
                       initialSymbol={putSymbolObj}
                       symbol={putSymbolObj}
                       isFocused={focusedPaneId === 'scalper-put'}
-                      className={cn(
-                        'hover:border-rose-500',
-                        focusedPaneId === 'scalper-put' && 'border-rose-500 ring-1 ring-rose-500/80'
-                      )}
+                      className={cn(focusedPaneId === 'scalper-put' && 'border-primary')}
                     />
                   </div>
                 </div>
@@ -1234,6 +1222,7 @@ export default function ScalperTerminal() {
           lotSize={selectedCallRow?.ce?.lotsize || selectedPutRow?.pe?.lotsize || underlying.lotSize || 1}
           positions={positions}
           onExecuteOrder={handleExecuteOrder}
+          onExitAll={handleExitAll}
           appMode={appMode}
           collapsed={deckCollapsed}
           onToggleCollapse={() => setDeckCollapsed((c) => !c)}

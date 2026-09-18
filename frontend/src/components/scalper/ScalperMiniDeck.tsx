@@ -47,6 +47,7 @@ interface Props {
   selectedExpiry?: string
   expiries?: string[]
   onSelectExpiry?: (exp: string) => void
+  onExitAll?: () => Promise<void>
 }
 
 /**
@@ -213,7 +214,6 @@ function GrowwStrikeSelector({
 
   // Currently selected strike's stats
   const selectedItem = evaluatedLadder.find((s) => s.strike === selectedStrike)
-  const currentLabel = selectedItem?.label || (selectedStrike === atmStrike ? 'ATM' : '')
   const currentLtp = selectedItem?.liveLtp ?? ltp
   const currentChg = selectedItem?.chgPct ?? 0
 
@@ -233,20 +233,15 @@ function GrowwStrikeSelector({
         type="button"
         onClick={() => setOpen((prev) => !prev)}
         className={cn(
-          'h-7 px-2.5 rounded-md border text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs',
-          'bg-background/90 hover:bg-muted/70 border-border/80 text-foreground',
-          open && 'ring-1 ring-primary border-primary bg-muted/50'
+          'h-7 px-2.5 rounded-lg border text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs',
+          'bg-muted/40 hover:bg-muted/70 border-border/80 text-foreground backdrop-blur-md',
+          open && 'ring-1 ring-primary border-primary bg-muted/60'
         )}
         title={`Click to open ${type} Strike Selector`}
       >
-        <span className={cn('font-mono font-bold', isCe ? 'text-emerald-400' : 'text-rose-400')}>
+        <span className={cn('font-mono font-bold text-xs', isCe ? 'text-emerald-400' : 'text-rose-400')}>
           {selectedStrike > 0 ? `${selectedStrike} ${type}` : `Select ${type}`}
         </span>
-        {currentLabel && (
-          <span className="text-[9px] px-1 py-0.2 rounded bg-muted font-bold text-muted-foreground font-mono">
-            {currentLabel}
-          </span>
-        )}
         {currentLtp !== undefined && currentLtp > 0 && (
           <span className="font-mono text-[11px] font-semibold text-foreground ml-0.5">
             ₹{currentLtp.toFixed(2)}
@@ -447,6 +442,7 @@ export function ScalperMiniDeck({
   selectedExpiry,
   expiries,
   onSelectExpiry,
+  onExitAll,
 }: Props) {
   const { appMode: storeAppMode } = useThemeStore()
   const appMode = propAppMode || storeAppMode
@@ -493,44 +489,13 @@ export function ScalperMiniDeck({
     [positions, putSymbol]
   )
 
-  // Find ATM index in sorted strikes
-  const atmIdx = useMemo(() => {
-    if (!strikes.length) return -1
-    let closestIdx = 0
-    let minDiff = Math.abs(strikes[0] - atmStrike)
-    for (let i = 1; i < strikes.length; i++) {
-      const diff = Math.abs(strikes[i] - atmStrike)
-      if (diff < minDiff) {
-        minDiff = diff
-        closestIdx = i
-      }
-    }
-    return closestIdx
-  }, [strikes, atmStrike])
-
-  // Call quick strikes (lower = ITM, higher = OTM)
-  const callQuickPills = useMemo(() => {
-    if (atmIdx === -1) return []
-    return [
-      { label: 'ITM 2', strike: strikes[atmIdx - 2] },
-      { label: 'ITM 1', strike: strikes[atmIdx - 1] },
-      { label: 'ATM', strike: strikes[atmIdx] },
-      { label: 'OTM 1', strike: strikes[atmIdx + 1] },
-      { label: 'OTM 2', strike: strikes[atmIdx + 2] },
-    ].filter((p) => p.strike !== undefined)
-  }, [strikes, atmIdx])
-
-  // Put quick strikes (higher = ITM, lower = OTM)
-  const putQuickPills = useMemo(() => {
-    if (atmIdx === -1) return []
-    return [
-      { label: 'ITM 2', strike: strikes[atmIdx + 2] },
-      { label: 'ITM 1', strike: strikes[atmIdx + 1] },
-      { label: 'ATM', strike: strikes[atmIdx] },
-      { label: 'OTM 1', strike: strikes[atmIdx - 1] },
-      { label: 'OTM 2', strike: strikes[atmIdx - 2] },
-    ].filter((p) => p.strike !== undefined)
-  }, [strikes, atmIdx])
+  // Overall position stats
+  const totalPnl = useMemo(() => {
+    return positions.reduce((acc, p) => acc + (p.pnl || 0), 0)
+  }, [positions])
+  const hasOpenPositions = useMemo(() => {
+    return positions.some((p) => Math.abs(p.quantity ?? 0) > 0)
+  }, [positions])
 
   // Instant 1-Click Order Execution
   const handleOrder = async (side: 'CALL' | 'PUT', action: 'BUY' | 'SELL') => {
@@ -609,40 +574,10 @@ export function ScalperMiniDeck({
   }
 
   return (
-    <div className="bg-card/95 border-t border-border/80 px-3 py-1.5 flex items-center justify-between gap-3 text-xs select-none shrink-0 shadow-lg z-20">
+    <div className="bg-card/90 backdrop-blur-xl border-t border-border/80 px-3 py-1 flex items-center justify-between gap-2 text-xs select-none shrink-0 shadow-lg z-20">
       {/* 1. CALL EXECUTION PAD (LEFT) */}
-      <div className="flex items-center gap-2 min-w-0">
-        <div className="flex flex-col">
-          <div className="flex items-center gap-1.5">
-            <span className="font-bold text-emerald-400 text-[11px] tracking-wide">
-              CALL (CE)
-            </span>
-            {callLtp !== undefined && (
-              <span className="font-mono text-[11px] font-semibold text-foreground">
-                ₹{callLtp.toFixed(2)}
-              </span>
-            )}
-            {callPosition && (
-              <span
-                className={cn(
-                  'text-[9px] font-bold px-1 py-0.2 rounded font-mono border',
-                  callPosition.pnl >= 0
-                    ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
-                    : 'bg-rose-500/15 text-rose-400 border-rose-500/30'
-                )}
-                title={`Running CE Position: ${callPosition.quantity} Qty, P&L: ₹${callPosition.pnl.toFixed(2)}`}
-              >
-                Pos: {callPosition.quantity > 0 ? '+' : ''}
-                {callPosition.quantity} ({callPosition.pnl >= 0 ? '+' : ''}₹{callPosition.pnl.toFixed(0)})
-              </span>
-            )}
-          </div>
-          <span className="text-[10px] text-muted-foreground truncate max-w-[125px]" title={callSymbol}>
-            {callSymbol || 'No symbol'}
-          </span>
-        </div>
-
-        {/* Groww 915 Style Strike Selector */}
+      <div className="flex items-center gap-1.5 min-w-0">
+        {/* Groww Style Strike Selector */}
         <GrowwStrikeSelector
           type="CE"
           selectedStrike={callStrike}
@@ -657,31 +592,8 @@ export function ScalperMiniDeck({
           onSelectExpiry={onSelectExpiry}
         />
 
-        {/* Quick Strike Pills */}
-        <div className="flex items-center gap-0.5 bg-muted/30 p-0.5 rounded-md border border-border/40">
-          {callQuickPills.map((p) => {
-            const isSelected = p.strike === callStrike
-            return (
-              <button
-                key={`ce-${p.label}-${p.strike}`}
-                type="button"
-                onClick={() => onSelectCallStrike(p.strike)}
-                className={cn(
-                  'px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors cursor-pointer',
-                  isSelected
-                    ? 'bg-emerald-500 text-white font-bold shadow-xs'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
-                )}
-                title={`${p.strike} CE`}
-              >
-                {p.label}
-              </button>
-            )
-          })}
-        </div>
-
         {/* Call Lots & Quantity Counter with Editable Input */}
-        <div className="flex items-center bg-background border border-border rounded h-7 px-1">
+        <div className="flex items-center bg-background/80 border border-border/70 rounded-md h-7 px-1">
           <button
             type="button"
             onClick={() => {
@@ -739,10 +651,10 @@ export function ScalperMiniDeck({
         {/* Call Margin Required Pill */}
         {callMargin > 0 && (
           <div
-            className="hidden sm:flex items-center px-1.5 py-0.5 rounded bg-muted/40 border border-border/40 text-[10px] font-mono text-muted-foreground whitespace-nowrap"
+            className="hidden md:flex items-center px-1.5 py-0.5 rounded bg-muted/40 border border-border/40 text-[10px] font-mono text-muted-foreground whitespace-nowrap"
             title={`Required Margin for ${callQty} Qty at LTP ₹${callLtp?.toFixed(2)}`}
           >
-            <span>Margin: ~₹{formatIndianNumber(callMargin)}</span>
+            <span>~₹{formatIndianNumber(callMargin)}</span>
           </div>
         )}
 
@@ -767,10 +679,26 @@ export function ScalperMiniDeck({
             SELL CE
           </Button>
         </div>
+
+        {/* Running CE Position Badge */}
+        {callPosition && (
+          <span
+            className={cn(
+              'text-[9px] font-bold px-1.5 py-0.5 rounded font-mono border whitespace-nowrap hidden sm:inline-flex',
+              callPosition.pnl >= 0
+                ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+                : 'bg-rose-500/15 text-rose-400 border-rose-500/30'
+            )}
+            title={`Running CE Position: ${callPosition.quantity} Qty, P&L: ₹${callPosition.pnl.toFixed(2)}`}
+          >
+            Pos: {callPosition.quantity > 0 ? '+' : ''}
+            {callPosition.quantity} ({callPosition.pnl >= 0 ? '+' : ''}₹{callPosition.pnl.toFixed(0)})
+          </span>
+        )}
       </div>
 
-      {/* 2. CENTER CONTROLS (PRODUCT BADGE, STATUS, COLLAPSE BUTTON) */}
-      <div className="flex items-center gap-1.5 shrink-0 border-x border-border/60 px-2">
+      {/* 2. CENTER CONTROLS (PRODUCT BADGE, P&L, EXIT ALL, HIDE BUTTON) */}
+      <div className="flex items-center gap-1.5 shrink-0 border-x border-border/60 px-2.5">
         <span
           className="text-[9px] font-bold text-muted-foreground bg-muted/60 border border-border/50 px-1.5 py-0.5 rounded"
           title="Orders are placed with NRML product by default"
@@ -782,6 +710,29 @@ export function ScalperMiniDeck({
           <span className="text-[9px] font-bold text-purple-400 bg-purple-500/15 border border-purple-500/30 px-1.5 py-0.5 rounded tracking-wide">
             SANDBOX
           </span>
+        )}
+
+        {hasOpenPositions && (
+          <div className="flex items-center gap-1">
+            <span
+              className={cn(
+                'font-mono text-[10px] font-bold px-1.5 py-0.5 rounded tabular-nums',
+                totalPnl >= 0 ? 'text-emerald-400 bg-emerald-500/10' : 'text-rose-400 bg-rose-500/10'
+              )}
+            >
+              P&L: {totalPnl >= 0 ? '+' : ''}₹{totalPnl.toFixed(0)}
+            </span>
+            {onExitAll && (
+              <button
+                type="button"
+                onClick={onExitAll}
+                className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-400 hover:bg-rose-500/30 border border-rose-500/30 cursor-pointer transition-colors"
+                title="Exit all open scalper positions"
+              >
+                Exit All
+              </button>
+            )}
+          </div>
         )}
 
         {/* Minimize deck button */}
@@ -797,7 +748,23 @@ export function ScalperMiniDeck({
       </div>
 
       {/* 3. PUT EXECUTION PAD (RIGHT) */}
-      <div className="flex items-center gap-2 min-w-0">
+      <div className="flex items-center gap-1.5 min-w-0">
+        {/* Running PE Position Badge */}
+        {putPosition && (
+          <span
+            className={cn(
+              'text-[9px] font-bold px-1.5 py-0.5 rounded font-mono border whitespace-nowrap hidden sm:inline-flex',
+              putPosition.pnl >= 0
+                ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+                : 'bg-rose-500/15 text-rose-400 border-rose-500/30'
+            )}
+            title={`Running PE Position: ${putPosition.quantity} Qty, P&L: ₹${putPosition.pnl.toFixed(2)}`}
+          >
+            Pos: {putPosition.quantity > 0 ? '+' : ''}
+            {putPosition.quantity} ({putPosition.pnl >= 0 ? '+' : ''}₹{putPosition.pnl.toFixed(0)})
+          </span>
+        )}
+
         {/* Put Buy (Blue) & Sell (Red) 1-Click Buttons */}
         <div className="flex items-center gap-1">
           <Button
@@ -823,15 +790,15 @@ export function ScalperMiniDeck({
         {/* Put Margin Required Pill */}
         {putMargin > 0 && (
           <div
-            className="hidden sm:flex items-center px-1.5 py-0.5 rounded bg-muted/40 border border-border/40 text-[10px] font-mono text-muted-foreground whitespace-nowrap"
+            className="hidden md:flex items-center px-1.5 py-0.5 rounded bg-muted/40 border border-border/40 text-[10px] font-mono text-muted-foreground whitespace-nowrap"
             title={`Required Margin for ${putQty} Qty at LTP ₹${putLtp?.toFixed(2)}`}
           >
-            <span>Margin: ~₹{formatIndianNumber(putMargin)}</span>
+            <span>~₹{formatIndianNumber(putMargin)}</span>
           </div>
         )}
 
         {/* Put Lots & Quantity Counter with Editable Input */}
-        <div className="flex items-center bg-background border border-border rounded h-7 px-1">
+        <div className="flex items-center bg-background/80 border border-border/70 rounded-md h-7 px-1">
           <button
             type="button"
             onClick={() => {
@@ -886,7 +853,7 @@ export function ScalperMiniDeck({
           </button>
         </div>
 
-        {/* Groww 915 Style Strike Selector */}
+        {/* Groww Style Strike Selector */}
         <GrowwStrikeSelector
           type="PE"
           selectedStrike={putStrike}
@@ -900,59 +867,6 @@ export function ScalperMiniDeck({
           expiries={expiries}
           onSelectExpiry={onSelectExpiry}
         />
-
-        {/* Quick Strike Pills */}
-        <div className="flex items-center gap-0.5 bg-muted/30 p-0.5 rounded-md border border-border/40">
-          {putQuickPills.map((p) => {
-            const isSelected = p.strike === putStrike
-            return (
-              <button
-                key={`pe-${p.label}-${p.strike}`}
-                type="button"
-                onClick={() => onSelectPutStrike(p.strike)}
-                className={cn(
-                  'px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors cursor-pointer',
-                  isSelected
-                    ? 'bg-rose-500 text-white font-bold shadow-xs'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
-                )}
-                title={`${p.strike} PE`}
-              >
-                {p.label}
-              </button>
-            )
-          })}
-        </div>
-
-        <div className="flex flex-col text-right">
-          <div className="flex items-center justify-end gap-1.5">
-            {putPosition && (
-              <span
-                className={cn(
-                  'text-[9px] font-bold px-1 py-0.2 rounded font-mono border',
-                  putPosition.pnl >= 0
-                    ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
-                    : 'bg-rose-500/15 text-rose-400 border-rose-500/30'
-                )}
-                title={`Running PE Position: ${putPosition.quantity} Qty, P&L: ₹${putPosition.pnl.toFixed(2)}`}
-              >
-                Pos: {putPosition.quantity > 0 ? '+' : ''}
-                {putPosition.quantity} ({putPosition.pnl >= 0 ? '+' : ''}₹{putPosition.pnl.toFixed(0)})
-              </span>
-            )}
-            <span className="font-bold text-rose-400 text-[11px] tracking-wide">
-              PUT (PE)
-            </span>
-            {putLtp !== undefined && (
-              <span className="font-mono text-[11px] font-semibold text-foreground">
-                ₹{putLtp.toFixed(2)}
-              </span>
-            )}
-          </div>
-          <span className="text-[10px] text-muted-foreground truncate max-w-[125px]" title={putSymbol}>
-            {putSymbol || 'No symbol'}
-          </span>
-        </div>
       </div>
     </div>
   )
