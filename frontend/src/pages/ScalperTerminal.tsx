@@ -101,6 +101,34 @@ export default function ScalperTerminal() {
   const [activeTab, setActiveTab] = useState<ScalperTab>('scalper')
   const [layoutMode, setLayoutMode] = useState<ScalperLayoutMode>('grid')
   const [deckCollapsed, setDeckCollapsed] = useState(false)
+  const [visibleCharts, setVisibleCharts] = useState<{ spot: boolean; ce: boolean; pe: boolean }>({
+    spot: true,
+    ce: true,
+    pe: true,
+  })
+
+  const handleToggleChart = (chart: 'spot' | 'ce' | 'pe') => {
+    setVisibleCharts((prev) => {
+      const activeCount = (prev.spot ? 1 : 0) + (prev.ce ? 1 : 0) + (prev.pe ? 1 : 0)
+      if (prev[chart] && activeCount === 1) {
+        showToast.info('At least one chart must remain visible')
+        return prev
+      }
+      const next = { ...prev, [chart]: !prev[chart] }
+      // If the currently focused pane gets hidden, transfer focus to an active pane
+      if (chart === 'spot' && !next.spot && focusedPaneId === 'scalper-spot') {
+        setFocusedPaneId(next.ce ? 'scalper-call' : 'scalper-put')
+      } else if (chart === 'ce' && !next.ce && focusedPaneId === 'scalper-call') {
+        setFocusedPaneId(next.spot ? 'scalper-spot' : 'scalper-put')
+      } else if (chart === 'pe' && !next.pe && focusedPaneId === 'scalper-put') {
+        setFocusedPaneId(next.spot ? 'scalper-spot' : 'scalper-call')
+      }
+      requestAnimationFrame(() => {
+        window.dispatchEvent(new Event('resize'))
+      })
+      return next
+    })
+  }
 
   // 3. Active Underlying Asset (Indices & Commodities)
   const [underlying, setUnderlying] = useState<ScalperUnderlying>(SCALPER_UNDERLYINGS[0])
@@ -801,6 +829,9 @@ export default function ScalperTerminal() {
     }
   }
 
+  const visibleCount =
+    (visibleCharts.spot ? 1 : 0) + (visibleCharts.ce ? 1 : 0) + (visibleCharts.pe ? 1 : 0)
+
   return (
     <div className="flex flex-col h-screen w-full bg-background overflow-hidden select-none">
       {/* 1. UNIFIED SINGLE-LINE HEADER (h-11) */}
@@ -828,6 +859,8 @@ export default function ScalperTerminal() {
         exitLoading={exitLoading}
         appMode={appMode}
         availableMargin={marginData?.availablecash}
+        visibleCharts={visibleCharts}
+        onToggleChart={handleToggleChart}
       />
 
       {/* 2. MAIN WORKSPACE CONTENT */}
@@ -1019,9 +1052,10 @@ export default function ScalperTerminal() {
                 <div
                   className={cn(
                     'h-full w-full gap-1 bg-border/40 p-0.5',
-                    layoutMode === 'grid' && 'grid grid-cols-2 grid-rows-2',
-                    layoutMode === 'columns' && 'grid grid-cols-3',
-                    (layoutMode === 'spot' || layoutMode === 'call' || layoutMode === 'put') && 'flex'
+                    visibleCount === 3 && layoutMode === 'grid' && 'grid grid-cols-2 grid-rows-2',
+                    visibleCount === 3 && layoutMode === 'columns' && 'grid grid-cols-3',
+                    visibleCount === 2 && 'grid grid-cols-2',
+                    visibleCount === 1 && 'flex'
                   )}
                 >
                   {/* SPOT PANE */}
@@ -1029,10 +1063,11 @@ export default function ScalperTerminal() {
                     onClick={() => setFocusedPaneId('scalper-spot')}
                     className={cn(
                       'relative h-full w-full bg-background overflow-hidden transition-all duration-100 rounded-lg p-0.5 border border-border/80',
-                      layoutMode === 'grid' && 'col-span-1 row-span-2',
-                      layoutMode === 'columns' && 'order-2 col-span-1',
-                      layoutMode === 'spot' && 'flex-1',
-                      (layoutMode === 'call' || layoutMode === 'put') && 'hidden',
+                      !visibleCharts.spot && 'hidden',
+                      visibleCharts.spot && visibleCount === 3 && layoutMode === 'grid' && 'col-span-1 row-span-2',
+                      visibleCharts.spot && visibleCount === 3 && layoutMode === 'columns' && 'order-2 col-span-1',
+                      visibleCharts.spot && visibleCount === 2 && 'col-span-1 h-full order-1',
+                      visibleCharts.spot && visibleCount === 1 && 'flex-1 w-full h-full',
                       'hover:border-primary/50',
                       focusedPaneId === 'scalper-spot' && 'ring-1.5 ring-primary border-primary z-10'
                     )}
@@ -1046,6 +1081,8 @@ export default function ScalperTerminal() {
                       onFocusPane={(_, pid) => pid && setFocusedPaneId(pid)}
                       armed={armed}
                       hideToolbar={true}
+                      hideBranding={false}
+                      hideIndicatorLegends={false}
                       paneTitle={`SPOT: ${underlying.name}`}
                       initialSymbol={spotSymbolObj}
                       symbol={spotSymbolObj}
@@ -1059,10 +1096,11 @@ export default function ScalperTerminal() {
                     onClick={() => setFocusedPaneId('scalper-call')}
                     className={cn(
                       'relative h-full w-full bg-background overflow-hidden transition-all duration-100 rounded-lg p-0.5 border border-border/80',
-                      layoutMode === 'grid' && 'col-span-1 row-span-1',
-                      layoutMode === 'columns' && 'order-1 col-span-1',
-                      layoutMode === 'call' && 'flex-1',
-                      (layoutMode === 'spot' || layoutMode === 'put') && 'hidden',
+                      !visibleCharts.ce && 'hidden',
+                      visibleCharts.ce && visibleCount === 3 && layoutMode === 'grid' && 'col-span-1 row-span-1',
+                      visibleCharts.ce && visibleCount === 3 && layoutMode === 'columns' && 'order-1 col-span-1',
+                      visibleCharts.ce && visibleCount === 2 && (visibleCharts.spot ? 'col-span-1 h-full order-2' : 'col-span-1 h-full order-1'),
+                      visibleCharts.ce && visibleCount === 1 && 'flex-1 w-full h-full',
                       'hover:border-primary/50',
                       focusedPaneId === 'scalper-call' && 'ring-1.5 ring-primary border-primary z-10'
                     )}
@@ -1076,6 +1114,8 @@ export default function ScalperTerminal() {
                       onFocusPane={(_, pid) => pid && setFocusedPaneId(pid)}
                       armed={armed}
                       hideToolbar={true}
+                      hideBranding={true}
+                      hideIndicatorLegends={true}
                       paneTitle={`CALL: ${callSymbol || (selectedCallStrike ? `${selectedCallStrike} CE` : 'ATM CE')}`}
                       initialSymbol={callSymbolObj}
                       symbol={callSymbolObj}
@@ -1089,10 +1129,11 @@ export default function ScalperTerminal() {
                     onClick={() => setFocusedPaneId('scalper-put')}
                     className={cn(
                       'relative h-full w-full bg-background overflow-hidden transition-all duration-100 rounded-lg p-0.5 border border-border/80',
-                      layoutMode === 'grid' && 'col-span-1 row-span-1',
-                      layoutMode === 'columns' && 'order-3 col-span-1',
-                      layoutMode === 'put' && 'flex-1',
-                      (layoutMode === 'spot' || layoutMode === 'call') && 'hidden',
+                      !visibleCharts.pe && 'hidden',
+                      visibleCharts.pe && visibleCount === 3 && layoutMode === 'grid' && 'col-span-1 row-span-1',
+                      visibleCharts.pe && visibleCount === 3 && layoutMode === 'columns' && 'order-3 col-span-1',
+                      visibleCharts.pe && visibleCount === 2 && 'col-span-1 h-full order-2',
+                      visibleCharts.pe && visibleCount === 1 && 'flex-1 w-full h-full',
                       'hover:border-primary/50',
                       focusedPaneId === 'scalper-put' && 'ring-1.5 ring-primary border-primary z-10'
                     )}
@@ -1106,6 +1147,8 @@ export default function ScalperTerminal() {
                       onFocusPane={(_, pid) => pid && setFocusedPaneId(pid)}
                       armed={armed}
                       hideToolbar={true}
+                      hideBranding={true}
+                      hideIndicatorLegends={true}
                       paneTitle={`PUT: ${putSymbol || (selectedPutStrike ? `${selectedPutStrike} PE` : 'ATM PE')}`}
                       initialSymbol={putSymbolObj}
                       symbol={putSymbolObj}

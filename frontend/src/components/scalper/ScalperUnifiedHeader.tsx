@@ -57,6 +57,8 @@ interface Props {
   exitLoading?: boolean
   appMode?: 'live' | 'analyzer'
   availableMargin?: number | string | null
+  visibleCharts?: { spot: boolean; ce: boolean; pe: boolean }
+  onToggleChart?: (chart: 'spot' | 'ce' | 'pe') => void
 }
 
 export function ScalperUnifiedHeader({
@@ -77,6 +79,8 @@ export function ScalperUnifiedHeader({
   exitLoading = false,
   appMode: propAppMode,
   availableMargin,
+  visibleCharts,
+  onToggleChart,
 }: Props) {
   const { apiKey } = useAuthStore()
   const { appMode: storeAppMode, toggleAppMode, isTogglingMode } = useThemeStore()
@@ -471,6 +475,51 @@ export function ScalperUnifiedHeader({
           )}
           <span>{appMode === 'analyzer' ? 'SANDBOX' : 'LIVE'}</span>
         </Badge>
+
+        {/* Chart Visibility Switcher (SPOT, CE, PE) */}
+        {activeTab === 'scalper' && visibleCharts && onToggleChart && (
+          <div className="flex items-center bg-muted/60 p-0.5 rounded-lg border border-border/50 shrink-0 gap-0.5">
+            <button
+              type="button"
+              onClick={() => onToggleChart('spot')}
+              title={visibleCharts.spot ? 'Hide SPOT Chart' : 'Show SPOT Chart'}
+              className={cn(
+                'h-6 px-2 text-[10px] font-bold uppercase rounded transition-all cursor-pointer select-none',
+                visibleCharts.spot
+                  ? 'bg-primary/20 text-primary border border-primary/30 shadow-xs'
+                  : 'text-muted-foreground/60 hover:text-foreground opacity-60'
+              )}
+            >
+              SPOT
+            </button>
+            <button
+              type="button"
+              onClick={() => onToggleChart('ce')}
+              title={visibleCharts.ce ? 'Hide CE Chart' : 'Show CE Chart'}
+              className={cn(
+                'h-6 px-2 text-[10px] font-bold uppercase rounded transition-all cursor-pointer select-none',
+                visibleCharts.ce
+                  ? 'bg-blue-500/20 text-blue-500 dark:text-blue-400 border border-blue-500/30 shadow-xs'
+                  : 'text-muted-foreground/60 hover:text-foreground opacity-60'
+              )}
+            >
+              CE
+            </button>
+            <button
+              type="button"
+              onClick={() => onToggleChart('pe')}
+              title={visibleCharts.pe ? 'Hide PE Chart' : 'Show PE Chart'}
+              className={cn(
+                'h-6 px-2 text-[10px] font-bold uppercase rounded transition-all cursor-pointer select-none',
+                visibleCharts.pe
+                  ? 'bg-rose-500/20 text-rose-500 dark:text-rose-400 border border-rose-500/30 shadow-xs'
+                  : 'text-muted-foreground/60 hover:text-foreground opacity-60'
+              )}
+            >
+              PE
+            </button>
+          </div>
+        )}
 
         {/* Layout Switcher (when on Scalper tab) */}
         {activeTab === 'scalper' && (

@@ -245,6 +245,10 @@ interface Props {
   className?: string
   /** Whether this chart pane is currently focused / active. */
   isFocused?: boolean
+  /** Hide corner logo watermark (e.g. for secondary scalper panes). */
+  hideBranding?: boolean
+  /** Hide indicator description text on canvas while keeping calculations/drawings active. */
+  hideIndicatorLegends?: boolean
 }
 
 /**
@@ -276,6 +280,8 @@ export function ChartPane({
   symbol,
   className,
   isFocused = false,
+  hideBranding,
+  hideIndicatorLegends,
 }: Props) {
   const chartRef = useRef<HTMLDivElement>(null)
   const legendRef = useRef<HTMLDivElement>(null)
@@ -462,6 +468,8 @@ export function ChartPane({
         legendEl: legendRef.current,
         storageKey: `oa-trading-${paneId}`,
         initialSymbol: initialSymbol || symbol,
+        hideBranding,
+        hideIndicatorLegends,
         getTheme: () => {
           const s = useThemeStore.getState()
           return { mode: s.mode, appMode: s.appMode }
@@ -488,7 +496,7 @@ export function ChartPane({
     }
     // linkGroup is held in a ref by the page and created once, so its identity
     // is stable and listing it here does not re-run the boot effect.
-  }, [paneId, apiKey, wsUrl, noteHistory, linkGroup])
+  }, [paneId, apiKey, wsUrl, noteHistory, linkGroup, hideBranding, hideIndicatorLegends])
 
   /* ── synchronize symbol prop from parent ────────────────────────────── */
   useEffect(() => {

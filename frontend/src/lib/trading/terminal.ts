@@ -481,6 +481,10 @@ export interface TerminalOptions {
   getTheme: () => { mode: ThemeMode; appMode: AppMode }
   callbacks: TerminalCallbacks
   initialSymbol?: { symbol: string; exchange: string; name?: string }
+  /** Hide corner logo watermark (e.g. for secondary scalper panes). */
+  hideBranding?: boolean
+  /** Hide indicator description text on canvas while keeping calculations/drawings active. */
+  hideIndicatorLegends?: boolean
 }
 
 // CRYPTO is the broker-agnostic exchange for crypto derivatives (utils/constants.py); a
@@ -672,6 +676,8 @@ export class TradingTerminal {
   private readonly cb: TerminalCallbacks
   private readonly sk: string
   private readonly initialSymbol?: { symbol: string; exchange: string; name?: string }
+  private readonly hideBranding: boolean
+  private readonly hideIndicatorLegends: boolean
 
   private chart: ChartInstance | null = null
   private offBranding: (() => void) | null = null
@@ -879,6 +885,8 @@ export class TradingTerminal {
     this.cb = opts.callbacks
     this.sk = opts.storageKey || 'oa-trading'
     this.initialSymbol = opts.initialSymbol
+    this.hideBranding = opts.hideBranding ?? false
+    this.hideIndicatorLegends = opts.hideIndicatorLegends ?? false
     this.interval = this.lsGet('interval') || '5m'
     this.ctype = this.lsGet('ctype') || 'candlestick'
     this.restoreChartTools()
@@ -1591,6 +1599,7 @@ export class TradingTerminal {
     this.chart = createChart(this.container, {
       priceAxisWidth: 78,
       theme,
+      branding: !this.hideBranding,
       // Corner clock and bar countdown. Both are off by default in the engine,
       // deliberately: a countdown repaints every second, and on the historical
       // range a chart usually opens on it counts against a bar that closed months
@@ -1637,6 +1646,25 @@ export class TradingTerminal {
       // to start under both or they land on top of the buttons.
       legendOffset: { top: 80 },
     })
+    if (this.hideBranding) {
+      this.chart.setBranding(false)
+    }
+    if (this.hideIndicatorLegends) {
+      const origHost = (this.chart as any)._indicatorHost?.bind(this.chart)
+      if (origHost) {
+        ;(this.chart as any)._indicatorHost = () => {
+          const host = origHost()
+          const origAddLegend = host.addIndicatorLegend.bind(host)
+          host.addIndicatorLegend = (opts: any) => {
+            const legend = origAddLegend(opts)
+            legend.draw = () => {}
+            legend.hitTest = () => null
+            return legend
+          }
+          return host
+        }
+      }
+    }
     this.chart.setDataContext(
       this.sym
         ? { symbol: this.sym.symbol, exchange: this.sym.exchange, interval: this.interval }
@@ -1841,6 +1869,7 @@ export class TradingTerminal {
 
   /** Safe link metadata for the active chart branding, if it supplies a destination. */
   brandingLink(): BrandingLink | null {
+    if (this.hideBranding) return null
     const options = (
       this.chart as unknown as {
         brandingOptions?(): false | { href?: string; label?: string }
