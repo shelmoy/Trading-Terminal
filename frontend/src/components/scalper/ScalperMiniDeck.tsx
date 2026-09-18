@@ -2,10 +2,19 @@ import { ChevronDown, ChevronUp, Minus, Plus } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { useMarketData } from '@/hooks/useMarketData'
 import { cn, formatIndianNumber } from '@/lib/utils'
 import { useThemeStore } from '@/stores/themeStore'
 import type { OptionChainRow } from '@/types/scalping'
 import type { Position } from '@/types/trading'
+
+function formatOi(oi: number): string {
+  if (!oi || oi <= 0) return '0'
+  if (oi >= 10000000) return `${(oi / 10000000).toFixed(2)}Cr`
+  if (oi >= 100000) return `${(oi / 100000).toFixed(2)}L`
+  if (oi >= 1000) return `${(oi / 1000).toFixed(1)}K`
+  return oi.toLocaleString('en-IN')
+}
 
 interface Props {
   atmStrike: number
@@ -39,8 +48,8 @@ interface Props {
 
 /**
  * Groww 915 Style Strike Selector with Glass Texture Popover.
- * Features 5-strike ladder (ITM 2, ITM 1, ATM, OTM 1, OTM 2), live prices inside,
- * and quick-select pills.
+ * Features 5-strike ladder (ITM 2, ITM 1, ATM, OTM 1, OTM 2), real-time prices inside,
+ * live fluctuating percentage change, and visual OI bar line below each strike.
  */
 function GrowwStrikeSelector({
   type,
@@ -50,6 +59,7 @@ function GrowwStrikeSelector({
   strikes,
   strikeRows = [],
   ltp,
+  exchange,
 }: {
   type: 'CE' | 'PE'
   selectedStrike: number
@@ -58,19 +68,10 @@ function GrowwStrikeSelector({
   strikes: number[]
   strikeRows?: OptionChainRow[]
   ltp?: number
+  exchange: string
 }) {
   const [open, setOpen] = useState(false)
   const isCe = type === 'CE'
-
-  // Map rows for fast lookup of live price and label
-  const rowMap = useMemo(() => {
-    const map = new Map<number, { ltp?: number; label?: string }>()
-    for (const r of strikeRows) {
-      const data = isCe ? r.ce : r.pe
-      map.set(r.strike, { ltp: data?.ltp, label: data?.label })
-    }
-    return map
-  }, [strikeRows, isCe])
 
   // Find ATM index in sorted strikes
   const atmIdx = useMemo(() => {
@@ -90,17 +91,29 @@ function GrowwStrikeSelector({
   interface LadderItem {
     strike: number
     label: string
-    ltp?: number
+    symbol?: string
+    rowLtp?: number
+    prevClose?: number
+    oi?: number
+    changePercent?: number
   }
 
   // 5-strike ladder around ATM
   const ladderStrikes = useMemo<LadderItem[]>(() => {
     if (atmIdx === -1) {
-      return strikes.slice(0, 7).map((s) => ({
-        strike: s,
-        label: s === atmStrike ? 'ATM' : '',
-        ltp: rowMap.get(s)?.ltp,
-      }))
+      return strikes.slice(0, 7).map((s) => {
+        const row = strikeRows.find((r) => r.strike === s)
+        const leg = isCe ? row?.ce : row?.pe
+        return {
+          strike: s,
+          label: s === atmStrike ? 'ATM' : '',
+          symbol: leg?.symbol,
+          rowLtp: leg?.ltp,
+          prevClose: leg?.prev_close,
+          oi: leg?.oi,
+          changePercent: leg?.change_percent,
+        }
+      })
     }
     const offsets = isCe
       ? [
@@ -122,20 +135,82 @@ function GrowwStrikeSelector({
     for (const { off, defaultLabel } of offsets) {
       const s = strikes[atmIdx + off]
       if (s !== undefined) {
-        const info = rowMap.get(s)
+        const row = strikeRows.find((r) => r.strike === s)
+        const leg = isCe ? row?.ce : row?.pe
         list.push({
           strike: s,
-          label: info?.label || defaultLabel,
-          ltp: info?.ltp,
+          label: leg?.label || defaultLabel,
+          symbol: leg?.symbol,
+          rowLtp: leg?.ltp,
+          prevClose: leg?.prev_close,
+          oi: leg?.oi,
+          changePercent: leg?.change_percent,
         })
       }
     }
     return list
-  }, [atmIdx, strikes, isCe, rowMap, atmStrike])
+  }, [atmIdx, strikes, isCe, strikeRows, atmStrike])
 
-  // Current selected label
-  const selectedInfo = rowMap.get(selectedStrike)
-  const currentLabel = selectedInfo?.label || (selectedStrike === atmStrike ? 'ATM' : '')
+  // Real-time WebSocket streaming for ladder contracts (0-1ms latency)
+  const ladderSymbols = useMemo(() => {
+    return ladderStrikes
+      .filter((s) => !!s.symbol)
+      .map((s) => ({ symbol: s.symbol!, exchange }))
+  }, [ladderStrikes, exchange])
+
+  const { data: wsMarketData } = useMarketData({
+    symbols: ladderSymbols,
+    mode: 'Quote',
+    enabled: ladderSymbols.length > 0,
+  })
+
+  // Compute live price, % change, and OI for each ladder strike
+  const evaluatedLadder = useMemo(() => {
+    return ladderStrikes.map((s) => {
+      const tick = s.symbol ? wsMarketData.get(`${exchange}:${s.symbol}`) : undefined
+      const liveLtp = tick?.data?.ltp ?? s.rowLtp ?? (s.strike === selectedStrike ? ltp : undefined)
+      const prevClose =
+        s.prevClose ??
+        (tick?.data as any)?.prev_close ??
+        (tick?.data?.close && liveLtp !== undefined && Math.abs(tick.data.close - liveLtp) > 0.05
+          ? tick.data.close
+          : undefined)
+
+      let chgPct = 0
+      if (tick?.data?.change_percent !== undefined && Math.abs(tick.data.change_percent) > 0.0001) {
+        chgPct = tick.data.change_percent
+      } else if (liveLtp && prevClose && prevClose > 0) {
+        chgPct = ((liveLtp - prevClose) / prevClose) * 100
+      } else if (s.changePercent !== undefined) {
+        chgPct = s.changePercent
+      }
+
+      const oi = (tick?.data as any)?.oi ?? s.oi ?? tick?.data?.volume ?? 0
+
+      return {
+        ...s,
+        liveLtp,
+        prevClose,
+        chgPct,
+        oi,
+      }
+    })
+  }, [ladderStrikes, wsMarketData, exchange, selectedStrike, ltp])
+
+  // Maximum OI across visible strikes for proportional visual OI bar
+  const maxOi = useMemo(() => {
+    let max = 0
+    for (const item of evaluatedLadder) {
+      if (item.oi > max) max = item.oi
+    }
+    return max > 0 ? max : 1
+  }, [evaluatedLadder])
+
+  // Currently selected strike's stats
+  const selectedItem = evaluatedLadder.find((s) => s.strike === selectedStrike)
+  const currentLabel = selectedItem?.label || (selectedStrike === atmStrike ? 'ATM' : '')
+  const currentLtp = selectedItem?.liveLtp ?? ltp
+  const currentChg = selectedItem?.chgPct ?? 0
 
   return (
     <div className="relative">
@@ -158,9 +233,19 @@ function GrowwStrikeSelector({
             {currentLabel}
           </span>
         )}
-        {ltp !== undefined && (
+        {currentLtp !== undefined && currentLtp > 0 && (
           <span className="font-mono text-[11px] font-semibold text-foreground ml-0.5">
-            ₹{ltp.toFixed(2)}
+            ₹{currentLtp.toFixed(2)}
+          </span>
+        )}
+        {currentLtp !== undefined && currentLtp > 0 && (
+          <span
+            className={cn(
+              'font-mono text-[9px] font-bold px-1 rounded tabular-nums',
+              currentChg >= 0 ? 'text-emerald-400 bg-emerald-500/10' : 'text-rose-400 bg-rose-500/10'
+            )}
+          >
+            {currentChg >= 0 ? '+' : ''}{currentChg.toFixed(1)}%
           </span>
         )}
         <ChevronDown className={cn('h-3 w-3 text-muted-foreground transition-transform duration-150', open && 'rotate-180')} />
@@ -172,8 +257,8 @@ function GrowwStrikeSelector({
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
           <div
             className={cn(
-              'absolute bottom-full mb-1.5 z-50 w-72 rounded-xl p-2.5',
-              'backdrop-blur-xl bg-zinc-950/90 border border-zinc-700/60 shadow-2xl',
+              'absolute bottom-full mb-1.5 z-50 w-80 rounded-xl p-2.5',
+              'backdrop-blur-xl bg-zinc-950/95 border border-zinc-700/70 shadow-2xl',
               'animate-in fade-in zoom-in-95 duration-100',
               isCe ? 'left-0' : 'right-0'
             )}
@@ -193,11 +278,18 @@ function GrowwStrikeSelector({
               </span>
             </div>
 
-            {/* Strike Ladder with Live Prices */}
-            <div className="py-1.5 space-y-1 max-h-56 overflow-y-auto scrollbar-thin">
-              {ladderStrikes.map((s) => {
+            {/* Column labels */}
+            <div className="flex items-center justify-between px-2 pt-1.5 pb-0.5 text-[9px] font-mono text-zinc-400 uppercase tracking-wider">
+              <span>Strike</span>
+              <span>LTP / Change</span>
+            </div>
+
+            {/* Strike Ladder with Live Prices, % Change, and OI Bar Line */}
+            <div className="py-1 space-y-1.5 max-h-60 overflow-y-auto scrollbar-thin">
+              {evaluatedLadder.map((s) => {
                 const isSelected = s.strike === selectedStrike
                 const isAtm = s.strike === atmStrike
+                const oiPct = maxOi > 0 ? Math.min(100, Math.max(s.oi > 0 ? 6 : 0, (s.oi / maxOi) * 100)) : 0
                 return (
                   <div
                     key={`${type}-${s.strike}`}
@@ -206,35 +298,60 @@ function GrowwStrikeSelector({
                       setOpen(false)
                     }}
                     className={cn(
-                      'flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs cursor-pointer transition-all border',
+                      'flex flex-col px-2.5 py-1.5 rounded-lg text-xs cursor-pointer transition-all border relative overflow-hidden',
                       isSelected
                         ? isCe
-                          ? 'bg-emerald-500/20 border-emerald-500/50 text-white font-bold'
-                          : 'bg-rose-500/20 border-rose-500/50 text-white font-bold'
+                          ? 'bg-emerald-500/20 border-emerald-500/60 text-white font-bold'
+                          : 'bg-rose-500/20 border-rose-500/60 text-white font-bold'
                         : isAtm
                         ? 'bg-zinc-800/60 border-amber-500/40 text-zinc-100 hover:bg-zinc-800'
                         : 'bg-zinc-900/40 border-zinc-800/40 text-zinc-300 hover:bg-zinc-800/80 hover:text-white'
                     )}
                   >
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono font-bold">{s.strike}</span>
-                      <span
-                        className={cn(
-                          'text-[9px] px-1 py-0.2 rounded font-semibold',
-                          isAtm
-                            ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                            : 'bg-zinc-800 text-zinc-400'
-                        )}
-                      >
-                        {s.label}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      {s.ltp !== undefined && (
-                        <span className="font-mono text-[11px] font-bold text-zinc-100">
-                          ₹{s.ltp.toFixed(2)}
+                    {/* Top Row: Strike + Label | LTP + % Change */}
+                    <div className="flex items-center justify-between z-10 relative">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-mono font-bold text-xs">{s.strike}</span>
+                        <span
+                          className={cn(
+                            'text-[9px] px-1 py-0.2 rounded font-semibold',
+                            isAtm
+                              ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                              : 'bg-zinc-800 text-zinc-400'
+                          )}
+                        >
+                          {s.label}
                         </span>
-                      )}
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-mono text-[11px] font-bold text-zinc-100">
+                          {s.liveLtp !== undefined && s.liveLtp > 0 ? `₹${s.liveLtp.toFixed(2)}` : '—'}
+                        </span>
+                        <span
+                          className={cn(
+                            'font-mono text-[10px] font-semibold px-1 rounded tabular-nums',
+                            s.chgPct >= 0 ? 'text-emerald-400 bg-emerald-500/10' : 'text-rose-400 bg-rose-500/10'
+                          )}
+                        >
+                          {s.chgPct >= 0 ? '+' : ''}{s.chgPct.toFixed(2)}%
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Bottom Row: Line below strike fetching OI data */}
+                    <div className="mt-1 flex items-center justify-between gap-2 z-10 relative">
+                      <div className="flex-1 h-1.5 bg-zinc-800/80 rounded-full overflow-hidden">
+                        <div
+                          className={cn(
+                            'h-full rounded-full transition-all duration-300',
+                            isCe ? 'bg-emerald-500/80' : 'bg-rose-500/80'
+                          )}
+                          style={{ width: `${oiPct}%` }}
+                        />
+                      </div>
+                      <span className="text-[9px] font-mono text-zinc-400 whitespace-nowrap">
+                        OI: <span className="text-zinc-200 font-semibold">{formatOi(s.oi)}</span>
+                      </span>
                     </div>
                   </div>
                 )
@@ -491,6 +608,7 @@ export function ScalperMiniDeck({
           strikes={strikes}
           strikeRows={strikeRows}
           ltp={callLtp}
+          exchange={exchange}
         />
 
         {/* Quick Strike Pills */}
@@ -730,6 +848,7 @@ export function ScalperMiniDeck({
           strikes={strikes}
           strikeRows={strikeRows}
           ltp={putLtp}
+          exchange={exchange}
         />
 
         {/* Quick Strike Pills */}

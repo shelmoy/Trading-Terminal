@@ -668,6 +668,20 @@ def get_option_chain(
                     "high": ce_quote.get("high", 0),
                     "low": ce_quote.get("low", 0),
                     "prev_close": ce_quote.get("prev_close", 0),
+                    "change_percent": (
+                        float(ce_quote["change_percent"])
+                        if ce_quote.get("change_percent") is not None
+                        else (
+                            round(
+                                ((float(ce_quote.get("ltp") or 0) - float(ce_quote.get("prev_close") or 0))
+                                / float(ce_quote.get("prev_close") or 1))
+                                * 100,
+                                2,
+                            )
+                            if float(ce_quote.get("prev_close") or 0) > 0 and float(ce_quote.get("ltp") or 0) > 0
+                            else 0.0
+                        )
+                    ),
                     "volume": ce_quote.get("volume", 0),
                     "oi": ce_quote.get("oi", 0),
                     "lotsize": item["ce"]["lotsize"],
@@ -692,6 +706,20 @@ def get_option_chain(
                     "high": pe_quote.get("high", 0),
                     "low": pe_quote.get("low", 0),
                     "prev_close": pe_quote.get("prev_close", 0),
+                    "change_percent": (
+                        float(pe_quote["change_percent"])
+                        if pe_quote.get("change_percent") is not None
+                        else (
+                            round(
+                                ((float(pe_quote.get("ltp") or 0) - float(pe_quote.get("prev_close") or 0))
+                                / float(pe_quote.get("prev_close") or 1))
+                                * 100,
+                                2,
+                            )
+                            if float(pe_quote.get("prev_close") or 0) > 0 and float(pe_quote.get("ltp") or 0) > 0
+                            else 0.0
+                        )
+                    ),
                     "volume": pe_quote.get("volume", 0),
                     "oi": pe_quote.get("oi", 0),
                     "lotsize": item["pe"]["lotsize"],

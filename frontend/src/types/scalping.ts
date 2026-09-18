@@ -40,6 +40,9 @@ export interface OptionLeg {
   lotsize?: number | null
   tick_size?: number | null
   exists?: boolean
+  prev_close?: number
+  oi?: number
+  change_percent?: number
 }
 
 export interface OptionChainRow {

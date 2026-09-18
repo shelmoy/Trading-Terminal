@@ -141,12 +141,20 @@ export function ScalperUnifiedHeader({
       const mq = mqMap.get(`${qEx}:${qSym}`) || mqMap.get(`${u.exchange}:${u.symbol}`)
 
       const ltp: number | null = tick?.data?.ltp ?? mq?.ltp ?? null
-      const prevClose: number | null = tick?.data?.close ?? mq?.prev_close ?? null
+      // prevClose MUST use broker quote prev_close (or tick.data.prev_close).
+      // Never fall back to tick.data.close if it equals ltp, because brokers send the current bar close as close.
+      const prevClose: number | null =
+        mq?.prev_close ??
+        (tick?.data as any)?.prev_close ??
+        (tick?.data?.close && ltp !== null && Math.abs(tick.data.close - ltp) > 0.05 ? tick.data.close : null)
+
       let chgPct = 0
-      if (tick?.data?.change_percent !== undefined) {
+      if (tick?.data?.change_percent !== undefined && Math.abs(tick.data.change_percent) > 0.0001) {
         chgPct = tick.data.change_percent
-      } else if (prevClose && prevClose > 0 && ltp) {
+      } else if (prevClose && prevClose > 0 && ltp && ltp > 0) {
         chgPct = ((ltp - prevClose) / prevClose) * 100
+      } else if (mq?.ltp && mq?.prev_close && mq.prev_close > 0) {
+        chgPct = ((mq.ltp - mq.prev_close) / mq.prev_close) * 100
       }
 
       return { ltp, prevClose, chgPct }

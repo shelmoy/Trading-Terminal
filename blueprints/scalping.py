@@ -437,7 +437,7 @@ def _mcx_cds_option_chain(underlying, exchange, expiry_ddmmmyy, strike_count, ap
                 for item in results:
                     s_name = item.get("symbol")
                     q_data = item.get("data") or item
-                    quotes_map[s_name] = float(q_data.get("ltp") or q_data.get("prev_close") or 0)
+                    quotes_map[s_name] = q_data
         except Exception as e:
             logger.debug(f"Could not fetch bulk quotes for MCX chain: {e}")
 
@@ -447,8 +447,14 @@ def _mcx_cds_option_chain(underlying, exchange, expiry_ddmmmyy, strike_count, ap
         pe_label = "ATM" if n == 0 else (f"OTM{abs(n)}" if n < 0 else f"ITM{n}")
         ce = by_strike[s].get("CE")
         pe = by_strike[s].get("PE")
-        ce_ltp = quotes_map.get(ce.symbol) if ce else None
-        pe_ltp = quotes_map.get(pe.symbol) if pe else None
+        ce_q = quotes_map.get(ce.symbol, {}) if ce and isinstance(quotes_map.get(ce.symbol), dict) else {}
+        pe_q = quotes_map.get(pe.symbol, {}) if pe and isinstance(quotes_map.get(pe.symbol), dict) else {}
+        ce_ltp = float(ce_q.get("ltp") or ce_q.get("prev_close") or 0) if ce_q else None
+        pe_ltp = float(pe_q.get("ltp") or pe_q.get("prev_close") or 0) if pe_q else None
+        ce_prev = float(ce_q.get("prev_close") or 0) if ce_q else None
+        pe_prev = float(pe_q.get("prev_close") or 0) if pe_q else None
+        ce_oi = float(ce_q.get("oi") or 0) if ce_q else 0
+        pe_oi = float(pe_q.get("oi") or 0) if pe_q else 0
         chain.append(
             {
                 "strike": s,
@@ -458,6 +464,8 @@ def _mcx_cds_option_chain(underlying, exchange, expiry_ddmmmyy, strike_count, ap
                     "lotsize": ce.lotsize if ce else None,
                     "tick_size": ce.tick_size if ce else None,
                     "ltp": ce_ltp,
+                    "prev_close": ce_prev,
+                    "oi": ce_oi,
                 },
                 "pe": {
                     "symbol": pe.symbol if pe else None,
@@ -465,6 +473,8 @@ def _mcx_cds_option_chain(underlying, exchange, expiry_ddmmmyy, strike_count, ap
                     "lotsize": pe.lotsize if pe else None,
                     "tick_size": pe.tick_size if pe else None,
                     "ltp": pe_ltp,
+                    "prev_close": pe_prev,
+                    "oi": pe_oi,
                 },
             }
         )
@@ -513,10 +523,9 @@ def strikes():
             {"status": "error", "message": "API key not configured. Generate one at /apikey"}
         ), 401
 
-    # The scalping ladder only needs the strike list + ATM + symbols (it streams live
-    # prices over the WebSocket feed), so default to a structure-only build that skips
-    # the slow per-strike broker multiquote. Pass ?quotes=true to include live quotes.
-    with_quotes = (request.args.get("quotes", "false").strip().lower() == "true")
+    # Include live quotes by default so strikes display live LTP, prev_close, and OI.
+    # Pass ?quotes=false to skip broker quotes for structure-only requests.
+    with_quotes = (request.args.get("quotes", "true").strip().lower() != "false")
 
     if exchange in ("NFO", "BFO"):
         success, response, status_code = get_option_chain(
