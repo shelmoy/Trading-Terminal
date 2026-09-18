@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { createLinkGroup, type LinkGroup } from 'openalgo-charts'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Activity, ChevronDown, ChevronUp, RefreshCw, Search, TrendingUp, X } from 'lucide-react'
+import { Activity, ChevronDown, RefreshCw, Search, TrendingUp, X } from 'lucide-react'
 import { scalpingApi } from '@/api/scalping'
 import { tradingApi } from '@/api/trading'
 import {
@@ -145,7 +145,7 @@ export default function ScalperTerminal() {
   const { data: strikesResp } = useQuery({
     queryKey: ['scalper', 'strikes', underlying.foExchange, underlying.symbol, selectedExpiry],
     queryFn: () =>
-      scalpingApi.getStrikes(underlying.symbol, underlying.foExchange, selectedExpiry, 15),
+      scalpingApi.getStrikes(underlying.symbol, underlying.foExchange, selectedExpiry, 50),
     enabled: !!selectedExpiry && !!underlying.symbol,
     staleTime: 30000,
   })
@@ -346,8 +346,10 @@ export default function ScalperTerminal() {
       symbol: activeSpotSymbol,
       exchange: activeSpotExchange,
       name: activeSpotSymbol !== underlying.symbol ? `${underlying.name} (${activeSpotSymbol})` : underlying.name,
+      lotsize: underlying.lotSize || 1,
+      tick_size: 0.05,
     }),
-    [activeSpotSymbol, activeSpotExchange, underlying.symbol, underlying.name]
+    [activeSpotSymbol, activeSpotExchange, underlying.symbol, underlying.name, underlying.lotSize]
   )
 
   const callSymbolObj = useMemo(() => {
@@ -356,8 +358,10 @@ export default function ScalperTerminal() {
       symbol: callSymbol,
       exchange: underlying.foExchange,
       name: `${underlying.name} ${selectedCallStrike ?? ''} CE`,
+      lotsize: selectedCallRow?.ce?.lotsize || underlying.lotSize || 1,
+      tick_size: selectedCallRow?.ce?.tick_size || 0.05,
     }
-  }, [callSymbol, underlying.foExchange, underlying.name, selectedCallStrike])
+  }, [callSymbol, underlying.foExchange, underlying.name, selectedCallStrike, selectedCallRow, underlying.lotSize])
 
   const putSymbolObj = useMemo(() => {
     if (!putSymbol) return undefined
@@ -365,8 +369,10 @@ export default function ScalperTerminal() {
       symbol: putSymbol,
       exchange: underlying.foExchange,
       name: `${underlying.name} ${selectedPutStrike ?? ''} PE`,
+      lotsize: selectedPutRow?.pe?.lotsize || underlying.lotSize || 1,
+      tick_size: selectedPutRow?.pe?.tick_size || 0.05,
     }
-  }, [putSymbol, underlying.foExchange, underlying.name, selectedPutStrike])
+  }, [putSymbol, underlying.foExchange, underlying.name, selectedPutStrike, selectedPutRow, underlying.lotSize])
 
   // Focused pane tracking (for symbol search and replay)
   const [focusedPaneId, setFocusedPaneId] = useState<string>('scalper-spot')
@@ -1208,33 +1214,14 @@ export default function ScalperTerminal() {
           initialQuery={activeSymbol.symbol}
         />
 
-        {/* EXPAND / MINIMIZE HANDLE BETWEEN CHARTS AND EXECUTION DECK */}
-        <div className="h-2 w-full flex items-center justify-center relative bg-border/40 hover:bg-primary/20 transition-colors group cursor-pointer select-none">
-          <button
-            type="button"
-            onClick={() => setDeckCollapsed((c) => !c)}
-            className="absolute -top-1.5 px-3 py-0.5 rounded-full bg-background/95 border border-border/80 text-[10px] text-muted-foreground group-hover:text-primary group-hover:border-primary/50 shadow-xs flex items-center gap-1 transition-all z-30 cursor-pointer"
-            title={deckCollapsed ? 'Expand Execution Deck' : 'Minimize Execution Deck'}
-          >
-            {deckCollapsed ? (
-              <>
-                <ChevronUp className="h-3 w-3" />
-                <span className="font-semibold text-[9px] uppercase tracking-wider">Expand Deck</span>
-              </>
-            ) : (
-              <>
-                <ChevronDown className="h-3 w-3" />
-                <span className="font-semibold text-[9px] uppercase tracking-wider">Minimize Deck</span>
-              </>
-            )}
-          </button>
-        </div>
-
-        {/* MINIMALIST EXECUTION DECK BELOW CHARTS */}
+        {/* MINIMALIST EXECUTION DECK BELOW CHARTS (1-Click clean native OpenAlgo UI) */}
         <ScalperMiniDeck
           atmStrike={currentAtm ?? 0}
           strikes={availableStrikes}
           strikeRows={strikeRows}
+          selectedExpiry={selectedExpiry}
+          expiries={expiries}
+          onSelectExpiry={(exp) => setSelectedExpiry(exp)}
           callStrike={selectedCallStrike ?? currentAtm ?? 0}
           putStrike={selectedPutStrike ?? currentAtm ?? 0}
           onSelectCallStrike={(s) => setSelectedCallStrike(s)}

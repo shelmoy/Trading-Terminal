@@ -3857,17 +3857,22 @@ export class TradingTerminal {
     const metaKey = `${pick.exchange}:${pick.symbol}`
     let info: Record<string, unknown> = (symbolMetadataCache.get(metaKey) as Record<string, unknown>) || { ...pick }
     if (!symbolMetadataCache.has(metaKey)) {
-      try {
-        const j = await this.api<{ data?: Record<string, unknown> }>('symbol', {
-          symbol: pick.symbol,
-          exchange: pick.exchange,
-        })
-        if (j?.data) {
-          info = { ...pick, ...j.data }
-          symbolMetadataCache.set(metaKey, info)
+      if (pick.lotsize) {
+        info = { ...pick }
+        symbolMetadataCache.set(metaKey, info)
+      } else {
+        try {
+          const j = await this.api<{ data?: Record<string, unknown> }>('symbol', {
+            symbol: pick.symbol,
+            exchange: pick.exchange,
+          })
+          if (j?.data) {
+            info = { ...pick, ...j.data }
+            symbolMetadataCache.set(metaKey, info)
+          }
+        } catch {
+          /* search row already carries the essentials */
         }
-      } catch {
-        /* search row already carries the essentials */
       }
     }
     // A newer load claimed the pane while this one was waiting.
@@ -3913,7 +3918,9 @@ export class TradingTerminal {
     let bars: readonly Bar[]
     try {
       const isScalper = this.sk?.includes('scalper')
-      const lookback = isScalper && this.interval === '1m' ? 2 : lookbackDays(this.interval)
+      const lookback = isScalper
+        ? (this.interval === '1m' ? 1 : this.interval === '3m' ? 2 : this.interval === '5m' ? 3 : 5)
+        : lookbackDays(this.interval)
       const request = {
         symbol: this.sym.symbol,
         exchange: this.sym.exchange,

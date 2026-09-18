@@ -1,5 +1,5 @@
 import { ChevronDown, ChevronUp, Minus, Plus } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { useMarketData } from '@/hooks/useMarketData'
@@ -44,6 +44,9 @@ interface Props {
   appMode?: 'live' | 'analyzer'
   collapsed?: boolean
   onToggleCollapse?: () => void
+  selectedExpiry?: string
+  expiries?: string[]
+  onSelectExpiry?: (exp: string) => void
 }
 
 /**
@@ -60,6 +63,9 @@ function GrowwStrikeSelector({
   strikeRows = [],
   ltp,
   exchange,
+  selectedExpiry,
+  expiries = [],
+  onSelectExpiry,
 }: {
   type: 'CE' | 'PE'
   selectedStrike: number
@@ -69,24 +75,34 @@ function GrowwStrikeSelector({
   strikeRows?: OptionChainRow[]
   ltp?: number
   exchange: string
+  selectedExpiry?: string
+  expiries?: string[]
+  onSelectExpiry?: (exp: string) => void
 }) {
   const [open, setOpen] = useState(false)
   const isCe = type === 'CE'
+  const atmRowRef = useRef<HTMLDivElement>(null)
+
+  // Sorted unique strikes
+  const sortedStrikes = useMemo(() => {
+    const unique = Array.from(new Set(strikes.filter((s) => s > 0)))
+    return unique.sort((a, b) => a - b)
+  }, [strikes])
 
   // Find ATM index in sorted strikes
   const atmIdx = useMemo(() => {
-    if (!strikes.length) return -1
+    if (!sortedStrikes.length) return -1
     let closestIdx = 0
-    let minDiff = Math.abs(strikes[0] - atmStrike)
-    for (let i = 1; i < strikes.length; i++) {
-      const diff = Math.abs(strikes[i] - atmStrike)
+    let minDiff = Math.abs(sortedStrikes[0] - atmStrike)
+    for (let i = 1; i < sortedStrikes.length; i++) {
+      const diff = Math.abs(sortedStrikes[i] - atmStrike)
       if (diff < minDiff) {
         minDiff = diff
         closestIdx = i
       }
     }
     return closestIdx
-  }, [strikes, atmStrike])
+  }, [sortedStrikes, atmStrike])
 
   interface LadderItem {
     strike: number
@@ -98,65 +114,42 @@ function GrowwStrikeSelector({
     changePercent?: number
   }
 
-  // 5-strike ladder around ATM
+  // All available strikes mapped to ladder items with accurate ITM/ATM/OTM labels
   const ladderStrikes = useMemo<LadderItem[]>(() => {
-    if (atmIdx === -1) {
-      return strikes.slice(0, 7).map((s) => {
-        const row = strikeRows.find((r) => r.strike === s)
-        const leg = isCe ? row?.ce : row?.pe
-        return {
-          strike: s,
-          label: s === atmStrike ? 'ATM' : '',
-          symbol: leg?.symbol,
-          rowLtp: leg?.ltp,
-          prevClose: leg?.prev_close,
-          oi: leg?.oi,
-          changePercent: leg?.change_percent,
-        }
-      })
-    }
-    const offsets = isCe
-      ? [
-          { off: -2, defaultLabel: 'ITM 2' },
-          { off: -1, defaultLabel: 'ITM 1' },
-          { off: 0, defaultLabel: 'ATM' },
-          { off: 1, defaultLabel: 'OTM 1' },
-          { off: 2, defaultLabel: 'OTM 2' },
-        ]
-      : [
-          { off: 2, defaultLabel: 'ITM 2' },
-          { off: 1, defaultLabel: 'ITM 1' },
-          { off: 0, defaultLabel: 'ATM' },
-          { off: -1, defaultLabel: 'OTM 1' },
-          { off: -2, defaultLabel: 'OTM 2' },
-        ]
-
-    const list: LadderItem[] = []
-    for (const { off, defaultLabel } of offsets) {
-      const s = strikes[atmIdx + off]
-      if (s !== undefined) {
-        const row = strikeRows.find((r) => r.strike === s)
-        const leg = isCe ? row?.ce : row?.pe
-        list.push({
-          strike: s,
-          label: leg?.label || defaultLabel,
-          symbol: leg?.symbol,
-          rowLtp: leg?.ltp,
-          prevClose: leg?.prev_close,
-          oi: leg?.oi,
-          changePercent: leg?.change_percent,
-        })
+    return sortedStrikes.map((s, idx) => {
+      const row = strikeRows.find((r) => r.strike === s)
+      const leg = isCe ? row?.ce : row?.pe
+      let label = ''
+      if (idx === atmIdx) {
+        label = 'ATM'
+      } else if (isCe) {
+        label = idx < atmIdx ? `ITM ${atmIdx - idx}` : `OTM ${idx - atmIdx}`
+      } else {
+        label = idx > atmIdx ? `ITM ${idx - atmIdx}` : `OTM ${atmIdx - idx}`
       }
-    }
-    return list
-  }, [atmIdx, strikes, isCe, strikeRows, atmStrike])
 
-  // Real-time WebSocket streaming for ladder contracts (0-1ms latency)
+      return {
+        strike: s,
+        label: leg?.label || label,
+        symbol: leg?.symbol,
+        rowLtp: leg?.ltp,
+        prevClose: leg?.prev_close,
+        oi: leg?.oi,
+        changePercent: leg?.change_percent,
+      }
+    })
+  }, [sortedStrikes, atmIdx, isCe, strikeRows])
+
+  // Real-time WebSocket streaming: all strikes when popover is open, selected strike when closed (0-1ms latency)
   const ladderSymbols = useMemo(() => {
-    return ladderStrikes
-      .filter((s) => !!s.symbol)
-      .map((s) => ({ symbol: s.symbol!, exchange }))
-  }, [ladderStrikes, exchange])
+    if (open) {
+      return ladderStrikes
+        .filter((s) => !!s.symbol)
+        .map((s) => ({ symbol: s.symbol!, exchange }))
+    }
+    const sel = ladderStrikes.find((s) => s.strike === selectedStrike)
+    return sel?.symbol ? [{ symbol: sel.symbol, exchange }] : []
+  }, [open, ladderStrikes, exchange, selectedStrike])
 
   const { data: wsMarketData } = useMarketData({
     symbols: ladderSymbols,
@@ -197,6 +190,18 @@ function GrowwStrikeSelector({
     })
   }, [ladderStrikes, wsMarketData, exchange, selectedStrike, ltp])
 
+  // Auto-scroll to center on ATM row when popover opens
+  useEffect(() => {
+    if (open) {
+      const timer = setTimeout(() => {
+        if (atmRowRef.current) {
+          atmRowRef.current.scrollIntoView({ block: 'center', behavior: 'auto' })
+        }
+      }, 30)
+      return () => clearTimeout(timer)
+    }
+  }, [open])
+
   // Maximum OI across visible strikes for proportional visual OI bar
   const maxOi = useMemo(() => {
     let max = 0
@@ -211,6 +216,15 @@ function GrowwStrikeSelector({
   const currentLabel = selectedItem?.label || (selectedStrike === atmStrike ? 'ATM' : '')
   const currentLtp = selectedItem?.liveLtp ?? ltp
   const currentChg = selectedItem?.chgPct ?? 0
+
+  // Quick strikes around ATM
+  const quickStrikes = useMemo(() => {
+    if (atmIdx === -1) return []
+    const offsets = isCe ? [-1, 0, 1] : [1, 0, -1]
+    return offsets
+      .map((off) => evaluatedLadder[atmIdx + off])
+      .filter((item): item is typeof evaluatedLadder[0] => Boolean(item))
+  }, [atmIdx, isCe, evaluatedLadder])
 
   return (
     <div className="relative">
@@ -229,7 +243,7 @@ function GrowwStrikeSelector({
           {selectedStrike > 0 ? `${selectedStrike} ${type}` : `Select ${type}`}
         </span>
         {currentLabel && (
-          <span className="text-[9px] px-1 py-0.2 rounded bg-muted font-bold text-muted-foreground">
+          <span className="text-[9px] px-1 py-0.2 rounded bg-muted font-bold text-muted-foreground font-mono">
             {currentLabel}
           </span>
         )}
@@ -251,41 +265,64 @@ function GrowwStrikeSelector({
         <ChevronDown className={cn('h-3 w-3 text-muted-foreground transition-transform duration-150', open && 'rotate-180')} />
       </button>
 
-      {/* Groww 915 Glass Texture Popover */}
+      {/* Native OpenAlgo Aesthetic Popover with Scrollable Strikes */}
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
           <div
             className={cn(
-              'absolute bottom-full mb-1.5 z-50 w-80 rounded-xl p-2.5',
-              'backdrop-blur-xl bg-zinc-950/95 border border-zinc-700/70 shadow-2xl',
+              'absolute bottom-full mb-1.5 z-50 w-84 rounded-xl p-2.5',
+              'backdrop-blur-xl bg-card/95 border border-border shadow-2xl',
               'animate-in fade-in zoom-in-95 duration-100',
               isCe ? 'left-0' : 'right-0'
             )}
           >
-            {/* Header */}
-            <div className="flex items-center justify-between pb-2 border-b border-zinc-800/80 text-xs">
+            {/* Header: Title, ATM, and Expiry Selector */}
+            <div className="flex items-center justify-between pb-2 border-b border-border text-xs">
               <div className="flex items-center gap-1.5">
                 <span className={cn('font-bold text-xs', isCe ? 'text-emerald-400' : 'text-rose-400')}>
-                  {isCe ? 'CALL (CE)' : 'PUT (PE)'} Option Chain
+                  {isCe ? 'CALL (CE)' : 'PUT (PE)'}
                 </span>
                 <Badge variant="outline" className="text-[9px] px-1 py-0 bg-amber-500/10 text-amber-400 border-amber-500/30 font-mono">
                   ATM {atmStrike}
                 </Badge>
               </div>
-              <span className="text-[10px] text-zinc-400 font-mono">
-                {type} Strikes
-              </span>
+
+              {/* Expiry Selector / Badge */}
+              <div className="flex items-center gap-1">
+                {expiries && expiries.length > 1 ? (
+                  <select
+                    value={selectedExpiry}
+                    onChange={(e) => onSelectExpiry?.(e.target.value)}
+                    className="bg-muted text-foreground text-[10px] font-mono font-medium rounded px-1.5 py-0.5 border border-border focus:outline-hidden cursor-pointer"
+                    title="Select Expiry Date"
+                  >
+                    {expiries.map((exp) => (
+                      <option key={exp} value={exp} className="bg-popover text-popover-foreground">
+                        {exp}
+                      </option>
+                    ))}
+                  </select>
+                ) : selectedExpiry ? (
+                  <span className="text-[10px] font-mono text-muted-foreground bg-muted/60 px-1.5 py-0.5 rounded border border-border/50">
+                    {selectedExpiry}
+                  </span>
+                ) : (
+                  <span className="text-[10px] text-muted-foreground font-mono">
+                    {type} Strikes
+                  </span>
+                )}
+              </div>
             </div>
 
             {/* Column labels */}
-            <div className="flex items-center justify-between px-2 pt-1.5 pb-0.5 text-[9px] font-mono text-zinc-400 uppercase tracking-wider">
-              <span>Strike</span>
+            <div className="flex items-center justify-between px-2 pt-1.5 pb-0.5 text-[9px] font-mono text-muted-foreground uppercase tracking-wider">
+              <span>Strike / Tag</span>
               <span>LTP / Change</span>
             </div>
 
-            {/* Strike Ladder with Live Prices, % Change, and OI Bar Line */}
-            <div className="py-1 space-y-1.5 max-h-60 overflow-y-auto scrollbar-thin">
+            {/* Scrollable Strike Ladder (All Available Strikes) with Centered ATM */}
+            <div className="py-1 space-y-1 max-h-72 overflow-y-auto scrollbar-thin">
               {evaluatedLadder.map((s) => {
                 const isSelected = s.strike === selectedStrike
                 const isAtm = s.strike === atmStrike
@@ -293,6 +330,7 @@ function GrowwStrikeSelector({
                 return (
                   <div
                     key={`${type}-${s.strike}`}
+                    ref={isAtm ? atmRowRef : undefined}
                     onClick={() => {
                       onSelectStrike(s.strike)
                       setOpen(false)
@@ -300,31 +338,29 @@ function GrowwStrikeSelector({
                     className={cn(
                       'flex flex-col px-2.5 py-1.5 rounded-lg text-xs cursor-pointer transition-all border relative overflow-hidden',
                       isSelected
-                        ? isCe
-                          ? 'bg-emerald-500/20 border-emerald-500/60 text-white font-bold'
-                          : 'bg-rose-500/20 border-rose-500/60 text-white font-bold'
+                        ? 'bg-primary/15 border-primary/70 text-foreground font-semibold ring-1 ring-primary/40'
                         : isAtm
-                        ? 'bg-zinc-800/60 border-amber-500/40 text-zinc-100 hover:bg-zinc-800'
-                        : 'bg-zinc-900/40 border-zinc-800/40 text-zinc-300 hover:bg-zinc-800/80 hover:text-white'
+                        ? 'bg-amber-500/5 border-amber-500/40 text-foreground hover:bg-muted/70'
+                        : 'bg-card/40 border-border/40 text-muted-foreground hover:bg-muted/60 hover:text-foreground'
                     )}
                   >
                     {/* Top Row: Strike + Label | LTP + % Change */}
                     <div className="flex items-center justify-between z-10 relative">
                       <div className="flex items-center gap-1.5">
-                        <span className="font-mono font-bold text-xs">{s.strike}</span>
+                        <span className="font-mono font-bold text-xs text-foreground">{s.strike}</span>
                         <span
                           className={cn(
-                            'text-[9px] px-1 py-0.2 rounded font-semibold',
+                            'text-[9px] px-1 py-0.2 rounded font-mono font-semibold',
                             isAtm
                               ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                              : 'bg-zinc-800 text-zinc-400'
+                              : 'bg-muted text-muted-foreground'
                           )}
                         >
                           {s.label}
                         </span>
                       </div>
                       <div className="flex items-center gap-1.5">
-                        <span className="font-mono text-[11px] font-bold text-zinc-100">
+                        <span className="font-mono text-[11px] font-semibold text-foreground">
                           {s.liveLtp !== undefined && s.liveLtp > 0 ? `₹${s.liveLtp.toFixed(2)}` : '—'}
                         </span>
                         <span
@@ -338,19 +374,16 @@ function GrowwStrikeSelector({
                       </div>
                     </div>
 
-                    {/* Bottom Row: Line below strike fetching OI data */}
+                    {/* Bottom Row: Line below strike with Decent Color OI bar */}
                     <div className="mt-1 flex items-center justify-between gap-2 z-10 relative">
-                      <div className="flex-1 h-1.5 bg-zinc-800/80 rounded-full overflow-hidden">
+                      <div className="flex-1 h-1.5 bg-muted/80 rounded-full overflow-hidden">
                         <div
-                          className={cn(
-                            'h-full rounded-full transition-all duration-300',
-                            isCe ? 'bg-emerald-500/80' : 'bg-rose-500/80'
-                          )}
+                          className="h-full rounded-full transition-all duration-300 bg-sky-500/70"
                           style={{ width: `${oiPct}%` }}
                         />
                       </div>
-                      <span className="text-[9px] font-mono text-zinc-400 whitespace-nowrap">
-                        OI: <span className="text-zinc-200 font-semibold">{formatOi(s.oi)}</span>
+                      <span className="text-[9px] font-mono text-muted-foreground whitespace-nowrap">
+                        OI: <span className="text-sky-400 font-semibold">{formatOi(s.oi)}</span>
                       </span>
                     </div>
                   </div>
@@ -359,31 +392,31 @@ function GrowwStrikeSelector({
             </div>
 
             {/* Quick Select Pills at bottom */}
-            <div className="pt-2 border-t border-zinc-800/80 flex items-center justify-between gap-1 text-[11px]">
-              <span className="text-[10px] text-zinc-400 uppercase font-semibold">Quick:</span>
-              <div className="flex items-center gap-1">
-                {ladderStrikes.slice(1, 4).map((s) => (
-                  <button
-                    key={`quick-${type}-${s.strike}`}
-                    type="button"
-                    onClick={() => {
-                      onSelectStrike(s.strike)
-                      setOpen(false)
-                    }}
-                    className={cn(
-                      'px-2 py-0.5 rounded text-[10px] font-medium transition-colors cursor-pointer border',
-                      s.strike === selectedStrike
-                        ? isCe
-                          ? 'bg-emerald-500/30 border-emerald-500 text-emerald-300 font-bold'
-                          : 'bg-rose-500/30 border-rose-500 text-rose-300 font-bold'
-                        : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800'
-                    )}
-                  >
-                    {s.label} ({s.strike})
-                  </button>
-                ))}
+            {quickStrikes.length > 0 && (
+              <div className="pt-2 border-t border-border flex items-center justify-between gap-1 text-[11px]">
+                <span className="text-[10px] text-muted-foreground uppercase font-semibold">Quick:</span>
+                <div className="flex items-center gap-1">
+                  {quickStrikes.map((s) => (
+                    <button
+                      key={`quick-${type}-${s.strike}`}
+                      type="button"
+                      onClick={() => {
+                        onSelectStrike(s.strike)
+                        setOpen(false)
+                      }}
+                      className={cn(
+                        'px-2 py-0.5 rounded text-[10px] font-medium transition-colors cursor-pointer border',
+                        s.strike === selectedStrike
+                          ? 'bg-primary text-primary-foreground font-bold border-primary'
+                          : 'bg-muted/50 border-border/50 text-muted-foreground hover:text-foreground hover:bg-muted'
+                      )}
+                    >
+                      {s.label} ({s.strike})
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
           </div>
         </>
       )}
@@ -411,6 +444,9 @@ export function ScalperMiniDeck({
   appMode: propAppMode,
   collapsed: propCollapsed,
   onToggleCollapse,
+  selectedExpiry,
+  expiries,
+  onSelectExpiry,
 }: Props) {
   const { appMode: storeAppMode } = useThemeStore()
   const appMode = propAppMode || storeAppMode
@@ -522,7 +558,11 @@ export function ScalperMiniDeck({
 
   if (isCollapsed) {
     return (
-      <div className="h-7 bg-card/90 border-t border-border flex items-center justify-between px-3 text-[11px] text-muted-foreground select-none shrink-0 z-20">
+      <div
+        onClick={toggleCollapse}
+        className="h-7 bg-card/90 hover:bg-card/95 border-t border-border flex items-center justify-between px-3 text-[11px] text-muted-foreground select-none shrink-0 z-20 cursor-pointer transition-colors"
+        title="Click to expand Execution Deck"
+      >
         <div className="flex items-center gap-3">
           <span className="font-semibold text-emerald-400">
             CALL: {callStrike} ({callQty} Qty)
@@ -554,7 +594,10 @@ export function ScalperMiniDeck({
         </div>
         <button
           type="button"
-          onClick={toggleCollapse}
+          onClick={(e) => {
+            e.stopPropagation()
+            toggleCollapse()
+          }}
           className="flex items-center gap-1.5 hover:text-foreground cursor-pointer font-medium px-2 py-0.5 rounded bg-muted/40 hover:bg-muted/70 transition-colors"
           title="Expand Execution Deck"
         >
@@ -609,6 +652,9 @@ export function ScalperMiniDeck({
           strikeRows={strikeRows}
           ltp={callLtp}
           exchange={exchange}
+          selectedExpiry={selectedExpiry}
+          expiries={expiries}
+          onSelectExpiry={onSelectExpiry}
         />
 
         {/* Quick Strike Pills */}
@@ -738,13 +784,14 @@ export function ScalperMiniDeck({
           </span>
         )}
 
-        {/* Minimize deck handle button */}
+        {/* Minimize deck button */}
         <button
           type="button"
           onClick={toggleCollapse}
-          className="text-muted-foreground hover:text-foreground cursor-pointer p-0.5 rounded hover:bg-muted/60 transition-colors"
+          className="flex items-center gap-1 text-[10px] font-medium text-muted-foreground hover:text-foreground cursor-pointer px-1.5 py-0.5 rounded hover:bg-muted/60 transition-colors"
           title="Minimize Execution Deck"
         >
+          <span>Hide</span>
           <ChevronDown className="h-3.5 w-3.5" />
         </button>
       </div>
@@ -849,6 +896,9 @@ export function ScalperMiniDeck({
           strikeRows={strikeRows}
           ltp={putLtp}
           exchange={exchange}
+          selectedExpiry={selectedExpiry}
+          expiries={expiries}
+          onSelectExpiry={onSelectExpiry}
         />
 
         {/* Quick Strike Pills */}
