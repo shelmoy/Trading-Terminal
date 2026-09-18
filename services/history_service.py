@@ -190,25 +190,44 @@ def get_history_with_auth(
         if df.empty and exchange.upper() in ("MCX", "CDS", "BCD", "NCDEX", "NCO"):
             try:
                 from services.quotes_service import get_quotes
-                q_ok, q_res, _ = get_quotes(symbol=symbol, exchange=exchange, auth_token=auth_token)
+                q_ok, q_res, _ = get_quotes(
+                    symbol=symbol,
+                    exchange=exchange,
+                    auth_token=auth_token,
+                    feed_token=feed_token,
+                    broker=broker,
+                )
                 q_data = q_res.get("data", {}) if q_ok and isinstance(q_res, dict) else {}
-                ltp = float(q_data.get("ltp") or 0)
+                ltp = float(q_data.get("ltp") or q_data.get("prev_close") or q_data.get("close") or 0)
                 if ltp > 0:
                     open_p = float(q_data.get("open") or ltp)
                     high_p = float(q_data.get("high") or max(open_p, ltp))
                     low_p = float(q_data.get("low") or min(open_p, ltp))
                     vol = float(q_data.get("volume") or 0)
                     oi = int(q_data.get("oi") or 0)
-                    now_ts = int(time.time())
-                    df = pd.DataFrame([{
+                    now_ts = (int(time.time()) // 60) * 60
+                    prev_c = float(q_data.get("prev_close") or 0)
+                    records = []
+                    if prev_c > 0 and prev_c != ltp:
+                        records.append({
+                            "timestamp": now_ts - 60,
+                            "open": prev_c,
+                            "high": prev_c,
+                            "low": prev_c,
+                            "close": prev_c,
+                            "volume": 0,
+                            "oi": oi,
+                        })
+                    records.append({
                         "timestamp": now_ts,
                         "open": open_p,
                         "high": high_p,
                         "low": low_p,
                         "close": ltp,
                         "volume": vol,
-                        "oi": oi
-                    }])
+                        "oi": oi,
+                    })
+                    df = pd.DataFrame(records)
             except Exception as qe:
                 logger.debug(f"Live quote fallback candle synthesis skipped for {symbol}: {qe}")
 
@@ -223,25 +242,44 @@ def get_history_with_auth(
         if exchange.upper() in ("MCX", "CDS", "BCD", "NCDEX", "NCO"):
             try:
                 from services.quotes_service import get_quotes
-                q_ok, q_res, _ = get_quotes(symbol=symbol, exchange=exchange, auth_token=auth_token)
+                q_ok, q_res, _ = get_quotes(
+                    symbol=symbol,
+                    exchange=exchange,
+                    auth_token=auth_token,
+                    feed_token=feed_token,
+                    broker=broker,
+                )
                 q_data = q_res.get("data", {}) if q_ok and isinstance(q_res, dict) else {}
-                ltp = float(q_data.get("ltp") or 0)
+                ltp = float(q_data.get("ltp") or q_data.get("prev_close") or q_data.get("close") or 0)
                 if ltp > 0:
                     open_p = float(q_data.get("open") or ltp)
                     high_p = float(q_data.get("high") or max(open_p, ltp))
                     low_p = float(q_data.get("low") or min(open_p, ltp))
                     vol = float(q_data.get("volume") or 0)
                     oi = int(q_data.get("oi") or 0)
-                    now_ts = int(time.time())
-                    df = pd.DataFrame([{
+                    now_ts = (int(time.time()) // 60) * 60
+                    prev_c = float(q_data.get("prev_close") or 0)
+                    records = []
+                    if prev_c > 0 and prev_c != ltp:
+                        records.append({
+                            "timestamp": now_ts - 60,
+                            "open": prev_c,
+                            "high": prev_c,
+                            "low": prev_c,
+                            "close": prev_c,
+                            "volume": 0,
+                            "oi": oi,
+                        })
+                    records.append({
                         "timestamp": now_ts,
                         "open": open_p,
                         "high": high_p,
                         "low": low_p,
                         "close": ltp,
                         "volume": vol,
-                        "oi": oi
-                    }])
+                        "oi": oi,
+                    })
+                    df = pd.DataFrame(records)
                     return True, {"status": "success", "data": df.to_dict(orient="records")}, 200
             except Exception as qe:
                 logger.debug(f"Quote fallback failed: {qe}")

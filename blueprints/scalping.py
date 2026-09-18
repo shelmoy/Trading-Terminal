@@ -361,7 +361,7 @@ def _parse_expiry(s: str):
     return _dt.max
 
 
-def _mcx_cds_option_chain(underlying, exchange, expiry_ddmmmyy, strike_count, api_key):
+def _mcx_cds_option_chain(underlying, exchange, expiry_ddmmmyy, strike_count, api_key, with_quotes=True):
     """Option chain for MCX/CDS where the ATM reference is the current-month future
     (no spot symbol exists). Returns (success, response, code) matching get_option_chain.
     """
@@ -409,13 +409,16 @@ def _mcx_cds_option_chain(underlying, exchange, expiry_ddmmmyy, strike_count, ap
         return False, {"status": "error", "message": "No option strikes for that expiry"}, 400
 
     if ltp <= 0 and all_strikes:
-        # Fallback to median strike if live/prev LTP is not available
         ltp = all_strikes[len(all_strikes) // 2]
 
     atm = min(all_strikes, key=lambda s: abs(s - ltp))
     atm_idx = all_strikes.index(atm)
-    lo = max(0, atm_idx - strike_count)
-    hi = min(len(all_strikes), atm_idx + strike_count + 1)
+    if strike_count is None or strike_count <= 0 or strike_count >= len(all_strikes):
+        lo = 0
+        hi = len(all_strikes)
+    else:
+        lo = max(0, atm_idx - strike_count)
+        hi = min(len(all_strikes), atm_idx + strike_count + 1)
 
     chain = []
     quote_syms = []
@@ -428,7 +431,7 @@ def _mcx_cds_option_chain(underlying, exchange, expiry_ddmmmyy, strike_count, ap
             quote_syms.append({"symbol": pe_obj.symbol, "exchange": exchange})
 
     quotes_map = {}
-    if quote_syms and api_key:
+    if quote_syms and api_key and with_quotes:
         try:
             from services.quotes_service import get_multiquotes
 
@@ -512,11 +515,14 @@ def strikes():
     if not expiry_date:
         return jsonify({"status": "error", "message": "expiry parameter is required"}), 400
 
-    try:
-        strike_count = int(request.args.get("strike_count", 10))
-    except (TypeError, ValueError):
-        strike_count = 10
-    strike_count = max(1, min(strike_count, 50))
+    raw_count = (request.args.get("strike_count") or "10").strip()
+    if raw_count.lower() in ("all", "0"):
+        strike_count = None
+    else:
+        try:
+            strike_count = max(1, min(int(raw_count), 150))
+        except (TypeError, ValueError):
+            strike_count = 10
 
     api_key = _get_api_key()
     if not api_key:
@@ -524,8 +530,6 @@ def strikes():
             {"status": "error", "message": "API key not configured. Generate one at /apikey"}
         ), 401
 
-    # Include live quotes by default so strikes display live LTP, prev_close, and OI.
-    # Pass ?quotes=false to skip broker quotes for structure-only requests.
     with_quotes = (request.args.get("quotes", "true").strip().lower() != "false")
 
     if exchange in ("NFO", "BFO"):
@@ -544,9 +548,8 @@ def strikes():
             response["underlying_exchange"] = u_exch
         return jsonify(response), status_code
 
-    # MCX / CDS — ATM from the current-month future.
     success, response, status_code = _mcx_cds_option_chain(
-        underlying, exchange, expiry_date, strike_count, api_key
+        underlying, exchange, expiry_date, strike_count, api_key, with_quotes=with_quotes
     )
     return jsonify(response), status_code
 

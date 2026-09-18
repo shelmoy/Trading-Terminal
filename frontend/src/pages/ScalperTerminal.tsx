@@ -173,7 +173,7 @@ export default function ScalperTerminal() {
   const { data: strikesResp } = useQuery({
     queryKey: ['scalper', 'strikes', underlying.foExchange, underlying.symbol, selectedExpiry],
     queryFn: () =>
-      scalpingApi.getStrikes(underlying.symbol, underlying.foExchange, selectedExpiry, 50),
+      scalpingApi.getStrikes(underlying.symbol, underlying.foExchange, selectedExpiry, 100),
     enabled: !!selectedExpiry && !!underlying.symbol,
     staleTime: 30000,
   })

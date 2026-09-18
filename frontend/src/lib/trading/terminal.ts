@@ -3948,7 +3948,7 @@ export class TradingTerminal {
     try {
       const isScalper = this.sk?.includes('scalper')
       const lookback = isScalper
-        ? (this.interval === '1m' ? 1 : this.interval === '3m' ? 2 : this.interval === '5m' ? 3 : 5)
+        ? (this.sym.exchange === 'MCX' ? 3 : (this.interval === '1m' ? 1 : this.interval === '3m' ? 2 : this.interval === '5m' ? 3 : 5))
         : lookbackDays(this.interval)
       const request = {
         symbol: this.sym.symbol,
@@ -3970,6 +3970,18 @@ export class TradingTerminal {
     // active session nor recreate a chart after its terminal was destroyed.
     if (this.destroyed || ticket !== this.loadTicket) return false
     this.rawBars = [...bars]
+    if (!this.rawBars.length && this.sk?.includes('scalper')) {
+      const now = Math.floor(Date.now() / 1000)
+      const fallbackPrice = this.lastLtp || 100
+      this.rawBars = [{
+        time: now,
+        open: fallbackPrice,
+        high: fallbackPrice,
+        low: fallbackPrice,
+        close: fallbackPrice,
+        volume: 0,
+      }]
+    }
     if (!this.rawBars.length) {
       if (!opts.silent) {
         const error = this.data?.getState().error
@@ -4457,7 +4469,7 @@ export class TradingTerminal {
     if (this.initialSymbol && !this.destroyed) {
       loaded = await this.loadSymbol(this.initialSymbol, { silent: true })
     }
-    if (!loaded && !this.destroyed) {
+    if (!loaded && !this.destroyed && !this.sk?.includes('scalper')) {
       try {
         const saved = JSON.parse(this.lsGet('symbol') || 'null') as {
           symbol?: string
