@@ -10,8 +10,9 @@ from sqlalchemy.pool import NullPool
 
 logger = logging.getLogger(__name__)
 
-# If a download stays in 'downloading' state longer than this, treat it as stuck/failed
-DOWNLOAD_TIMEOUT_MINUTES = 5
+# Large broker masters, notably Kotak's MCX-inclusive file set, can take more
+# than five minutes to download and process on a local SQLite install.
+DOWNLOAD_TIMEOUT_MINUTES = 20
 
 # Get the database path from environment variable or use default
 DB_PATH = os.getenv("DATABASE_URL", "sqlite:///db/openalgo.db")

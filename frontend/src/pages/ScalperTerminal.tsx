@@ -27,6 +27,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import OIRange from '@/pages/OIRange'
 import { useMarketData } from '@/hooks/useMarketData'
+import { useLivePrice } from '@/hooks/useLivePrice'
 import { useOrderEventRefresh } from '@/hooks/useOrderEventRefresh'
 import { CHART_TYPE_GROUPS, CHART_TYPES, chartTypeIcon } from '@/lib/trading/chartTypes'
 import type { SavedIndicatorRecord, TradingTerminal } from '@/lib/trading/terminal'
@@ -704,9 +705,20 @@ export default function ScalperTerminal() {
   const positions = useMemo<Position[]>(() => (posResp?.data ?? []) as Position[], [posResp])
   const orders = useMemo<Order[]>(() => (ordResp?.data?.orders ?? []) as Order[], [ordResp])
 
+  // Keep the header and positions view on the same live-priced snapshot. The
+  // positionbook query is deliberately a slower reconciliation source; LTP
+  // updates must not wait for its ten-second refresh interval.
+  const { data: livePositions } = useLivePrice(positions, {
+    enabled: !!effectiveApiKey && positions.length > 0,
+    useMultiQuotesFallback: true,
+    staleThreshold: 5000,
+    multiQuotesRefreshInterval: 5000,
+    pauseWhenHidden: true,
+  })
+
   const netPnl = useMemo(() => {
-    return positions.reduce((sum, p) => sum + (p.pnl ?? 0), 0)
-  }, [positions])
+    return livePositions.reduce((sum, p) => sum + (p.pnl ?? 0), 0)
+  }, [livePositions])
 
   const openPositionsCount = useMemo(() => {
     return positions.filter((p) => Math.abs(p.quantity ?? 0) > 0).length
@@ -766,17 +778,18 @@ export default function ScalperTerminal() {
   // 14. Square-Off Leg Handler
   const handleSquareOffPosition = async (pos: Position) => {
     try {
-      await scalpingApi.closeLeg({
+      const response = await scalpingApi.closeLeg({
         symbol: pos.symbol,
         exchange: pos.exchange,
         action: (pos.quantity ?? 0) > 0 ? 'SELL' : 'BUY',
         quantity: Math.abs(pos.quantity ?? 0),
         product: pos.product as any,
       })
+      if (response.status !== 'success') {
+        throw new Error(response.message || 'Failed to close position')
+      }
       showToast.success(`Closed position for ${pos.symbol}`)
-      refetchPositions()
-      refetchOrders()
-      refetchFunds()
+      await Promise.all([refetchPositions(), refetchOrders(), refetchFunds()])
       void queryClient.invalidateQueries({ queryKey: ['trading-dock'] })
       void queryClient.invalidateQueries({ queryKey: ['positions'] })
       void queryClient.invalidateQueries({ queryKey: ['orders'] })
@@ -831,13 +844,18 @@ export default function ScalperTerminal() {
   // 16. Exit All Handler
   const handleExitAll = async () => {
     setExitLoading(true)
+    const positionsKey = ['scalper', 'positions', effectiveApiKey, appMode] as const
+    const previousPositions = queryClient.getQueryData<typeof posResp>(positionsKey)
+    // Reflect the requested exit immediately; restore the snapshot if the
+    // server rejects the close-all request.
+    queryClient.setQueryData(positionsKey, (current: typeof posResp | undefined) =>
+      current ? { ...current, data: [] } : current
+    )
     try {
       const resp = await scalpingApi.closeAll()
       if (resp && resp.status === 'success') {
         showToast.success('Exit all positions requested')
-        refetchPositions()
-        refetchOrders()
-        refetchFunds()
+        await Promise.all([refetchPositions(), refetchOrders(), refetchFunds()])
         void queryClient.invalidateQueries({ queryKey: ['trading-dock'] })
         void queryClient.invalidateQueries({ queryKey: ['positions'] })
         void queryClient.invalidateQueries({ queryKey: ['orders'] })
@@ -846,9 +864,11 @@ export default function ScalperTerminal() {
         void queryClient.invalidateQueries({ queryKey: ['dashboard'] })
         broadcastCrossTabEvent('ORDER_OR_POSITION_CHANGED')
       } else {
+        queryClient.setQueryData(positionsKey, previousPositions)
         showToast.error(resp?.message || 'Exit all failed')
       }
     } catch (e: any) {
+      queryClient.setQueryData(positionsKey, previousPositions)
       showToast.error(e?.message || 'Exit all failed')
     } finally {
       setExitLoading(false)
@@ -1067,6 +1087,61 @@ export default function ScalperTerminal() {
               <span>Synced Crosshair</span>
             </div>
           </div>
+          {/* Vertical Collapsible Positions Side Drawer */}
+          {isVerticalPositionsOpen && (
+            <div className="w-[440px] max-w-[50vw] h-full flex flex-col border-l border-border bg-background shrink-0 z-30 animate-in slide-in-from-right duration-200 shadow-xl">
+              <div className="h-8 border-b border-border px-3 flex items-center justify-between bg-card/60 shrink-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-foreground">Positions</span>
+                  {openPositionsCount > 0 && (
+                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0 font-bold bg-emerald-500/20 text-emerald-400">
+                      {openPositionsCount} Open
+                    </Badge>
+                  )}
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 text-muted-foreground hover:text-foreground cursor-pointer"
+                  onClick={() => setIsVerticalPositionsOpen(false)}
+                >
+                  <X className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+              <div className="flex-1 min-h-0 overflow-hidden">
+                <ScalperPositionsView
+                  positions={livePositions}
+                  onSquareOffPosition={handleSquareOffPosition}
+                  onExitAll={handleExitAll}
+                  onRefresh={refetchPositions}
+                  loading={isFetchingPos}
+                  appMode={appMode}
+                  marginData={marginData}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Vertical POSITIONS Rail Tab */}
+          <button
+            type="button"
+            onClick={() => setIsVerticalPositionsOpen((prev) => !prev)}
+            className={cn(
+              'w-7 flex flex-col items-center justify-start pt-3 pb-3 bg-muted/40 hover:bg-muted border-l border-border transition-colors cursor-pointer select-none shrink-0 group',
+              isVerticalPositionsOpen && 'bg-primary/15 text-primary border-primary/40'
+            )}
+            title={isVerticalPositionsOpen ? 'Collapse Positions Drawer' : 'Expand Positions Drawer'}
+          >
+            <TrendingUp className="h-3.5 w-3.5 mb-3 group-hover:scale-110 transition-transform" />
+            <span className="[writing-mode:vertical-lr] rotate-180 text-[10px] font-extrabold tracking-widest uppercase">
+              Positions
+            </span>
+            {openPositionsCount > 0 && (
+              <span className="mt-3 px-1 py-0.5 rounded text-[9px] bg-emerald-500 text-white font-extrabold leading-none">
+                {openPositionsCount}
+              </span>
+            )}
+          </button>
         </div>
 
         {/* 3 CHARTS GRID + VERTICAL POSITIONS DRAWER */}
@@ -1194,61 +1269,6 @@ export default function ScalperTerminal() {
             )}
           </div>
 
-          {/* Vertical Collapsible Positions Side Drawer */}
-          {isVerticalPositionsOpen && (
-            <div className="w-[440px] max-w-[50vw] h-full flex flex-col border-l border-border bg-background shrink-0 z-30 animate-in slide-in-from-right duration-200 shadow-xl">
-              <div className="h-8 border-b border-border px-3 flex items-center justify-between bg-card/60 shrink-0">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold text-foreground">Positions</span>
-                  {openPositionsCount > 0 && (
-                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0 font-bold bg-emerald-500/20 text-emerald-400">
-                      {openPositionsCount} Open
-                    </Badge>
-                  )}
-                </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-6 w-6 text-muted-foreground hover:text-foreground cursor-pointer"
-                  onClick={() => setIsVerticalPositionsOpen(false)}
-                >
-                  <X className="h-3.5 w-3.5" />
-                </Button>
-              </div>
-              <div className="flex-1 min-h-0 overflow-hidden">
-                <ScalperPositionsView
-                  positions={positions}
-                  onSquareOffPosition={handleSquareOffPosition}
-                  onExitAll={handleExitAll}
-                  onRefresh={refetchPositions}
-                  loading={isFetchingPos}
-                  appMode={appMode}
-                  marginData={marginData}
-                />
-              </div>
-            </div>
-          )}
-
-          {/* Vertical POSITIONS Rail Tab */}
-          <button
-            type="button"
-            onClick={() => setIsVerticalPositionsOpen((prev) => !prev)}
-            className={cn(
-              'w-7 flex flex-col items-center justify-start pt-3 pb-3 bg-muted/40 hover:bg-muted border-l border-border transition-colors cursor-pointer select-none shrink-0 group',
-              isVerticalPositionsOpen && 'bg-primary/15 text-primary border-primary/40'
-            )}
-            title={isVerticalPositionsOpen ? 'Collapse Positions Drawer' : 'Expand Positions Drawer'}
-          >
-            <TrendingUp className="h-3.5 w-3.5 mb-3 group-hover:scale-110 transition-transform" />
-            <span className="[writing-mode:vertical-lr] rotate-180 text-[10px] font-extrabold tracking-widest uppercase">
-              Positions
-            </span>
-            {openPositionsCount > 0 && (
-              <span className="mt-3 px-1 py-0.5 rounded text-[9px] bg-emerald-500 text-white font-extrabold leading-none">
-                {openPositionsCount}
-              </span>
-            )}
-          </button>
         </div>
 
         {/* Indicator Picker Dialog for Universal Toolbar */}
@@ -1304,7 +1324,7 @@ export default function ScalperTerminal() {
       {/* 2B. POSITIONS WORKSPACE TAB */}
       {activeTab === 'positions' && (
         <ScalperPositionsView
-          positions={positions}
+          positions={livePositions}
           onSquareOffPosition={handleSquareOffPosition}
           onExitAll={handleExitAll}
           onRefresh={refetchPositions}

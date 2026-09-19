@@ -6,6 +6,14 @@ echo Starting OpenAlgo Trading Terminal...
 echo Host: http://127.0.0.1:5000
 echo ====================================================
 
+REM Avoid starting a duplicate server when OpenAlgo is already running.
+powershell -NoProfile -Command "if (Get-NetTCPConnection -LocalPort 5000 -State Listen -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }"
+if %errorlevel% equ 0 (
+    echo [INFO] OpenAlgo is already running. Opening the dashboard...
+    start "" http://127.0.0.1:5000
+    exit /b 0
+)
+
 REM Check if uv is installed, otherwise install or use python
 where uv >nul 2>nul
 if %errorlevel% neq 0 (

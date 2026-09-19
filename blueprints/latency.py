@@ -1,7 +1,7 @@
 import csv
 import io
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import numpy as np
 import pytz
@@ -39,6 +39,9 @@ def get_histogram_data(broker=None):
     """Get histogram data for RTT distribution"""
     try:
         query = OrderLatency.query.filter(OrderLatency.order_type != "HISTORY")
+        query = query.filter(
+            OrderLatency.timestamp >= datetime.utcnow() - timedelta(days=30)
+        )
         if broker:
             query = query.filter_by(broker=broker)
 

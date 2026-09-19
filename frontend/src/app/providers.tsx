@@ -24,7 +24,7 @@ export function Providers({ children }: ProvidersProps) {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <MarketDataProvider>{children}</MarketDataProvider>
+      <MarketDataProvider pauseWhenHidden={false}>{children}</MarketDataProvider>
       <Toaster
         position={position}
         richColors

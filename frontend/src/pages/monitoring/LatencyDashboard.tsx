@@ -93,12 +93,14 @@ export default function LatencyDashboard() {
   const [stats, setStats] = useState<LatencyStats | null>(null)
   const [selectedOrder, setSelectedOrder] = useState<LatencyLog | null>(null)
   const [isRefreshing, setIsRefreshing] = useState(false)
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only initial fetch + fixed 30s auto-refresh interval; fetchData is recreated each render and adding it would tear down/recreate the interval on every render
+  // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only initial fetch + fixed refresh interval; fetchData is recreated each render and adding it would recreate the interval on every render
   useEffect(() => {
     fetchData()
-    // Auto-refresh every 30 seconds
-    const interval = setInterval(fetchData, 30000)
+    // Keep the monitor close to the order event stream without hammering the
+    // latency database while it is idle.
+    const interval = setInterval(fetchData, 5000)
     return () => clearInterval(interval)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -112,6 +114,7 @@ export default function LatencyDashboard() {
 
       setLogs(Array.isArray(logsResponse.data) ? logsResponse.data : [])
       setStats(statsResponse.data)
+      setLastUpdated(new Date())
     } catch (_error) {
       showToast.error('Failed to load latency data', 'monitoring')
     } finally {
@@ -225,11 +228,9 @@ export default function LatencyDashboard() {
                   <Badge className="bg-emerald-500 hover:bg-emerald-600 text-[10px] px-1.5 py-0">⚡ 0–1ms Rocket</Badge>
                 </div>
                 <p className="text-2xl font-bold text-emerald-500 mt-1">
-                  {stats?.avg_overhead !== undefined && stats.avg_overhead !== null
-                    ? (stats.avg_overhead < 20 ? stats.avg_overhead : 0.42).toFixed(2)
-                    : '0.42'}ms
+                  {(stats?.avg_overhead ?? 0).toFixed(2)}ms
                 </p>
-                <p className="text-xs text-muted-foreground">In-memory execution &amp; cache</p>
+                <p className="text-xs text-muted-foreground">Measured inside OpenAlgo</p>
               </div>
               <Cpu className="h-8 w-8 text-emerald-500 opacity-30" />
             </div>
@@ -248,7 +249,7 @@ export default function LatencyDashboard() {
                 <p className="text-2xl font-bold text-blue-500 mt-1">
                   {(stats?.avg_rtt || 0).toFixed(2)}ms
                 </p>
-                <p className="text-xs text-muted-foreground">Public internet transit</p>
+                <p className="text-xs text-muted-foreground">Broker and network time</p>
               </div>
               <Globe className="h-8 w-8 text-blue-500 opacity-20" />
             </div>
@@ -321,7 +322,7 @@ export default function LatencyDashboard() {
         </Card>
       </div>
 
-      {/* Platform Ultra-Low Latency Rocket Banner */}
+      {/* Platform and broker latency are separate measurements. */}
       <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-4 text-emerald-950 dark:text-emerald-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
         <div className="flex items-start sm:items-center gap-3">
           <div className="p-2 rounded-lg bg-emerald-500/20 text-emerald-500 shrink-0 mt-0.5 sm:mt-0">
@@ -329,22 +330,27 @@ export default function LatencyDashboard() {
           </div>
           <div>
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="font-semibold text-sm">OpenAlgo Rocket Engine: Sub-Millisecond Execution</span>
+              <span className="font-semibold text-sm">Platform overhead target: 0-1 ms</span>
               <Badge className="bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30 text-xs font-medium">
-                ⚡ 0–1ms RAM Cached
+                Measured locally
               </Badge>
             </div>
             <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
-              Order validation, authentication, symbol lot sizes, and routing are executed in pure memory with <strong>&lt;1ms platform overhead</strong>. The remaining confirmation time represents external public internet transit and broker exchange processing.
+              OpenAlgo measures its own processing separately from broker confirmation. Broker RTT includes network transit and exchange processing, so it cannot be reduced to a guaranteed 0-1 ms by the platform.
             </p>
           </div>
         </div>
         <div className="flex items-center gap-3 shrink-0 self-end sm:self-center border-t sm:border-t-0 sm:border-l border-emerald-500/20 pt-2 sm:pt-0 sm:pl-4">
           <div className="text-right">
             <span className="text-[11px] text-muted-foreground block font-medium">Platform Execution</span>
-            <span className="text-sm font-bold text-emerald-500">0–1 ms ⚡</span>
+            <span className="text-sm font-bold text-emerald-500">{(stats?.avg_overhead ?? 0).toFixed(2)} ms</span>
           </div>
         </div>
+      </div>
+
+      <div className="flex items-center justify-between text-xs text-muted-foreground">
+        <span>Live order measurements refresh every 5 seconds.</span>
+        <span>{lastUpdated ? `Updated ${lastUpdated.toLocaleTimeString()}` : 'Updating...'}</span>
       </div>
 
       {/* Performance Levels Reference */}

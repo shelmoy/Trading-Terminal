@@ -1,4 +1,5 @@
 import importlib
+import hashlib
 import time
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -10,9 +11,16 @@ from utils.logging import get_logger
 # Initialize logger
 logger = get_logger(__name__)
 
-# Ultra-fast in-memory quote cache (2.0s TTL for sub-millisecond deduplication)
-_QUOTE_CACHE: dict[tuple[str, str], tuple[float, bool, dict[str, Any], int]] = {}
-_QUOTE_CACHE_TTL = 2.0
+# Short-lived, auth-scoped cache for repeated read-only quote requests. A quote
+# cache must never be shared across users or brokers, and 250ms is long enough
+# to collapse duplicate UI/SDK reads without presenting stale trading data.
+_QUOTE_CACHE: dict[tuple[str, str, str], tuple[float, bool, dict[str, Any], int]] = {}
+_QUOTE_CACHE_TTL = 0.25
+
+
+def _quote_cache_scope(auth_token: str | None, broker: str | None) -> str:
+    identity = f"{broker or ''}:{auth_token or ''}".encode()
+    return hashlib.sha256(identity).hexdigest()[:16]
 
 
 def validate_symbol_exchange(symbol: str, exchange: str) -> tuple[bool, str | None]:
@@ -186,7 +194,8 @@ def get_quotes(
         - HTTP status code (int)
     """
     # Check in-memory quote cache (0ms return on recent fetch)
-    cache_key = (str(symbol).upper(), str(exchange).upper())
+    cache_scope = _quote_cache_scope(auth_token, broker)
+    cache_key = (cache_scope, str(symbol).upper(), str(exchange).upper())
     now = time.monotonic()
     if cache_key in _QUOTE_CACHE:
         cached_time, success, response_data, status_code = _QUOTE_CACHE[cache_key]
@@ -202,6 +211,11 @@ def get_quotes(
         )
         if AUTH_TOKEN is None:
             return False, {"status": "error", "message": "Invalid openalgo apikey"}, 403
+        cache_scope = _quote_cache_scope(AUTH_TOKEN, broker_name)
+        cache_key = (cache_scope, str(symbol).upper(), str(exchange).upper())
+        cached = _QUOTE_CACHE.get(cache_key)
+        if cached and time.monotonic() - cached[0] < _QUOTE_CACHE_TTL:
+            return cached[1], cached[2], cached[3]
         success, response_data, status_code = get_quotes_with_auth(
             AUTH_TOKEN, FEED_TOKEN, broker_name, symbol, exchange
         )
@@ -252,7 +266,11 @@ def get_multiquotes_with_auth(
     cached_results = []
     all_cached = True
     for s in symbols:
-        k = (str(s.get("symbol", "")).upper(), str(s.get("exchange", "")).upper())
+        k = (
+            _quote_cache_scope(auth_token, broker),
+            str(s.get("symbol", "")).upper(),
+            str(s.get("exchange", "")).upper(),
+        )
         if k in _QUOTE_CACHE:
             ts, success, resp, code = _QUOTE_CACHE[k]
             if now - ts < _QUOTE_CACHE_TTL and success and "data" in resp:
@@ -357,7 +375,11 @@ def get_multiquotes_with_auth(
         ts_now = time.monotonic()
         for q in combined_results:
             if isinstance(q, dict) and "symbol" in q and "exchange" in q:
-                qk = (str(q["symbol"]).upper(), str(q["exchange"]).upper())
+                qk = (
+                    _quote_cache_scope(auth_token, broker),
+                    str(q["symbol"]).upper(),
+                    str(q["exchange"]).upper(),
+                )
                 quote_data = q.get("data") if isinstance(q.get("data"), dict) else q
                 if isinstance(quote_data, dict) and quote_data.get("ltp") is not None:
                     _QUOTE_CACHE[qk] = (ts_now, True, {"status": "success", "data": quote_data}, 200)

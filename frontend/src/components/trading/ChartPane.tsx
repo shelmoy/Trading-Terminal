@@ -15,6 +15,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
+import { usePageVisibility } from '@/hooks/usePageVisibility'
 import { CHART_TYPE_GROUPS, CHART_TYPES, chartTypeIcon } from '@/lib/trading/chartTypes'
 import type { IntervalGroup } from '@/lib/trading/intervals'
 import { lotInfoText } from '@/lib/trading/legend'
@@ -286,6 +287,7 @@ export function ChartPane({
   hideIndicatorLegends,
   onIndicatorRecordsChange,
 }: Props) {
+  const { isVisible, wasHidden } = usePageVisibility()
   const chartRef = useRef<HTMLDivElement>(null)
   const legendRef = useRef<HTMLDivElement>(null)
   /**
@@ -517,6 +519,24 @@ export function ChartPane({
     loadedSymbolKeyRef.current = key
     void t.loadSymbol(symbol)
   }, [symbol?.symbol, symbol?.exchange])
+
+  // Repaint canvas charts after a hidden tab resumes. Browser compositing can
+  // preserve a stale backing buffer, leaving ghost candles or drawings.
+  useEffect(() => {
+    if (!isVisible || !wasHidden) return
+    const refresh = () => {
+      terminalRef.current?.applyTheme()
+      window.dispatchEvent(new Event('resize'))
+    }
+    const first = requestAnimationFrame(refresh)
+    const second = requestAnimationFrame(() => requestAnimationFrame(refresh))
+    const timers = [setTimeout(refresh, 50), setTimeout(refresh, 150)]
+    return () => {
+      cancelAnimationFrame(first)
+      cancelAnimationFrame(second)
+      timers.forEach(clearTimeout)
+    }
+  }, [isVisible, wasHidden])
 
   /* ── follow the page-level drawing rail ───────────────────────────────── */
   useEffect(() => {

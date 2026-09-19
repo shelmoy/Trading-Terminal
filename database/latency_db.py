@@ -1,6 +1,6 @@
 import logging
 import os
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from cachetools import TTLCache
 from sqlalchemy import JSON, Column, DateTime, Float, Integer, String, create_engine
@@ -8,6 +8,7 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import scoped_session, sessionmaker
 from sqlalchemy.pool import NullPool
 from sqlalchemy.sql import func
+import pytz
 
 logger = logging.getLogger(__name__)
 
@@ -36,9 +37,10 @@ latency_session = scoped_session(
 # remain all-time SQL aggregations.
 PERCENTILE_WINDOW_DAYS = 30
 
-# The dashboard polls stats; cache the computed result briefly so polling
-# does not re-scan the table on every request.
-_stats_cache = TTLCache(maxsize=1, ttl=60)
+# The dashboard polls stats frequently; keep a short cache for concurrent
+# refreshes and invalidate it immediately when a new order is recorded.
+_stats_cache = TTLCache(maxsize=1, ttl=5)
+_last_daily_reset: date | None = None
 LatencyBase = declarative_base()
 LatencyBase.query = latency_session.query_property()
 
@@ -116,6 +118,7 @@ class OrderLatency(LatencyBase):
             )
             latency_session.add(log)
             latency_session.commit()
+            _stats_cache.clear()
             return True
         except Exception as e:
             logger.exception(f"Error logging latency: {str(e)}")
@@ -126,6 +129,7 @@ class OrderLatency(LatencyBase):
     def get_recent_logs(limit=100):
         """Get recent latency logs ordered by timestamp"""
         try:
+            reset_daily_latency_data()
             return OrderLatency.query.order_by(OrderLatency.timestamp.desc()).limit(limit).all()
         except Exception as e:
             logger.exception(f"Error getting recent latency logs: {str(e)}")
@@ -134,6 +138,7 @@ class OrderLatency(LatencyBase):
     @staticmethod
     def get_latency_stats():
         """Get latency statistics - optimized with minimal database queries"""
+        reset_daily_latency_data()
         cached = _stats_cache.get("stats")
         if cached is not None:
             return cached
@@ -316,6 +321,36 @@ def init_latency_db():
     from database.db_init_helper import init_db_with_logging
 
     init_db_with_logging(LatencyBase, latency_engine, "Latency DB", logger)
+    reset_daily_latency_data()
+
+
+def reset_daily_latency_data() -> int:
+    """Remove latency rows from prior IST calendar days.
+
+    The monitor is an intraday operational tool, so its data rolls over at
+    midnight IST. The in-process date guard avoids issuing a DELETE on every
+    dashboard refresh while still handling the first request after midnight.
+    """
+    global _last_daily_reset
+    today = datetime.now(pytz.timezone("Asia/Kolkata")).date()
+    if _last_daily_reset == today:
+        return 0
+
+    local_midnight = pytz.timezone("Asia/Kolkata").localize(datetime.combine(today, datetime.min.time()))
+    cutoff = local_midnight.astimezone(pytz.UTC).replace(tzinfo=None)
+    try:
+        deleted = latency_session.query(OrderLatency).filter(OrderLatency.timestamp < cutoff).delete(
+            synchronize_session=False
+        )
+        latency_session.commit()
+        _stats_cache.clear()
+        _last_daily_reset = today
+        logger.info("Daily latency rollover removed %d prior-day rows", deleted)
+        return deleted
+    except Exception:
+        latency_session.rollback()
+        logger.exception("Daily latency rollover failed")
+        return 0
 
 
 def purge_old_data_logs(days=7):

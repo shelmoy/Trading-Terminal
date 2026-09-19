@@ -109,7 +109,7 @@ def download_csv_kotak_data(output_path):
         try:
             logger.info(f"Downloading {key} from {url}")
             # Send GET request using httpx
-            response = client.get(url, timeout=30)
+            response = client.get(url, timeout=120, follow_redirects=True)
             # Check if the request was successful
             if response.status_code == 200:
                 # Construct the full output path for the file
@@ -572,7 +572,23 @@ def master_contract_download():
         if not downloaded_files:
             raise Exception("No CSV files were downloaded successfully")
 
-        # Clear existing data
+        required_files = {
+            "NSE_CM.csv",
+            "NSE_FO.csv",
+            "BSE_CM.csv",
+            "CDE_FO.csv",
+            "MCX_FO.csv",
+            "BSE_FO.csv",
+        }
+        downloaded_names = {os.path.basename(path) for path in downloaded_files}
+        missing_files = sorted(required_files - downloaded_names)
+        if missing_files:
+            raise Exception(
+                "Kotak master contract is incomplete; missing: " + ", ".join(missing_files)
+            )
+
+        # Do not clear a working contract table until every required source file
+        # has arrived. This prevents a network hiccup from leaving MCX absent.
         delete_symtoken_table()
 
         # Process each exchange if the file exists
@@ -586,6 +602,7 @@ def master_contract_download():
         ]
 
         total_records = 0
+        exchange_records = {}
         for filename, processor_func, exchange_name in processors:
             file_path = f"{output_path}/{filename}"
             if os.path.exists(file_path):
@@ -595,6 +612,7 @@ def master_contract_download():
                     if not token_df.empty:
                         copy_from_dataframe(token_df)
                         total_records += len(token_df)
+                        exchange_records[exchange_name] = len(token_df)
                         logger.info(f"Processed {len(token_df)} records for {exchange_name}")
                     else:
                         logger.warning(f"No data found in {exchange_name} file")
@@ -608,7 +626,7 @@ def master_contract_download():
 
         logger.info(f"Master contract download completed. Total records: {total_records}")
 
-        if total_records > 0:
+        if total_records > 0 and exchange_records.get("MCX", 0) > 0:
             return socketio.emit(
                 "master_contract_download",
                 {
@@ -616,8 +634,9 @@ def master_contract_download():
                     "message": f"Successfully Downloaded {total_records} records",
                 },
             )
-        else:
-            raise Exception("No records were processed successfully")
+        if not exchange_records.get("MCX", 0):
+            raise Exception("MCX master contract file contained no processable records")
+        raise Exception("No records were processed successfully")
 
     except Exception as e:
         logger.error(f"Master contract download failed: {str(e)}")

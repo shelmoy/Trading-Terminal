@@ -735,6 +735,7 @@ export function ScalperMiniDeck({
           </div>
         )}
 
+
         {/* Minimize deck button */}
         <button
           type="button"

@@ -57,9 +57,9 @@ def request(method: str, url: str, **kwargs) -> httpx.Response:
     client = get_httpx_client()
 
     # Track actual broker API call time for latency monitoring
-    broker_api_start = time.time()
+    broker_api_start = time.perf_counter()
     response = client.request(method, url, **kwargs)
-    broker_api_end = time.time()
+    broker_api_end = time.perf_counter()
 
     # Store broker API time in Flask's g object for latency tracking
     if hasattr(g, "latency_tracker"):
@@ -69,7 +69,7 @@ def request(method: str, url: str, **kwargs) -> httpx.Response:
 
     # Log the actual HTTP version used (info level for visibility)
     if response.http_version:
-        logger.info(f"Request used {response.http_version} - URL: {url[:50]}...")
+        logger.debug("Request used %s", response.http_version)
 
     return response
 
@@ -147,17 +147,14 @@ def _create_http_client() -> httpx.Client:
     # Event hooks for tracking broker API timing
     def log_request(request):
         """Hook called before request is sent"""
-        request.extensions["start_time"] = time.time()
-        from utils.url_redaction import redact_url_credentials
-
-        logger.debug(f"Starting request to {redact_url_credentials(request.url)}")
+        request.extensions["start_time"] = time.perf_counter()
 
     def log_response(response):
         """Hook called after response is received"""
         try:
             start_time = response.request.extensions.get("start_time")
             if start_time:
-                duration_ms = (time.time() - start_time) * 1000
+                duration_ms = (time.perf_counter() - start_time) * 1000
 
                 # Store broker API time in Flask's g object for latency tracking
                 try:
@@ -170,7 +167,7 @@ def _create_http_client() -> httpx.Client:
                     # Not in Flask request context or g not available
                     pass
 
-                logger.debug(f"Request completed in {duration_ms:.2f}ms")
+                logger.debug("Broker request completed in %.2fms", duration_ms)
         except Exception as e:
             logger.exception(f"Error in response hook: {e}")
 
