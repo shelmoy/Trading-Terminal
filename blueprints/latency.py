@@ -8,7 +8,7 @@ import pytz
 from flask import Blueprint, Response, jsonify, render_template, request, session
 from sqlalchemy import func
 
-from database.latency_db import OrderLatency, latency_session
+from database.latency_db import OrderLatency, get_ist_today_cutoff, latency_session
 from limiter import limiter
 from utils.logging import get_logger
 from utils.session import check_session_validity
@@ -35,15 +35,29 @@ def format_ist_time(timestamp):
     return ist_time.strftime("%d-%m-%Y %I:%M:%S %p")
 
 
-def get_histogram_data(broker=None):
+def get_histogram_data(broker=None, time_range="today"):
     """Get histogram data for RTT distribution"""
     try:
         query = OrderLatency.query
+        if time_range == "today":
+            cutoff = get_ist_today_cutoff()
+            query = query.filter(OrderLatency.timestamp >= cutoff)
+        elif time_range == "7d":
+            from datetime import timedelta
+
+            cutoff = datetime.utcnow() - timedelta(days=7)
+            query = query.filter(OrderLatency.timestamp >= cutoff)
+
         if broker:
             query = query.filter_by(broker=broker)
 
         # Get all RTT values
-        rtts = [r[0] for r in query.with_entities(OrderLatency.rtt_ms).all()]
+        rtts = [
+            r[0]
+            for r in query.with_entities(OrderLatency.rtt_ms)
+            .filter(OrderLatency.rtt_ms.isnot(None))
+            .all()
+        ]
 
         if not rtts:
             return {"bins": [], "counts": [], "avg_rtt": 0, "min_rtt": 0, "max_rtt": 0}
@@ -54,7 +68,7 @@ def get_histogram_data(broker=None):
         max_rtt = max(rtts)
 
         # Create histogram bins
-        bin_count = 30  # Number of bins
+        bin_count = min(30, max(5, len(rtts) // 2))
         bin_width = (max_rtt - min_rtt) / bin_count if max_rtt > min_rtt else 1
 
         # Create histogram using numpy
@@ -176,10 +190,11 @@ def latency_dashboard():
 @check_session_validity
 @limiter.limit("60/minute")
 def get_logs():
-    """API endpoint to get latency logs"""
+    """API endpoint to get latency logs (supports ?range=today|7d|all)"""
     try:
+        time_range = request.args.get("range", "today")
         limit = min(int(request.args.get("limit", 100)), 1000)
-        logs = OrderLatency.get_recent_logs(limit=limit)
+        logs = OrderLatency.get_recent_logs(limit=limit, time_range=time_range)
         return jsonify(
             [
                 {
@@ -209,16 +224,19 @@ def get_logs():
 @check_session_validity
 @limiter.limit("60/minute")
 def get_stats():
-    """API endpoint to get latency statistics"""
+    """API endpoint to get latency statistics (supports ?range=today|7d|all, defaults to 'today')"""
     try:
-        stats = OrderLatency.get_latency_stats()
+        time_range = request.args.get("range", "today")
+        stats = OrderLatency.get_latency_stats(time_range=time_range)
 
         # Add histogram data for each broker
         broker_histograms = {}
         for broker in stats.get("broker_stats", {}):
-            broker_histograms[broker] = get_histogram_data(broker)
+            broker_histograms[broker] = get_histogram_data(broker, time_range=time_range)
 
         stats["broker_histograms"] = broker_histograms
+        # Overall histogram for all orders in this time range
+        stats["overall_histogram"] = get_histogram_data(time_range=time_range)
         return jsonify(stats)
     except Exception as e:
         logger.exception(f"Error fetching latency stats: {e}")
@@ -231,16 +249,38 @@ def get_stats():
 def get_broker_stats(broker):
     """API endpoint to get broker-specific latency statistics"""
     try:
-        stats = OrderLatency.get_latency_stats()
+        time_range = request.args.get("range", "today")
+        stats = OrderLatency.get_latency_stats(time_range=time_range)
         broker_stats = stats.get("broker_stats", {}).get(broker, {})
         if not broker_stats:
             return jsonify({"error": "Broker not found"}), 404
 
         # Add histogram data
-        broker_stats["histogram"] = get_histogram_data(broker)
+        broker_stats["histogram"] = get_histogram_data(broker, time_range=time_range)
         return jsonify(broker_stats)
     except Exception as e:
         logger.exception(f"Error fetching broker stats: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@latency_bp.route("/api/reset", methods=["POST"])
+@check_session_validity
+@limiter.limit("10/minute")
+def reset_logs():
+    """Reset latency tracking records (scope: 'today' or 'all')"""
+    try:
+        data = request.get_json(silent=True) or {}
+        scope = data.get("scope", "today")
+        deleted = OrderLatency.reset_latency(scope=scope)
+        return jsonify(
+            {
+                "status": "success",
+                "message": f"Successfully reset {scope} latency logs ({deleted} records removed)",
+                "deleted": deleted,
+            }
+        )
+    except Exception as e:
+        logger.exception(f"Error resetting latency logs: {e}")
         return jsonify({"error": str(e)}), 500
 
 
@@ -248,10 +288,11 @@ def get_broker_stats(broker):
 @check_session_validity
 @limiter.limit("10/minute")
 def export_logs():
-    """Export latency logs to CSV"""
+    """Export latency logs to CSV (supports ?range=today|7d|all)"""
     try:
-        # Get all logs for the current day
-        logs = OrderLatency.get_recent_logs(limit=None)  # None to get all logs
+        time_range = request.args.get("range", "today")
+        # Get all logs for the specified time range
+        logs = OrderLatency.get_recent_logs(limit=None, time_range=time_range)
 
         # Generate CSV
         csv_data = generate_csv(logs)
@@ -260,7 +301,7 @@ def export_logs():
         response = Response(
             csv_data,
             mimetype="text/csv",
-            headers={"Content-Disposition": "attachment; filename=latency_logs.csv"},
+            headers={"Content-Disposition": f"attachment; filename=latency_logs_{time_range}.csv"},
         )
 
         return response

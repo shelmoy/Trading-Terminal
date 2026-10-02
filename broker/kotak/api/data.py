@@ -1174,9 +1174,20 @@ class BrokerData:
                         break
 
                 if candles is None:
-                    # Every candidate failed. Skipping the chunk would leave a
-                    # hole that reads as a market holiday rather than an error,
-                    # so surface it instead of returning a short series.
+                    # If the failing chunk is today or later (e.g. market is closed / holiday / weekend / pre-market):
+                    if current_start.date() >= datetime.utcnow().date():
+                        if dfs:
+                            logger.info(
+                                f"HISTORY API - No candles available yet for current date {current_start.date()}, returning earlier history"
+                            )
+                            break
+                        # If no prior chunks exist, return empty DataFrame rather than crashing
+                        logger.info(
+                            f"HISTORY API - No candles available for {exchange}:{symbol} on {current_start.date()} (market closed/holiday)"
+                        )
+                        return pd.DataFrame(columns=HISTORY_COLUMNS)
+
+                    # Every candidate failed on historical dates. Surface error.
                     raise Exception(
                         f"Historical request failed for {exchange}:{symbol} "
                         f"{current_start.date()} to {current_end.date()} - " + "; ".join(errors)
