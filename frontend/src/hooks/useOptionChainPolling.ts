@@ -20,6 +20,23 @@ interface UseOptionChainPollingState {
   dataIdentity: OptionChainDataIdentity | null
 }
 
+/** In-memory cache for instant 0-1ms retrieval across tab/panel clicks */
+export const optionChainCache = new Map<string, { data: OptionChainResponse; timestamp: number }>()
+
+export function clearOptionChainCache(): void {
+  optionChainCache.clear()
+}
+
+function getCacheKey(
+  underlying: string,
+  exchange: string,
+  derivativeExchange: string,
+  expiryDate: string,
+  strikeCount: number
+): string {
+  return `${underlying}:${exchange}:${derivativeExchange}:${expiryDate}:${strikeCount}`
+}
+
 /**
  * Hook for polling option chain data from REST API.
  * Supports page visibility to pause polling when tab is hidden.
@@ -51,34 +68,49 @@ export function useOptionChainPolling(
   } = options
   const { isVisible } = usePageVisibility()
 
-  const [state, setState] = useState<UseOptionChainPollingState>({
-    data: null,
+  const cacheKey = getCacheKey(underlying, exchange, derivativeExchange, expiryDate, strikeCount)
+  const cachedEntry = optionChainCache.get(cacheKey)
+
+  const [state, setState] = useState<UseOptionChainPollingState>(() => ({
+    data: cachedEntry ? cachedEntry.data : null,
     isLoading: false,
-    isConnected: false,
+    isConnected: !!cachedEntry,
     isPaused: false,
     error: null,
-    lastUpdate: null,
-    dataIdentity: null,
-  })
+    lastUpdate: cachedEntry ? new Date(cachedEntry.timestamp) : null,
+    dataIdentity: cachedEntry
+      ? {
+          exchange: derivativeExchange,
+          underlying,
+          expiry: expiryDate,
+        }
+      : null,
+  }))
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
   const requestGenerationRef = useRef(0)
 
-  // Drop the previous chain whenever the request identity changes. Without
-  // this, useOptionChainLive briefly pairs the prior chain's option symbols
-  // with the newly-switched optionExchange (e.g. NFO:SENSEX..., BFO:NIFTY...),
-  // which the broker rejects as invalid subscriptions.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: these deps are intentional reset triggers — the body only resets state, but it MUST re-fire whenever the request identity (apiKey/underlying/exchange/expiryDate/strikeCount) changes to avoid pairing a stale chain with a newly-switched exchange
+  // Drop the previous chain whenever the request identity changes or serve cached immediately.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: these deps are intentional reset triggers
   useEffect(() => {
     requestGenerationRef.current += 1
+    const key = getCacheKey(underlying, exchange, derivativeExchange, expiryDate, strikeCount)
+    const cached = optionChainCache.get(key)
     setState((prev) => ({
       ...prev,
-      data: null,
+      data: cached ? cached.data : null,
       isLoading: false,
+      isConnected: !!cached,
       error: null,
-      lastUpdate: null,
-      dataIdentity: null,
+      lastUpdate: cached ? new Date(cached.timestamp) : null,
+      dataIdentity: cached
+        ? {
+            exchange: derivativeExchange,
+            underlying,
+            expiry: expiryDate,
+          }
+        : null,
     }))
   }, [apiKey, underlying, exchange, derivativeExchange, expiryDate, strikeCount])
 
@@ -136,13 +168,15 @@ export function useOptionChainPolling(
       if (generation !== requestGenerationRef.current) return
 
       if (data.status === 'success') {
+        const now = Date.now()
+        optionChainCache.set(cacheKey, { data, timestamp: now })
         setState((prev) => ({
           ...prev,
           data,
           isLoading: false,
           isConnected: true,
           error: null,
-          lastUpdate: new Date(),
+          lastUpdate: new Date(now),
           dataIdentity,
         }))
       } else {

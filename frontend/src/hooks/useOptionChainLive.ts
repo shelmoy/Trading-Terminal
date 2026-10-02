@@ -229,10 +229,6 @@ export function useOptionChainLive(
 ) {
   const { enabled, oiRefreshInterval = 30000, pauseWhenHidden = true, interestRate = 0 } = options
 
-  // Track merged data with WebSocket updates
-  const [mergedData, setMergedData] = useState<OptionChainResponse | null>(null)
-  const [lastLtpUpdate, setLastLtpUpdate] = useState<Date | null>(null)
-
   // Polling for OI/Volume/Greeks (less frequent)
   const {
     data: polledData,
@@ -249,6 +245,10 @@ export function useOptionChainLive(
     pauseWhenHidden,
     derivativeExchange: optionExchange,
   })
+
+  // Track merged data with WebSocket updates (initialized with polledData immediately for 0ms rendering)
+  const [mergedData, setMergedData] = useState<OptionChainResponse | null>(() => polledData)
+  const [lastLtpUpdate, setLastLtpUpdate] = useState<Date | null>(null)
 
   // Build symbol list from the latest option-chain response for subscription.
   const wsSymbols = useMemo(() => {

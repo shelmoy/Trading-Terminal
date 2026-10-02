@@ -25,8 +25,9 @@ const AlertsPanel = lazy(() =>
 const DataWindowPanel = lazy(() =>
   import('@/components/trading/DataWindowPanel').then((m) => ({ default: m.DataWindowPanel }))
 )
+const OptionChainPanelPromise = import('@/components/trading/OptionChainPanel')
 const OptionChainPanel = lazy(() =>
-  import('@/components/trading/OptionChainPanel').then((m) => ({ default: m.OptionChainPanel }))
+  OptionChainPanelPromise.then((m) => ({ default: m.OptionChainPanel }))
 )
 const ScriptPanel = lazy(() =>
   import('@/components/trading/ScriptPanel').then((m) => ({ default: m.ScriptPanel }))

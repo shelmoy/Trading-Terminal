@@ -222,12 +222,17 @@ function OrderPills({
   )
 }
 
+// In-memory cache for instant 0-1ms retrieval across tab/panel clicks
+let cachedGlobalUnderlyings: Array<{ name: string; exchange: Exchange }> = []
+const cachedSegmentUnderlyings: Record<string, string[]> = {}
+const cachedExpiriesMap: Record<string, string[]> = {}
+
 export function OptionChainPanel({ apiKey, onPick, activeSymbol }: Props) {
   const [prefs, setPrefs] = useState<Prefs>(readPrefs)
-  const [underlyings, setUnderlyings] = useState<string[]>([])
-  const [globalUnderlyings, setGlobalUnderlyings] = useState<Array<{ name: string; exchange: Exchange }>>([])
+  const [underlyings, setUnderlyings] = useState<string[]>(() => cachedSegmentUnderlyings[readPrefs().exchange] || [])
+  const [globalUnderlyings, setGlobalUnderlyings] = useState<Array<{ name: string; exchange: Exchange }>>(() => cachedGlobalUnderlyings)
   const [underlyingSearch, setUnderlyingSearch] = useState('')
-  const [expiries, setExpiries] = useState<string[]>([])
+  const [expiries, setExpiries] = useState<string[]>(() => cachedExpiriesMap[`${readPrefs().underlying}:${readPrefs().exchange}`] || [])
   const [metric, setMetric] = useState<Metric>('ltp')
   const [pickerOpen, setPickerOpen] = useState(false)
   /**
@@ -289,6 +294,8 @@ export function OptionChainPanel({ apiKey, onPick, activeSymbol }: Props) {
         }
 
         // De-duplicate if same symbol exists in multiple
+        cachedGlobalUnderlyings = allItems
+        cachedSegmentUnderlyings[prefs.exchange] = currentSegmentList
         setGlobalUnderlyings(allItems)
         setUnderlyings(currentSegmentList)
         setUnderlyingError(null)
@@ -307,9 +314,14 @@ export function OptionChainPanel({ apiKey, onPick, activeSymbol }: Props) {
         })
       } catch {
         if (!alive) return
-        setUnderlyings([])
-        setGlobalUnderlyings([])
-        setUnderlyingError(`Could not load ${prefs.exchange} underlyings`)
+        if (cachedSegmentUnderlyings[prefs.exchange]?.length) {
+          setUnderlyings(cachedSegmentUnderlyings[prefs.exchange])
+          setGlobalUnderlyings(cachedGlobalUnderlyings)
+        } else {
+          setUnderlyings([])
+          setGlobalUnderlyings([])
+          setUnderlyingError(`Could not load ${prefs.exchange} underlyings`)
+        }
       }
     })()
     return () => {
@@ -378,12 +390,22 @@ export function OptionChainPanel({ apiKey, onPick, activeSymbol }: Props) {
   // biome-ignore lint/correctness/useExhaustiveDependencies: `attempt` is a deliberate re-run trigger
   useEffect(() => {
     if (!prefs.underlying) return
+    const expiryKey = `${prefs.underlying}:${prefs.exchange}`
+    if (cachedExpiriesMap[expiryKey]?.length) {
+      const dates = cachedExpiriesMap[expiryKey]
+      setExpiries(dates)
+      setPrefs((p) =>
+        dates.length === 0 || dates.includes(p.expiry) ? p : { ...p, expiry: dates[0] }
+      )
+    }
+
     let alive = true
     ;(async () => {
       try {
         const res = await scalpingApi.getExpiry(prefs.underlying, prefs.exchange, 'options')
         if (!alive) return
         const dates = res.data ?? []
+        cachedExpiriesMap[expiryKey] = dates
         setExpiries(dates)
         setExpiryError(null)
         setPrefs((p) =>
@@ -391,8 +413,12 @@ export function OptionChainPanel({ apiKey, onPick, activeSymbol }: Props) {
         )
       } catch {
         if (!alive) return
-        setExpiries([])
-        setExpiryError(`Could not load expiries for ${prefs.underlying}`)
+        if (cachedExpiriesMap[expiryKey]?.length) {
+          setExpiries(cachedExpiriesMap[expiryKey])
+        } else {
+          setExpiries([])
+          setExpiryError(`Could not load expiries for ${prefs.underlying}`)
+        }
       }
     })()
     return () => {

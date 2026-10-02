@@ -1,11 +1,12 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { BROKER_BUSY_SENTENCE } from '@/test/axiosAnswer'
-import { useOptionChainPolling } from './useOptionChainPolling'
+import { clearOptionChainCache, useOptionChainPolling } from './useOptionChainPolling'
 
 describe('useOptionChainPolling request identity', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
+    clearOptionChainCache()
   })
 
   it('clears loading when an in-flight request is invalidated and polling is disabled', async () => {
@@ -30,6 +31,7 @@ describe('useOptionChainPolling request identity', () => {
 describe('useOptionChainPolling failure text', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
+    clearOptionChainCache()
   })
 
   const poll = (status: number, body: string) => {

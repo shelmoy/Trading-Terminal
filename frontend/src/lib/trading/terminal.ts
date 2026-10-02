@@ -157,6 +157,10 @@ type DrawingControllerInstance = InstanceType<typeof DrawingController>
 /** The document a pane holds when it has nothing drawn. A fresh one each time, never shared. */
 const emptyDrawings = (): DrawingsDocument => ({ version: 2, drawings: [] })
 
+/** High-speed in-memory caches for 0-1ms symbol metadata and search lookup */
+const symbolMetadataCache = new Map<string, Record<string, unknown>>()
+const searchCache = new Map<string, SearchRow[]>()
+
 /**
  * Whether a stored value is already the 2.0 document. A 1.9.x save is a bare
  * array; anything else is garbage. The entries are not inspected: the tier's
@@ -1668,12 +1672,17 @@ export class TradingTerminal {
   }
 
   async search(query: string, exchange?: string, limit = 30): Promise<SearchRow[]> {
+    const key = `${query.toUpperCase()}:${(exchange || '').toUpperCase()}`
+    const cached = searchCache.get(key)
+    if (cached) return cached.slice(0, limit)
     try {
       const j = await this.api<{ data?: SearchRow[] }>('search', {
         query,
         ...(exchange ? { exchange } : {}),
       })
-      return (j.data || []).slice(0, limit)
+      const results = (j.data || [])
+      searchCache.set(key, results)
+      return results.slice(0, limit)
     } catch {
       return []
     }
@@ -7001,21 +7010,28 @@ export class TradingTerminal {
       return await this.loadExpression(pick.symbol, ticket, opts)
     }
     // authoritative metadata (lotsize / tick_size / freeze_qty)
-    let info: Record<string, unknown> = { ...pick }
-    try {
-      const j = await this.api<{ data?: Record<string, unknown> }>('symbol', {
-        symbol: pick.symbol,
-        exchange: pick.exchange,
-      })
-      if (
-        opts.strict &&
-        (!j.data || j.data.symbol !== pick.symbol || j.data.exchange !== pick.exchange)
-      )
-        throw new Error(`Workspace symbol metadata is unavailable: ${pick.exchange}:${pick.symbol}`)
-      info = { ...pick, ...(j.data || {}) }
-    } catch (error) {
-      if (opts.strict) throw error
-      /* search row already carries the essentials */
+    const symKey = `${pick.symbol.toUpperCase()}:${(pick.exchange || '').toUpperCase()}`
+    const cachedMeta = symbolMetadataCache.get(symKey)
+    let info: Record<string, unknown> = { ...pick, ...(cachedMeta || {}) }
+    if (!cachedMeta) {
+      try {
+        const j = await this.api<{ data?: Record<string, unknown> }>('symbol', {
+          symbol: pick.symbol,
+          exchange: pick.exchange,
+        })
+        if (
+          opts.strict &&
+          (!j.data || j.data.symbol !== pick.symbol || j.data.exchange !== pick.exchange)
+        )
+          throw new Error(`Workspace symbol metadata is unavailable: ${pick.exchange}:${pick.symbol}`)
+        if (j.data) {
+          symbolMetadataCache.set(symKey, j.data)
+          info = { ...pick, ...j.data }
+        }
+      } catch (error) {
+        if (opts.strict) throw error
+        /* search row already carries the essentials */
+      }
     }
     // A newer load claimed the pane while this one was waiting.
     if (this.destroyed || ticket !== this.loadTicket) return false
