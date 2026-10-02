@@ -8095,7 +8095,7 @@ export class TradingTerminal {
       try {
         const rows = await this.search('NIFTY', 'NSE_INDEX')
         const nifty = rows.find((r) => r.symbol === 'NIFTY' && r.exchange === 'NSE_INDEX') || rows[0]
-        if (nifty) loaded = await this.loadSymbol(nifty)
+        if (nifty) loaded = await this.loadSymbol(nifty, { silent: true })
       } catch {
         /* try SENSEX fallback */
       }

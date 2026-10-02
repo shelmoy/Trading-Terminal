@@ -261,10 +261,10 @@ class BrokerData:
             "BANKNIFTY": ["Nifty Bank"],
             "FINNIFTY": ["Nifty Fin Service"],
             "MIDCPNIFTY": [
+                "NIFTY MID SELECT",
                 "Nifty Mid Select",
                 "Nifty Midcap Sel",
                 "Nifty Midcap Select",
-                "NIFTY MID SELECT",
             ],
             "NIFTYNXT50": ["Nifty Next 50"],
             "INDIAVIX": ["India VIX"],
@@ -930,11 +930,6 @@ class BrokerData:
         the one key the scrip master has been seen to disagree with the feed on.
         """
         candidates = []
-
-        token = get_token(symbol, exchange)
-        if token:
-            candidates.append(f"{segment}|{token}")
-
         if "INDEX" in exchange.upper():
             for name in self._get_index_symbol_candidates(symbol):
                 # The historical endpoint matches names case-sensitively and does
@@ -945,6 +940,12 @@ class BrokerData:
                     key = f"{segment}|{variant}"
                     if key not in candidates:
                         candidates.append(key)
+
+        token = get_token(symbol, exchange)
+        if token:
+            tok_key = f"{segment}|{token}"
+            if tok_key not in candidates:
+                candidates.append(tok_key)
 
         if not candidates:
             raise Exception(f"Could not find instrument token for {exchange}:{symbol}")

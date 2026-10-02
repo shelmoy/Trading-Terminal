@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input'
 import type { ChartWorkspaceCatalogState } from '@/hooks/useChartWorkspaceCatalog'
 import { TickBox } from './TickBox'
 import { Tip } from './Tip'
+import { clearTradingCache } from '@/lib/trading/clearTradingCache'
 
 interface Props extends ChartWorkspaceCatalogState {
   activeId: string | null
@@ -410,6 +411,33 @@ export function WorkspaceMenu({
             })
           }}
         />
+        <div className="grid gap-2 border-t pt-3">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-medium text-destructive">Clear Chart Cache</p>
+              <p className="text-xs text-muted-foreground">
+                Clears saved chart layouts, indicators, drawings, and caches, then reloads with clean defaults.
+              </p>
+            </div>
+            <Button
+              variant="destructive"
+              size="sm"
+              className="shrink-0"
+              disabled={disabled}
+              onClick={() => {
+                if (
+                  window.confirm(
+                    'Clear all chart cache and reload? This resets all cached charts and loads default Nifty.'
+                  )
+                ) {
+                  clearTradingCache()
+                }
+              }}
+            >
+              Reset Cache
+            </Button>
+          </div>
+        </div>
       </DialogContent>
     </Dialog>
   )
