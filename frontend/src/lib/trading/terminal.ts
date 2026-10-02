@@ -133,6 +133,14 @@ import {
   parseTerminalWorkspacePane,
   validateWorkspacePaneSupport,
 } from './workspaceState'
+import { normalizeCustomInterval } from './intervals'
+import {
+  RENKO_V2_DEFAULTS,
+  renkoV2SettingsView,
+  renkoV2Values,
+  renkoV2Options,
+} from './renkoV2Settings'
+import { calculateRenkoV2BoxSize } from './renkoV2Transform'
 
 export { dedupeIndicators } from './indicatorTemplates'
 
@@ -1690,6 +1698,10 @@ export class TradingTerminal {
 
   /* ── chart types (transforms bucket volume onto their own element times) */
   private boxOf(): number {
+    if (this.ctype === 'renko-v2') {
+      const opts = renkoV2Options(this.chartSettingsSaved as Record<string, string | number | boolean>, this.tick())
+      return calculateRenkoV2BoxSize(this.rawBars, opts)
+    }
     const c = this.rawBars.length ? this.rawBars[this.rawBars.length - 1].close : 100
     const t = this.tick()
     return Math.max(t, Number((Math.round((c * 0.0015) / t) * t).toFixed(this.dp())))
@@ -1798,7 +1810,16 @@ export class TradingTerminal {
     // so keep rawBars current for the eventual resume without touching canvas.
     const owned = snapshot.paused ? this.data?.bars() : snapshot.bars
     if (!owned?.length) return
-    const next = [...owned]
+    const next = owned.filter(
+      (b) =>
+        b &&
+        typeof b.close === 'number' &&
+        b.close > 0 &&
+        b.close < 10000000 &&
+        Math.round(b.close * 100) / 100 !== 21474836.48 &&
+        b.open > 0
+    )
+    if (!next.length) return
     const chart = this.chart
     const before = snapshot.reason === 'prepend' ? chart?.getVisibleLogicalRange() : null
     const countBefore = this.shownCount
@@ -1813,8 +1834,11 @@ export class TradingTerminal {
       const current = this.builder.current()
       const index = current ? next.findIndex((bar) => bar.time === current.time) : -1
       if (current && index >= 0 && current.time === this.liveBucket) {
-        const reconciled = this.builder.reconcile(next[index])
-        if (reconciled) next[index] = reconciled
+        const candidate = next[index]
+        if (candidate && candidate.open > 0 && candidate.close > 0) {
+          const reconciled = this.builder.reconcile(candidate)
+          if (reconciled) next[index] = reconciled
+        }
       }
     }
 
@@ -4758,19 +4782,23 @@ export class TradingTerminal {
             }
       ),
     }))
-    return priceAxisSettingsView(
-      volumeSettingsView(
-        profileSettingsView(
-          {
-            tabs,
-            values: { ...readChartSettings(chart) },
-            defaults: { ...this.chartDefaults },
-          },
-          this.ctype,
+    return renkoV2SettingsView(
+      priceAxisSettingsView(
+        volumeSettingsView(
+          profileSettingsView(
+            {
+              tabs,
+              values: { ...readChartSettings(chart) },
+              defaults: { ...this.chartDefaults },
+            },
+            this.ctype,
+            this.chartSettingsSaved
+          ),
           this.chartSettingsSaved
         ),
         this.chartSettingsSaved
       ),
+      this.ctype,
       this.chartSettingsSaved
     )
   }
@@ -4836,7 +4864,10 @@ export class TradingTerminal {
     const enginePatch = Object.fromEntries(
       Object.entries(given).filter(
         ([key]) =>
-          !key.startsWith('profiles.') && !key.startsWith('volume.') && !isPriceAxisSetting(key)
+          !key.startsWith('profiles.') &&
+          !key.startsWith('volume.') &&
+          !key.startsWith('renkov2.') &&
+          !isPriceAxisSetting(key)
       )
     )
     const merged = { ...this.chartSettingsSaved, ...patch }
@@ -4859,12 +4890,13 @@ export class TradingTerminal {
       this.rememberTransformChoice()
       this.afterTransformChange()
     }
-    const defaults = {
+    const defaults: Record<string, string | number | boolean> = {
       ...this.chartDefaults,
       ...profileDefaults('tpo'),
       ...profileDefaults('session-volume-profile'),
       ...VOLUME_DEFAULTS,
       ...PRICE_AXIS_DEFAULTS,
+      ...RENKO_V2_DEFAULTS,
     }
     for (const kind of ['tpo', 'session-volume-profile'] as const) {
       const normalized = profileValues(kind, merged)
@@ -4873,6 +4905,9 @@ export class TradingTerminal {
       }
     }
     for (const [key, value] of Object.entries(volumeValues(merged))) {
+      if (key in merged) merged[key] = value
+    }
+    for (const [key, value] of Object.entries(renkoV2Values(merged))) {
       if (key in merged) merged[key] = value
     }
     const kept: Record<string, string | number | boolean> = {}
@@ -4887,6 +4922,9 @@ export class TradingTerminal {
     this.adoptGridFromPatch(patch)
     this.refreshDisplayedVolume()
     this.refreshLegend(this.drawnBars())
+    if (this.ctype === 'renko-v2') {
+      this.setPriceData()
+    }
     if (isProfileKind(this.ctype)) {
       const interval = this.compatibleProfileInterval(this.ctype)
       if (interval && interval !== this.interval) {
@@ -4940,6 +4978,7 @@ export class TradingTerminal {
             ([key]) =>
               !key.startsWith('profiles.') &&
               !key.startsWith('volume.') &&
+              !key.startsWith('renkov2.') &&
               !transformSetting(key) &&
               !isPriceAxisSetting(key) &&
               // Pinned once measured, below: pinned now it would hold no range.
@@ -6435,6 +6474,15 @@ export class TradingTerminal {
   /* single tick path shared by WS pushes and the REST fallback */
   private onTick(e: { symbol?: string; ltp: number; ltq?: number; timeSec?: number }) {
     if (!this.sym || (e.symbol && e.symbol !== this.sym.symbol)) return
+    if (
+      typeof e.ltp !== 'number' ||
+      !Number.isFinite(e.ltp) ||
+      e.ltp <= 0 ||
+      e.ltp >= 10000000 ||
+      Math.round(e.ltp * 100) / 100 === 21474836.48 ||
+      Math.round(e.ltp * 100) / 100 === -21474836.48
+    )
+      return
     this.lastLtp = e.ltp
     this.cb.onLtp(e.ltp)
     // Recolour with the price: the line belongs to the forming candle, so it
@@ -6662,7 +6710,16 @@ export class TradingTerminal {
           rest !== this.rest
         )
           return
-        const byTime = new Map(fresh.map((b) => [b.time, b]))
+        const validFresh = fresh.filter(
+          (b) =>
+            b &&
+            typeof b.close === 'number' &&
+            b.close > 0 &&
+            b.close < 10000000 &&
+            Math.round(b.close * 100) / 100 !== 21474836.48 &&
+            b.open > 0
+        )
+        const byTime = new Map(validFresh.map((b) => [b.time, b]))
         let changed = false
         for (let i = 0; i < this.rawBars.length; i++) {
           const f = byTime.get(this.rawBars[i].time)
@@ -6689,7 +6746,7 @@ export class TradingTerminal {
         if (this.rawBars.length > 0) {
           const known = new Set(this.rawBars.map((b) => b.time))
           const earliest = this.rawBars[0].time
-          const missing = fresh.filter(
+          const missing = validFresh.filter(
             (b) =>
               b.time > earliest &&
               !known.has(b.time) &&
@@ -7012,15 +7069,65 @@ export class TradingTerminal {
       bars = this.data ? await this.data.load(request) : await feed.getBars(request)
     } catch (e) {
       if (this.destroyed || ticket !== this.loadTicket) return false
-      this.rawBars = []
-      if (!opts.silent)
-        this.loadOutcome = chartLoadFailed(this.sym.symbol, this.interval, this.cleanError(e))
-      return false // caller may fall back (e.g. to the default symbol)
+      bars = []
+      // If a seconds interval failed at broker, attempt a silent fallback to 1m bars
+      if (this.interval.endsWith('s')) {
+        try {
+          const fallbackReq = {
+            symbol: this.sym.symbol,
+            exchange: this.sym.exchange,
+            interval: '1m',
+            from: to - 86400,
+            to,
+          }
+          bars = this.data ? await this.data.load(fallbackReq) : await feed.getBars(fallbackReq)
+        } catch {
+          bars = []
+        }
+      }
+      if (!bars?.length && !this.interval.endsWith('s')) {
+        this.rawBars = []
+        if (!opts.silent)
+          this.loadOutcome = chartLoadFailed(this.sym.symbol, this.interval, this.cleanError(e))
+        return false // caller may fall back (e.g. to the default symbol)
+      }
     }
     // Validate before assigning: an older response must neither overwrite the
     // active session nor recreate a chart after its terminal was destroyed.
     if (this.destroyed || ticket !== this.loadTicket) return false
-    this.rawBars = [...bars]
+    this.rawBars = (bars || []).filter(
+      (b) =>
+        b &&
+        typeof b.close === 'number' &&
+        b.close > 0 &&
+        b.close < 10000000 &&
+        Math.round(b.close * 100) / 100 !== 21474836.48 &&
+        b.open > 0
+    )
+    if (!this.rawBars.length && this.interval.endsWith('s')) {
+      // Fallback: try fetching 1m bars to seed the chart for seconds timeframe
+      try {
+        const fallbackReq = {
+          symbol: this.sym.symbol,
+          exchange: this.sym.exchange,
+          interval: '1m',
+          from: to - 86400,
+          to,
+        }
+        const m1Bars = this.data ? await this.data.load(fallbackReq) : await feed.getBars(fallbackReq)
+        this.rawBars = (m1Bars || []).filter(
+          (b) =>
+            b &&
+            typeof b.close === 'number' &&
+            b.close > 0 &&
+            b.close < 10000000 &&
+            Math.round(b.close * 100) / 100 !== 21474836.48 &&
+            b.open > 0
+        )
+      } catch {
+        /* ignore fallback error */
+      }
+    }
     if (!this.rawBars.length) {
       if (!opts.silent) {
         const error = this.data?.getState().error
@@ -7054,11 +7161,13 @@ export class TradingTerminal {
 
   /* ── toolbar setters (called by the React page) ───────────────────────── */
   setInterval(iv: string): string {
-    if (iv === this.interval) return iv
-    if (!this.availableIntervals.includes(iv)) {
+    const norm = normalizeCustomInterval(iv) || iv
+    if (norm === this.interval) return norm
+    if (!this.availableIntervals.includes(norm)) {
       this.toast(`The connected feed does not support ${iv}`, 'err')
       return this.interval
     }
+    iv = norm
     if (
       isProfileKind(this.ctype) &&
       !profileIntervalSupported(this.ctype, iv, this.profileBlockMinutes())
@@ -7080,6 +7189,17 @@ export class TradingTerminal {
     if (this.link && this.chart) this.link.setInterval(this.chart, iv)
     if (this.sym) this.reloadCurrent()
     return iv
+  }
+  addCustomInterval(iv: string): string {
+    const norm = normalizeCustomInterval(iv)
+    if (!norm) {
+      this.toast(`Invalid interval format: ${iv}`, 'err')
+      return this.interval
+    }
+    if (!this.availableIntervals.includes(norm)) {
+      this.availableIntervals.push(norm)
+    }
+    return this.setInterval(norm)
   }
   setChartType(v: string): string {
     if (!CHART_TYPES[v]) return this.ctype

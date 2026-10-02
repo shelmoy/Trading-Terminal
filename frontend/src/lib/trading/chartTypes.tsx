@@ -9,6 +9,7 @@ import type { Bar, SeriesTransformSpec } from 'openalgo-charts'
 // figure and Kagi renderers. Imported here, beside the catalogue that names
 // them, so every chart reading this catalogue can apply them.
 import 'openalgo-charts/transform'
+import './renkoV2Transform'
 import type { ReactNode } from 'react'
 
 export interface ChartTypeDef {
@@ -65,6 +66,13 @@ export const CHART_TYPE_GROUPS: ChartTypeDef[][] = [
       iconKey: 'bricks',
       series: 'candlestick',
       transform: (b) => ({ type: 'renko', options: { boxSize: b } }),
+    },
+    {
+      value: 'renko-v2',
+      label: 'Renko Version 2',
+      iconKey: 'bricks',
+      series: 'candlestick',
+      transform: (b) => ({ type: 'renko-v2', options: { boxSize: b } }),
     },
     {
       value: 'range',

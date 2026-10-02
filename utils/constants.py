@@ -168,7 +168,9 @@ SUPPORTED_INTERVALS = [
     "10s",
     "15s",
     "30s",
+    "40s",
     "45s",
+    "50s",
     # Minutes
     "1m",
     "2m",

@@ -118,7 +118,7 @@ export function useLivePrice<T extends PriceableItem>(
   } = useMarketData({
     symbols,
     mode: 'LTP',
-    enabled: enabled && items.length > 0,
+    enabled: enabled && items.length > 0 && (!pauseWhenHidden || isVisible),
   })
 
   // Effective live status

@@ -3,6 +3,7 @@
 // weight when the whole row opens menus, and it reads as a dated form
 // control. Reserve the glyph for where it distinguishes something.
 import {
+  ArrowRight,
   ChevronDown,
   ClipboardPaste,
   Copy,
@@ -44,7 +45,7 @@ import {
 } from '@/lib/trading/chartState'
 import { CHART_TYPE_GROUPS, CHART_TYPES, chartTypeIcon } from '@/lib/trading/chartTypes'
 import { MOD_KEY } from '@/lib/trading/drawingKeys'
-import type { IntervalGroup } from '@/lib/trading/intervals'
+import { normalizeCustomInterval, type IntervalGroup } from '@/lib/trading/intervals'
 import { lotInfoText } from '@/lib/trading/legend'
 import { isProfileKind } from '@/lib/trading/profileSettings'
 import {
@@ -446,6 +447,7 @@ export function ChartPane({
   }, [ready])
   const [intervalGroups, setIntervalGroups] = useState<IntervalGroup[]>([])
   const [interval, setIntervalState] = useState('5m')
+  const [customInterval, setCustomInterval] = useState('')
   const [chartType, setChartTypeState] = useState('candlestick')
   const [sym, setSym] = useState<SymbolView | null>(null)
   const [branding, setBranding] = useState<BrandingLink | null>(null)
@@ -748,7 +750,31 @@ export function ChartPane({
   // The toolbar's switches are undo steps; the terminal records them.
   const changeInterval = (iv: string) => {
     onBeforeSourceChange?.()
-    setIntervalState(terminalRef.current?.chooseInterval(iv) ?? iv)
+    const terminal = terminalRef.current
+    const next = terminal ? terminal.addCustomInterval(iv) : iv
+    setIntervalState(next)
+    // If it was a custom interval, ensure it appears in the appropriate group
+    const norm = normalizeCustomInterval(iv)
+    if (norm) {
+      setIntervalGroups((prev) => {
+        const isSeconds = norm.endsWith('s')
+        const targetLabel = isSeconds ? 'seconds' : norm.endsWith('m') ? 'minutes' : norm.endsWith('h') ? 'hours' : 'days'
+        const exists = prev.some((g) => g.items.includes(norm))
+        if (exists) return prev
+        return prev.map((g) => {
+          if (g.label === targetLabel) {
+            const arr = Array.from(new Set([...g.items, norm]))
+            arr.sort((a, b) => {
+              const numA = parseInt(a, 10) || 0
+              const numB = parseInt(b, 10) || 0
+              return numA - numB
+            })
+            return { ...g, items: arr }
+          }
+          return g
+        })
+      })
+    }
   }
   const changeChartType = (v: string) => {
     onBeforeSourceChange?.()
@@ -1219,6 +1245,37 @@ export function ChartPane({
                   </div>
                 </div>
               ))}
+              <DropdownMenuSeparator />
+              <div className="p-1.5" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+                <div className="px-1 pb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                  Custom Interval
+                </div>
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault()
+                    if (!customInterval.trim()) return
+                    const norm = normalizeCustomInterval(customInterval.trim())
+                    if (norm) {
+                      changeInterval(norm)
+                      setCustomInterval('')
+                    } else {
+                      showToast.error('Invalid interval format. Use e.g. 10s, 40s, 50s, 2m, 1h')
+                    }
+                  }}
+                  className="flex items-center gap-1"
+                >
+                  <Input
+                    type="text"
+                    value={customInterval}
+                    onChange={(e) => setCustomInterval(e.target.value)}
+                    placeholder="e.g. 40s, 2m"
+                    className="h-7 text-xs font-mono px-2"
+                  />
+                  <Button type="submit" size="sm" variant="secondary" className="h-7 px-2 text-xs">
+                    <ArrowRight className="h-3.5 w-3.5" />
+                  </Button>
+                </form>
+              </div>
             </DropdownMenuContent>
           </DropdownMenu>
 

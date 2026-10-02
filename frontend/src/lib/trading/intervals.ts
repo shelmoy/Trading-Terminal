@@ -95,10 +95,17 @@ export interface IntervalGroup {
   items: string[]
 }
 
+export const STANDARD_SECOND_INTERVALS = ['5s', '15s', '30s', '40s', '50s']
+
 /** Broker interval payload → ordered, non-empty groups for the timeframe menu. */
 export function intervalGroups(data: IntervalData): IntervalGroup[] {
+  // Merge broker-supplied seconds with standard real-time tick-aggregated seconds (5s, 15s, 30s, 40s, 50s)
+  const secondsList = Array.from(new Set([...STANDARD_SECOND_INTERVALS, ...(data.seconds || [])])).sort(
+    (a, b) => ((Number(/^(\d+)/.exec(a)?.[1]) || 0) - (Number(/^(\d+)/.exec(b)?.[1]) || 0))
+  )
+
   const order: [string, string[] | undefined][] = [
-    ['seconds', data.seconds],
+    ['seconds', secondsList],
     ['minutes', data.minutes],
     ['hours', data.hours],
     ['days', data.days],
@@ -108,6 +115,33 @@ export function intervalGroups(data: IntervalData): IntervalGroup[] {
   return order
     .filter(([, arr]) => arr?.length)
     .map(([label, arr]) => ({ label, items: arr as string[] }))
+}
+
+/**
+ * Validate and normalize a custom user-input interval string (e.g. "10s", "40s", "45s", "120s", "2m", "15m", "2h", "1D").
+ * Returns normalized string or null if invalid.
+ */
+export function normalizeCustomInterval(input: string): string | null {
+  const trimmed = input.trim()
+  const m = /^(\d+)\s*([smhdwMyY])$/i.exec(trimmed)
+  if (!m) return null
+  const num = parseInt(m[1], 10)
+  if (!Number.isFinite(num) || num <= 0) return null
+  let unit = m[2].toLowerCase()
+  if (unit === 'd') unit = 'D'
+  else if (unit === 'w') unit = 'W'
+  else if (unit === 'm' && m[2] === 'M') unit = 'M'
+  else if (unit === 'y') unit = 'Y'
+
+  // Cap bounds
+  if (unit === 's' && num > 3600) return null
+  if (unit === 'm' && num > 1440) return null
+  if (unit === 'h' && num > 24) return null
+
+  if (unit === 'D' || unit === 'W' || unit === 'M' || unit === 'Y') {
+    return num === 1 ? unit : `${num}${unit}`
+  }
+  return `${num}${unit}`
 }
 
 /**

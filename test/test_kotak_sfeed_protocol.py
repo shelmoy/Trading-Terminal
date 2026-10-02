@@ -359,3 +359,82 @@ def test_exchange_id_maps_to_the_segment_name_openalgo_already_uses():
     packet = market_picture(exchange_id=9)  # mcx_fo
 
     assert sf.decode_packet(packet, {})["exchange_segment"] == "mcx_fo"
+
+
+# --- sentinel handling (ghost candle prevention) -----------------------------
+
+
+def test_sentinel_price_0x80000000_is_sanitized_to_zero():
+    """Exchange empty-field sentinel 0x80000000 must decode to 0.0, not 21474836.48."""
+    packet = market_picture(
+        ltp=0x80000000,
+        open_price=0x80000000,
+        high=0x80000000,
+        low=0x80000000,
+        close=0x80000000,
+    )
+
+    decoded = sf.decode_packet(packet, {NSE_CM: 100})
+
+    assert decoded["last_traded_price"] == 0.0
+    assert decoded["open_price"] == 0.0
+    assert decoded["high_price"] == 0.0
+    assert decoded["low_price"] == 0.0
+    assert decoded["close_price"] == 0.0
+
+
+def test_sentinel_depth_row_price_is_sanitized_to_zero():
+    """Depth rows carrying -2147483648 (signed 0x80000000) must decode to price 0.0."""
+    packet = market_picture(
+        level=sf.LEVEL_TOUCH_LINE,
+        buy_rows=((100, -2147483648, 1),),
+        sell_rows=((150, 2147483647, 1),),
+    )
+
+    decoded = sf.decode_packet(packet, {NSE_CM: 100})
+
+    assert decoded["buy"][0]["price"] == 0.0
+    assert decoded["sell"][0]["price"] == 0.0
+
+
+def test_mini_touch_line_sentinel_price_is_sanitized():
+    # In _MINI_BODY: token(I), ltt(q), ltp(I), ltq(q), close(I), net_chg_pct(i), net_chg(i)
+    body = sf._MINI_BODY.pack(11536, 1700000000, 0x80000000, 50, 0x80000000, 150, -2147483648, 1, 2, 1)
+    packet = header(sf.HEADER_SIZE + len(body), 0, level=sf.LEVEL_MINI_TOUCH_LINE) + body
+
+    decoded = sf.decode_packet(packet, {NSE_CM: 100})
+
+    assert decoded["last_traded_price"] == 0.0
+    assert decoded["close_price"] == 0.0
+    assert decoded["net_change"] == 0.0
+
+
+def test_index_sentinel_price_is_sanitized():
+    # In _INDEX_BODY: token(I), open(i), close(i), high(i), low(i), index_value(i)
+    # 0x80000000 in signed 32-bit int is -2147483648
+    body = sf._INDEX_BODY.pack(
+        26000,
+        -2147483648,  # open
+        -2147483648,  # close
+        -2147483648,  # high
+        -2147483648,  # low
+        -2147483648,  # index_value
+        1700000000,
+        -2147483648,  # yearly_high
+        -2147483648,  # yearly_low
+        0,
+        0.0,
+        2,
+        100,
+        b"Nifty 50",
+    )
+    packet = header(sf.HEADER_SIZE + len(body), sf.MSG_INDEX) + body
+
+    decoded = sf.decode_packet(packet, {NSE_CM: 100})
+
+    assert decoded["last_traded_price"] == 0.0
+    assert decoded["open_price"] == 0.0
+    assert decoded["high_price"] == 0.0
+    assert decoded["low_price"] == 0.0
+    assert decoded["close_price"] == 0.0
+    assert decoded["change"] == 0.0

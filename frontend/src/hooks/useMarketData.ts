@@ -111,17 +111,37 @@ export function useMarketData({
       manager.connect()
     }
 
+    // Buffer incoming ticks and flush via requestAnimationFrame to avoid thrashing React state
+    const pendingUpdates = new Map<string, SymbolData>()
+    let rafId: number | null = null
+
+    const flushUpdates = () => {
+      if (pendingUpdates.size === 0) {
+        rafId = null
+        return
+      }
+      const batch = new Map(pendingUpdates)
+      pendingUpdates.clear()
+      setMarketData((prev) => {
+        const next = new Map(prev)
+        for (const [k, v] of batch) {
+          next.set(k, v)
+        }
+        return next
+      })
+      rafId = null
+    }
+
     // Subscribe to each symbol
     const unsubscribes: Array<() => void> = []
 
     for (const { symbol, exchange } of symbols) {
       const unsubscribe = manager.subscribe(symbol, exchange, mode, (data: SymbolData) => {
-        setMarketData((prev) => {
-          const key = `${data.exchange}:${data.symbol}`
-          const updated = new Map(prev)
-          updated.set(key, data)
-          return updated
-        })
+        const key = `${data.exchange}:${data.symbol}`
+        pendingUpdates.set(key, data)
+        if (rafId === null) {
+          rafId = requestAnimationFrame(flushUpdates)
+        }
       })
       unsubscribes.push(unsubscribe)
 
@@ -129,17 +149,21 @@ export function useMarketData({
       const cached = manager.getCachedData(symbol, exchange)
       if (cached) {
         const key = `${exchange}:${symbol}`
-        setMarketData((prev) => {
-          const updated = new Map(prev)
-          updated.set(key, cached)
-          return updated
-        })
+        pendingUpdates.set(key, cached)
+        if (rafId === null) {
+          rafId = requestAnimationFrame(flushUpdates)
+        }
       }
     }
 
     return () => {
       // Unsubscribe from all symbols
       unsubscribes.forEach((unsub) => unsub())
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId)
+        rafId = null
+      }
+      pendingUpdates.clear()
     }
   }, [enabled, symbolsKey, mode])
 
