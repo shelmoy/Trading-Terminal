@@ -21,7 +21,7 @@
  * strike it belongs to.
  */
 
-import { Check, ChevronDown, Link2, SlidersHorizontal, ShoppingCart, RefreshCw } from 'lucide-react'
+import { Check, ChevronsUpDown, RefreshCw } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { useOptionChainLive } from '@/hooks/useOptionChainLive'
@@ -60,6 +60,24 @@ const PREFS_KEY = 'oa-trading-optionchain'
 const EXCHANGES = ['NFO', 'BFO', 'MCX', 'CDS'] as const
 type Exchange = (typeof EXCHANGES)[number]
 
+/**
+ * What the two side columns show.
+ *
+ * LTP is the default because it is what a chart click is about. Everything
+ * else rides along in the same response, so offering it costs nothing: the
+ * service inverts Black-76 over the quotes it has already fetched and returns
+ * the whole Greek set with the prices, in one broker call.
+ *
+ * `dp` is per metric because the magnitudes are nothing alike. Gamma for an
+ * index option is around 0.0019, so at the two decimals that suit delta and
+ * theta every strike on the board would read 0.00.
+ *
+ * `symbol` is the notation the instrument is actually discussed in. A trader
+ * reads a column of deltas under a bare capital delta without being told; the
+ * name is kept beside it in the picker so nothing depends on recognising it.
+ * Sigma for implied volatility, and vega keeps a Latin V because it is not a
+ * Greek letter at all, whatever the family is called.
+ */
 const METRICS = [
   { id: 'ltp', label: 'LTP', symbol: 'LTP', group: 'Price', dp: 2 },
   { id: 'oi', label: 'OI', symbol: 'OI', group: 'Price', dp: 0 },
@@ -72,13 +90,24 @@ const METRICS = [
 ] as const
 type Metric = (typeof METRICS)[number]['id']
 
+/** The order the picker lists them in, so the groups stay together. */
 const METRIC_GROUPS = ['Price', 'Greeks'] as const
+
+/** Strikes either side of ATM. Twenty rows is about one panel-height of scroll. */
 const STRIKE_COUNT = 10
+
+/** The row and its column header share this, so the two cannot drift apart. */
 const ROW_GRID = 'grid grid-cols-[1fr_64px_1fr]'
 
 interface Props {
   apiKey: string
+  /** Charts the leg that was clicked, in whichever pane was last touched. */
   onPick(row: SearchRow): void
+  /**
+   * The focused pane's instrument as `EXCHANGE:SYMBOL`, so the leg currently
+   * on the chart is marked. The watchlist has always had this; without it
+   * here, charting a leg gave no confirmation that anything had happened.
+   */
   activeSymbol?: string | null
 }
 
@@ -110,6 +139,14 @@ function compact(value: number | undefined): string {
   return String(Math.round(value))
 }
 
+/**
+ * One leg's value for the selected metric.
+ *
+ * Everything unavailable renders as a dash rather than a zero. A leg with no
+ * quote, or one on an expired chain, cannot be inverted, and printing 0.00
+ * would read as a real measurement of zero volatility or zero sensitivity.
+ * That distinction is the whole reason to show Greeks at all.
+ */
 function metricOf(leg: OptionData | null, metric: Metric): string {
   if (!leg) return '-'
 
@@ -133,6 +170,21 @@ function metricOf(leg: OptionData | null, metric: Metric): string {
   return metric === 'iv' ? `${value.toFixed(dp)}%` : value.toFixed(dp)
 }
 
+/**
+ * Buy and sell pills for one leg.
+ *
+ * They sit immediately beside the value, not at the panel's outer edge. The
+ * value is what the trader is reading and what they are acting on, so putting
+ * the controls an inch away across empty cell made the pair read as unrelated.
+ *
+ * Laid out in flow rather than absolutely positioned, so they hold their space
+ * while hidden: revealing them on hover cannot shift the number the pointer is
+ * aimed at. Nothing is ever covered to make room either, which is the failure
+ * mode a hover control usually has in a column this narrow.
+ *
+ * Colours match pages/OptionChain.tsx exactly, green to buy and amber to sell.
+ * Amber rather than red because red already means "put" in this table.
+ */
 function OrderPills({
   leg,
   onOrder,
@@ -178,18 +230,25 @@ export function OptionChainPanel({ apiKey, onPick, activeSymbol }: Props) {
   const [expiries, setExpiries] = useState<string[]>([])
   const [metric, setMetric] = useState<Metric>('ltp')
   const [pickerOpen, setPickerOpen] = useState(false)
-  const [viewMode, setViewMode] = useState<'oi' | 'greeks'>('oi')
-  const [showConfig, setShowConfig] = useState(false)
-
+  /**
+   * One slot per loader, not one shared between them.
+   */
   const [underlyingError, setUnderlyingError] = useState<string | null>(null)
   const [expiryError, setExpiryError] = useState<string | null>(null)
+
+  /** Bumped to re-run the loaders after a Retry. */
   const [attempt, setAttempt] = useState(0)
 
   /** Flash map for real-time 0-1ms micro-price changes */
   const [flashes, setFlashes] = useState<Record<string, 'up' | 'down'>>({})
   const prevPricesRef = useRef<Map<string, number>>(new Map())
+
+  /** Track previously synced active symbol to avoid feedback loops */
   const lastSyncedSymbolRef = useRef<string | null>(null)
 
+  /**
+   * The leg an order is being placed on, or null.
+   */
   const [order, setOrder] = useState<{
     leg: OptionData
     action: 'BUY' | 'SELL'
@@ -229,12 +288,15 @@ export function OptionChainPanel({ apiKey, onPick, activeSymbol }: Props) {
           }
         }
 
+        // De-duplicate if same symbol exists in multiple
         setGlobalUnderlyings(allItems)
         setUnderlyings(currentSegmentList)
         setUnderlyingError(null)
 
+        // If current underlying isn't in current segment or global, ensure fallback
         setPrefs((p) => {
           if (currentSegmentList.length > 0 && !currentSegmentList.includes(p.underlying)) {
+            // Check if current underlying exists in any exchange
             const match = allItems.find((item) => item.name.toUpperCase() === p.underlying.toUpperCase())
             if (match) {
               return { ...p, exchange: match.exchange, underlying: match.name, expiry: '' }
@@ -260,6 +322,7 @@ export function OptionChainPanel({ apiKey, onPick, activeSymbol }: Props) {
     if (!activeSymbol || activeSymbol === lastSyncedSymbolRef.current) return
     lastSyncedSymbolRef.current = activeSymbol
 
+    // Parse active symbol format: e.g. "BSE_INDEX:SENSEX", "BFO:SENSEX...", "NSE_INDEX:NIFTY", "NFO:NIFTY...", "NSE:RELIANCE"
     const parts = activeSymbol.split(':')
     const rawSym = (parts.length > 1 ? parts[1] : parts[0]).toUpperCase()
     const rawEx = (parts.length > 1 ? parts[0] : '').toUpperCase()
@@ -267,6 +330,7 @@ export function OptionChainPanel({ apiKey, onPick, activeSymbol }: Props) {
     let detectedExchange: Exchange | null = null
     let detectedUnderlying: string | null = null
 
+    // 1. Direct index or common underlying detection
     if (rawSym.includes('SENSEX') || rawEx === 'BSE_INDEX' || rawEx === 'BFO') {
       detectedExchange = 'BFO'
       detectedUnderlying = rawSym.includes('BANKEX') ? 'BANKEX' : 'SENSEX'
@@ -281,6 +345,7 @@ export function OptionChainPanel({ apiKey, onPick, activeSymbol }: Props) {
       detectedExchange = 'MCX'
       detectedUnderlying = rawSym.replace(/[0-9].*$/, '')
     } else {
+      // 2. Check if clean symbol matches any global derivative underlying
       const cleanSym = rawSym.replace(/(CE|PE)$/i, '').replace(/[0-9].*$/, '')
       const match = globalUnderlyings.find(
         (u) => u.name.toUpperCase() === cleanSym || cleanSym.startsWith(u.name.toUpperCase())
@@ -289,6 +354,7 @@ export function OptionChainPanel({ apiKey, onPick, activeSymbol }: Props) {
         detectedExchange = match.exchange
         detectedUnderlying = match.name
       } else if (cleanSym) {
+        // Assume default NFO for equity stocks like RELIANCE, TCS, etc.
         detectedExchange = 'NFO'
         detectedUnderlying = cleanSym
       }
@@ -302,7 +368,7 @@ export function OptionChainPanel({ apiKey, onPick, activeSymbol }: Props) {
         return {
           exchange: detectedExchange!,
           underlying: detectedUnderlying!,
-          expiry: '',
+          expiry: '', // Will auto-select nearest expiry upon expiries load
         }
       })
     }
@@ -376,63 +442,40 @@ export function OptionChainPanel({ apiKey, onPick, activeSymbol }: Props) {
     return ce > 0 ? pe / ce : 0
   }, [rows])
 
-  /** Max Pain calculation */
-  const maxPain = useMemo(() => {
-    if (!rows.length) return null
-    let minLoss = Number.POSITIVE_INFINITY
-    let bestStrike = rows[0].strike
-
-    for (const testRow of rows) {
-      const testPrice = testRow.strike
-      let totalLoss = 0
-      for (const r of rows) {
-        if (r.ce?.oi && testPrice > r.strike) {
-          totalLoss += (testPrice - r.strike) * r.ce.oi
-        }
-        if (r.pe?.oi && testPrice < r.strike) {
-          totalLoss += (r.strike - testPrice) * r.pe.oi
-        }
-      }
-      if (totalLoss < minLoss) {
-        minLoss = totalLoss
-        bestStrike = testPrice
-      }
-    }
-    return bestStrike
-  }, [rows])
-
-  /** ATM Implied Volatility (IV) */
-  const atmIV = useMemo(() => {
-    if (!chain?.atm_strike) return 0
-    const atmRow = rows.find((r) => r.strike === chain.atm_strike)
-    const ceIv = atmRow?.ce?.implied_volatility ?? 0
-    const peIv = atmRow?.pe?.implied_volatility ?? 0
-    if (ceIv && peIv) return (ceIv + peIv) / 2
-    return ceIv || peIv || 15.70
-  }, [chain?.atm_strike, rows])
-
   /**
-   * Support and Resistance Analysis:
-   * Resistance (R1): Strike with maximum Call OI
-   * Support (S1): Strike with maximum Put OI
+   * Strike Open Interest Analysis:
+   * r1: Strike with highest Call OI (Max Call OI / Resistance)
+   * s1: Strike with highest Put OI (Max Put OI / Support)
+   * maxOiStrike: Strike with absolute highest single OI (Call or Put)
+   * maxOiStrike: Strike with absolute highest single OI (Call or Put)
    */
-  const { r1, s1, r1Oi, s1Oi } = useMemo(() => {
+  const { r1, s1, r1Oi, s1Oi, maxOiStrike } = useMemo(() => {
     let maxCeOi = 0
     let r1Strike: number | null = null
     let maxPeOi = 0
     let s1Strike: number | null = null
-
     for (const r of rows) {
-      if (r.ce?.oi && r.ce.oi > maxCeOi) {
-        maxCeOi = r.ce.oi
+      const ceOi = r.ce?.oi ?? 0
+      const peOi = r.pe?.oi ?? 0
+
+      if (ceOi > maxCeOi) {
+        maxCeOi = ceOi
         r1Strike = r.strike
       }
-      if (r.pe?.oi && r.pe.oi > maxPeOi) {
-        maxPeOi = r.pe.oi
+      if (peOi > maxPeOi) {
+        maxPeOi = peOi
         s1Strike = r.strike
       }
     }
-    return { r1: r1Strike, s1: s1Strike, r1Oi: maxCeOi, s1Oi: maxPeOi }
+
+    const maxSingle = maxCeOi >= maxPeOi ? r1Strike : s1Strike
+    return {
+      r1: r1Strike,
+      s1: s1Strike,
+      r1Oi: maxCeOi,
+      s1Oi: maxPeOi,
+      maxOiStrike: maxSingle,
+    }
   }, [rows])
 
   /* ── Real-time 0-1ms micro-price tick flash detector ────────────────────── */
@@ -474,17 +517,16 @@ export function OptionChainPanel({ apiKey, onPick, activeSymbol }: Props) {
     onPick({ symbol: leg.symbol, exchange: prefs.exchange })
   }
 
-  const spotLtp = chain?.underlying_ltp
-  const prevClose = chain?.underlying_prev_close
-  const spotChange = spotLtp && prevClose && !needsPreviousClose(prevClose, spotLtp) ? spotLtp - prevClose : 0
-  const spotChangePct = prevClose && spotChange ? (spotChange / prevClose) * 100 : 0
-
+  /**
+   * Tri-state, not a boolean. With no previous close there is no direction.
+   */
   const spotDirection: 'up' | 'down' | 'flat' = (() => {
-    if (typeof spotLtp !== 'number') return 'flat'
-    if (needsPreviousClose(prevClose, spotLtp)) return 'flat'
-    const prev = prevClose as number
-    if (spotLtp === prev) return 'flat'
-    return spotLtp > prev ? 'up' : 'down'
+    const ltp = chain?.underlying_ltp
+    if (typeof ltp !== 'number') return 'flat'
+    if (needsPreviousClose(chain?.underlying_prev_close, ltp)) return 'flat'
+    const prev = chain?.underlying_prev_close as number
+    if (ltp === prev) return 'flat'
+    return ltp > prev ? 'up' : 'down'
   })()
 
   const activeMetric = METRICS.find((m) => m.id === metric)
@@ -494,11 +536,14 @@ export function OptionChainPanel({ apiKey, onPick, activeSymbol }: Props) {
   const filteredUnderlyings = useMemo(() => {
     const query = underlyingSearch.trim().toUpperCase()
     if (!query) {
+      // Default: current exchange underlyings first
       return underlyings.map((name) => ({ name, exchange: prefs.exchange }))
     }
+    // Search across ALL underlyings globally
     const matches: Array<{ name: string; exchange: Exchange }> = []
     const seen = new Set<string>()
 
+    // Prioritize startsWith matches
     for (const item of globalUnderlyings) {
       if (item.name.toUpperCase().startsWith(query)) {
         const key = `${item.exchange}:${item.name}`
@@ -508,6 +553,7 @@ export function OptionChainPanel({ apiKey, onPick, activeSymbol }: Props) {
         }
       }
     }
+    // Then includes matches
     for (const item of globalUnderlyings) {
       if (!item.name.toUpperCase().startsWith(query) && item.name.toUpperCase().includes(query)) {
         const key = `${item.exchange}:${item.name}`
@@ -517,6 +563,7 @@ export function OptionChainPanel({ apiKey, onPick, activeSymbol }: Props) {
         }
       }
     }
+    // Fallback: if query matches none, keep current underlyings filtered
     if (matches.length === 0 && underlyings.length > 0) {
       return underlyings
         .filter((u) => u.toUpperCase().includes(query))
@@ -532,115 +579,116 @@ export function OptionChainPanel({ apiKey, onPick, activeSymbol }: Props) {
       storageKey="oa-trading-optionchain-width"
       defaultWidth={340}
     >
-      {/* ── HEADER 1: Underlying Name, Live Spot, Net Change ────────────────── */}
-      <div className={cn(PANEL_HEADER, 'justify-between bg-[#111317] border-b border-border/40 px-3')}>
-        <div className="flex items-baseline gap-2 min-w-0">
-          <Popover open={pickerOpen} onOpenChange={(open) => {
-            setPickerOpen(open)
-            if (!open) setUnderlyingSearch('')
-          }}>
-            <PopoverTrigger asChild>
-              <button
-                type="button"
-                role="combobox"
-                aria-expanded={pickerOpen}
-                aria-label="Underlying"
-                className="flex items-center gap-1.5 font-bold text-white text-[13px] tracking-wide hover:text-white/80 transition-colors focus:outline-none"
-              >
-                <span>{prefs.underlying || 'SENSEX'}</span>
-                <ChevronDown className="h-3.5 w-3.5 text-muted-foreground/70" />
-              </button>
-            </PopoverTrigger>
-            <PopoverContent className="w-[240px] p-0 shadow-xl border-border/80 bg-[#16191f] text-white" align="start">
-              <Command shouldFilter={false}>
-                <CommandInput
-                  placeholder="Search global (e.g. SENSEX, NIFTY)..."
-                  value={underlyingSearch}
-                  onValueChange={setUnderlyingSearch}
-                  className="h-8 text-[12px] bg-transparent text-white"
-                />
-                <CommandList className="max-h-[260px]">
-                  <CommandEmpty className="py-4 text-center text-[12px] text-muted-foreground">
-                    {underlyingError ?? 'No underlying found.'}
-                  </CommandEmpty>
-                  <CommandGroup>
-                    {filteredUnderlyings.map((item) => {
-                      const isSelected = prefs.underlying === item.name && prefs.exchange === item.exchange
-                      return (
-                        <CommandItem
-                          key={`${item.exchange}:${item.name}`}
-                          value={`${item.name} ${item.exchange}`}
-                          onSelect={() => {
-                            setPrefs({
-                              exchange: item.exchange,
-                              underlying: item.name,
-                              expiry: '',
-                            })
-                            setPickerOpen(false)
-                            setUnderlyingSearch('')
-                          }}
-                          className="flex items-center justify-between text-[12px] py-1.5 cursor-pointer hover:bg-white/10"
-                        >
-                          <div className="flex items-center gap-2">
-                            <Check
-                              className={cn(
-                                'h-3.5 w-3.5 text-primary',
-                                isSelected ? 'opacity-100' : 'opacity-0'
-                              )}
-                            />
-                            <span className={cn('font-medium', isSelected && 'text-primary')}>
-                              {item.name}
-                            </span>
-                          </div>
-                          <span
-                            className={cn(
-                              'rounded px-1.5 py-0.5 text-[9px] font-mono font-semibold',
-                              item.exchange === 'BFO'
-                                ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30'
-                                : item.exchange === 'NFO'
-                                ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
-                                : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                            )}
-                          >
-                            {item.exchange}
-                          </span>
-                        </CommandItem>
-                      )
-                    })}
-                  </CommandGroup>
-                </CommandList>
-              </Command>
-            </PopoverContent>
-          </Popover>
+      {/* Header: the contract. Global Search across segments & Segment selector */}
+      <div className={PANEL_HEADER}>
+        <Select
+          value={prefs.exchange}
+          onValueChange={(value) =>
+            setPrefs((p) => ({ ...p, exchange: value as Exchange, expiry: '' }))
+          }
+        >
+          <SelectTrigger className="h-8 w-[76px] text-[12px] font-semibold tracking-wide border-border/60 bg-muted/20" aria-label="Exchange segment">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {EXCHANGES.map((ex) => (
+              <SelectItem key={ex} value={ex} className="text-[12px]">
+                {ex}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
 
-          {/* Spot price & Change */}
-          <span
-            className={cn(
-              'font-semibold text-[13px] tabular-nums',
-              spotDirection === 'up' && 'text-emerald-600 dark:text-emerald-400',
-              spotDirection === 'down' && 'text-rose-600 dark:text-rose-400',
-              spotDirection === 'flat' && 'text-foreground'
-            )}
-          >
-            {typeof spotLtp === 'number' ? spotLtp.toFixed(2) : '-'}
-          </span>
-          {spotChange !== 0 && (
-            <span
-              className={cn(
-                'text-[11px] font-medium tabular-nums',
-                spotChange > 0 ? 'text-emerald-500' : 'text-rose-500'
-              )}
+        {/* Global searchable combobox across ALL exchanges */}
+        <Popover open={pickerOpen} onOpenChange={(open) => {
+          setPickerOpen(open)
+          if (!open) setUnderlyingSearch('')
+        }}>
+          <PopoverTrigger asChild>
+            <Button
+              variant="outline"
+              role="combobox"
+              aria-expanded={pickerOpen}
+              aria-label="Underlying"
+              className="h-8 min-w-0 flex-1 justify-between px-2 text-[12px] font-semibold border-border/60 bg-muted/20 hover:bg-muted/40 transition-colors"
             >
-              {spotChange > 0 ? `+${spotChange.toFixed(2)}` : spotChange.toFixed(2)} ({spotChangePct > 0 ? `+${spotChangePct.toFixed(2)}%` : `${spotChangePct.toFixed(2)}%`})
-            </span>
-          )}
-        </div>
+              <div className="flex items-center gap-1.5 truncate">
+                <span className="truncate">{prefs.underlying || 'Select'}</span>
+                <span className="rounded bg-primary/10 px-1 py-0.2 text-[9px] font-mono text-primary/80 uppercase">
+                  {prefs.exchange}
+                </span>
+              </div>
+              <ChevronsUpDown className="h-3 w-3 shrink-0 opacity-50" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-[240px] p-0 shadow-lg border-border/80" align="start">
+            <Command shouldFilter={false}>
+              <CommandInput
+                placeholder="Search global (e.g. SENSEX, NIFTY)..."
+                value={underlyingSearch}
+                onValueChange={setUnderlyingSearch}
+                className="h-8 text-[12px]"
+              />
+              <CommandList className="max-h-[260px]">
+                <CommandEmpty className="py-4 text-center text-[12px]">
+                  {underlyingError ?? 'No underlying found.'}
+                </CommandEmpty>
+                <CommandGroup>
+                  {filteredUnderlyings.map((item) => {
+                    const isSelected = prefs.underlying === item.name && prefs.exchange === item.exchange
+                    return (
+                      <CommandItem
+                        key={`${item.exchange}:${item.name}`}
+                        value={`${item.name} ${item.exchange}`}
+                        onSelect={() => {
+                          setPrefs({
+                            exchange: item.exchange,
+                            underlying: item.name,
+                            expiry: '',
+                          })
+                          setPickerOpen(false)
+                          setUnderlyingSearch('')
+                        }}
+                        className="flex items-center justify-between text-[12px] py-1.5 cursor-pointer"
+                      >
+                        <div className="flex items-center gap-2">
+                          <Check
+                            className={cn(
+                              'h-3.5 w-3.5 text-primary',
+                              isSelected ? 'opacity-100' : 'opacity-0'
+                            )}
+                          />
+                          <span className={cn('font-medium', isSelected && 'text-primary')}>
+                            {item.name}
+                          </span>
+                        </div>
+                        <span
+                          className={cn(
+                            'rounded px-1.5 py-0.5 text-[9px] font-mono font-semibold',
+                            item.exchange === 'BFO'
+                              ? 'bg-purple-500/15 text-purple-600 dark:text-purple-400 border border-purple-500/20'
+                              : item.exchange === 'NFO'
+                              ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400 border border-blue-500/20'
+                              : item.exchange === 'MCX'
+                              ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/20'
+                              : 'bg-muted text-muted-foreground'
+                          )}
+                        >
+                          {item.exchange}
+                        </span>
+                      </CommandItem>
+                    )
+                  })}
+                </CommandGroup>
+              </CommandList>
+            </Command>
+          </PopoverContent>
+        </Popover>
 
-        {/* Refresh button */}
         <Button
           variant="ghost"
           size="icon"
-          className="h-7 w-7 text-muted-foreground hover:text-white"
+          className="h-8 w-8 shrink-0 hover:bg-muted/40"
           onClick={() => refetch()}
           title="Refresh"
           aria-label="Refresh option chain"
@@ -649,171 +697,138 @@ export function OptionChainPanel({ apiKey, onPick, activeSymbol }: Props) {
         </Button>
       </div>
 
-      {/* ── HEADER 2: Expiry Pill, OI/Greeks Toggle, Metric and Action Icons ───────── */}
-      <div className="flex shrink-0 items-center justify-between bg-[#111317] border-b border-border/40 px-2 py-1.5 gap-1.5 flex-wrap sm:flex-nowrap">
-        <div className="flex items-center gap-1.5 flex-wrap">
-          {/* Rounded Expiry pill with dropdown */}
-          <Select
-            value={prefs.expiry}
-            onValueChange={(value) => setPrefs((p) => ({ ...p, expiry: value }))}
+      {/* Second band: expiry and what the side columns are showing */}
+      <div className="flex shrink-0 items-center gap-1.5 border-b px-2 py-1.5">
+        <Select
+          value={prefs.expiry}
+          onValueChange={(value) => setPrefs((p) => ({ ...p, expiry: value }))}
+        >
+          <SelectTrigger
+            className={cn(
+              'h-8 min-w-0 flex-1 text-[12px]',
+              expiryError && 'border-destructive text-destructive'
+            )}
+            aria-label="Expiry"
+            title={expiryError ?? undefined}
           >
-            <SelectTrigger
-              className={cn(
-                'h-7 rounded-full bg-[#1b253b] border-none text-[#5188f6] font-medium px-2.5 py-0 text-[11px] hover:bg-[#22304d] transition-colors focus:ring-0 shadow-none gap-1 w-auto min-w-[75px]',
-                expiryError && 'text-destructive bg-destructive/10'
-              )}
-              aria-label="Expiry"
-              title={expiryError ?? undefined}
-            >
-              <SelectValue placeholder={expiryError ? 'Expiry' : 'Select Expiry'}>
-                {prefs.expiry ? prefs.expiry : 'Select Expiry'}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent className="bg-[#16191f] text-white border-border/60">
-              {expiries.map((date) => (
-                <SelectItem key={date} value={date} className="text-[12px] hover:bg-white/10">
-                  {date}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            <SelectValue placeholder={expiryError ? 'Expiry unavailable' : 'Expiry'} />
+          </SelectTrigger>
+          <SelectContent>
+            {expiries.map((date) => (
+              <SelectItem key={date} value={date} className="text-[12px]">
+                {date}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
 
-          {/* Segment Selector Badge */}
-          <Select
-            value={prefs.exchange}
-            onValueChange={(value) =>
-              setPrefs((p) => ({ ...p, exchange: value as Exchange, expiry: '' }))
-            }
-          >
-            <SelectTrigger className="h-7 rounded-full bg-muted/20 border-border/40 text-muted-foreground text-[10px] px-2 font-mono" aria-label="Exchange segment">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent className="bg-[#16191f] text-white border-border/60">
-              {EXCHANGES.map((ex) => (
-                <SelectItem key={ex} value={ex} className="text-[12px]">
-                  {ex}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          {/* OI / Greeks Toggle Pills */}
-          <div className="flex items-center gap-0.5 rounded-full bg-[#161922] p-0.5 text-[11px] border border-border/30">
-            <button
-              type="button"
-              onClick={() => {
-                setViewMode('oi')
-                setMetric('oi')
-              }}
-              className={cn(
-                'rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-colors',
-                viewMode === 'oi'
-                  ? 'bg-[#1b253b] text-[#5188f6]'
-                  : 'text-muted-foreground hover:text-white'
-              )}
-            >
-              OI
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setViewMode('greeks')
-                setMetric('iv')
-              }}
-              className={cn(
-                'rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-colors',
-                viewMode === 'greeks'
-                  ? 'bg-[#1b253b] text-[#5188f6]'
-                  : 'text-muted-foreground hover:text-white'
-              )}
-              aria-label="Toggle Greeks mode"
-            >
-              Greek
-            </button>
-          </div>
-
-          {/* Metric Selector Dropdown Pill */}
-          <Select value={metric} onValueChange={(value) => setMetric(value as Metric)}>
-            <SelectTrigger className="h-7 rounded-full bg-[#1b253b]/80 border-none text-[#5188f6] font-medium px-2 py-0 text-[11px] hover:bg-[#22304d] transition-colors focus:ring-0 shadow-none gap-1" aria-label="Metric shown">
-              <SelectValue>{activeMetric?.label ?? 'LTP'}</SelectValue>
-            </SelectTrigger>
-            <SelectContent className="bg-[#16191f] text-white border-border/60">
-              {METRIC_GROUPS.map((group) => (
-                <SelectGroup key={group}>
-                  <SelectLabel className="text-[9px] uppercase tracking-wider text-muted-foreground/70">
-                    {group}
-                  </SelectLabel>
-                  {METRICS.filter((m) => m.group === group).map((m) => (
-                    <SelectItem key={m.id} value={m.id} className="text-[11px]">
-                      <span className="inline-flex w-4 shrink-0 justify-center font-medium">
-                        {m.symbol === m.label ? '' : m.symbol}
-                      </span>
-                      <span>{m.label}</span>
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        {/* Right side icon controls: Link, Filter, Cart */}
-        <div className="flex items-center gap-1 text-muted-foreground/70">
-          <button
-            type="button"
-            className="p-1 hover:text-white transition-colors"
-            title="Linked with Chart"
-            aria-label="Linked with Chart"
-          >
-            <Link2 className="h-3.5 w-3.5 text-[#5188f6]" />
-          </button>
-          <Popover open={showConfig} onOpenChange={setShowConfig}>
-            <PopoverTrigger asChild>
-              <button
-                type="button"
-                className="p-1 hover:text-white transition-colors"
-                title="Column Settings"
-                aria-label="Column Settings"
-              >
-                <SlidersHorizontal className="h-3.5 w-3.5" />
-              </button>
-            </PopoverTrigger>
-            <PopoverContent className="w-[180px] p-2 bg-[#16191f] text-white border-border/60 text-[11px]" align="end">
-              <div className="space-y-1.5">
-                <span className="font-semibold text-muted-foreground text-[10px] uppercase">Display Options</span>
-                <p className="text-[10px] text-muted-foreground">Showing real-time strikes, OI bars, and Greek metrics.</p>
-              </div>
-            </PopoverContent>
-          </Popover>
-          <button
-            type="button"
-            className="p-1 hover:text-white transition-colors"
-            title="Basket Orders"
-            aria-label="Basket Orders"
-          >
-            <ShoppingCart className="h-3.5 w-3.5" />
-          </button>
-        </div>
+        <Select value={metric} onValueChange={(value) => setMetric(value as Metric)}>
+          <SelectTrigger className="h-8 w-[104px] text-[12px]" aria-label="Metric shown">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {METRIC_GROUPS.map((group) => (
+              <SelectGroup key={group}>
+                <SelectLabel className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">
+                  {group}
+                </SelectLabel>
+                {METRICS.filter((m) => m.group === group).map((m) => (
+                  <SelectItem key={m.id} value={m.id} className="text-[12px]">
+                    {/* Notation and name together: the column header carries
+                        only the notation, so this is where the two are tied. */}
+                    <span className="inline-flex w-4 shrink-0 justify-center font-medium">
+                      {m.symbol === m.label ? '' : m.symbol}
+                    </span>
+                    <span>{m.label}</span>
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
-      {/* ── TABLE COLUMN HEADERS: Call LTP | Strike | Put LTP ──────────────── */}
+      {/* Spot, ATM, PCR, Support & Resistance Summary */}
+      {chain && (
+        <div className="flex flex-col border-b bg-muted/10 text-[11px]">
+          <div className="flex shrink-0 items-center justify-between px-2 py-1">
+            <span className="flex items-center gap-1">
+              <span className="text-muted-foreground font-medium">Spot</span>
+              <span
+                className={cn(
+                  'font-semibold tabular-nums',
+                  spotDirection === 'up' && 'text-emerald-600 dark:text-emerald-400',
+                  spotDirection === 'down' && 'text-rose-600 dark:text-rose-400',
+                  spotDirection === 'flat' && 'text-foreground'
+                )}
+              >
+                {chain.underlying_ltp?.toFixed(2) ?? '-'}
+              </span>
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="text-muted-foreground font-medium">ATM</span>
+              <span className="font-semibold tabular-nums text-foreground">{chain.atm_strike}</span>
+            </span>
+            {/* Labelled with the strike count, because this is the ratio across
+                the strikes on screen, not the whole chain a trader may expect. */}
+            <span
+              className="flex items-center gap-1"
+              title={`Across ${rows.length} strikes on screen`}
+            >
+              <span className="text-muted-foreground font-medium">PCR({rows.length})</span>
+              <span className={cn('font-semibold tabular-nums', pcr >= 1 ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400')}>
+                {pcr ? pcr.toFixed(2) : '-'}
+              </span>
+            </span>
+          </div>
+
+          {/* S & R and Max OI Strike Insights Row */}
+          {(s1 || r1 || maxOiStrike) && (
+            <div className="flex shrink-0 items-center justify-between border-t border-border/40 px-2 py-0.5 text-[10px] bg-muted/20">
+              <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-medium" title={`Support S1 (Max Put OI: ${compact(s1Oi)})`}>
+                <span className="rounded bg-emerald-500/15 px-1 py-0.2 text-[9px] font-bold border border-emerald-500/30">SUP S1</span>
+                <span className="tabular-nums font-semibold">{s1 ?? '-'}</span>
+              </span>
+              {maxOiStrike && (
+                <span className="flex items-center gap-1 text-amber-500 font-medium" title={`Strike with More/Max OI: ${maxOiStrike} (${maxOiStrike === r1 ? `Calls ${compact(r1Oi)}` : `Puts ${compact(s1Oi)}`})`}>
+                  <span className="rounded bg-amber-500/15 px-1 py-0.2 text-[9px] font-bold border border-amber-500/30">MAX OI</span>
+                  <span className="tabular-nums font-semibold text-foreground">{maxOiStrike}</span>
+                </span>
+              )}
+              <span className="flex items-center gap-1 text-rose-600 dark:text-rose-400 font-medium" title={`Resistance R1 (Max Call OI: ${compact(r1Oi)})`}>
+                <span className="tabular-nums font-semibold">{r1 ?? '-'}</span>
+                <span className="rounded bg-rose-500/15 px-1 py-0.2 text-[9px] font-bold border border-rose-500/30">RES R1</span>
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Column header. It names the metric, because the cells hold whichever
+          of LTP, OI, IV or Delta is selected and "Calls | Puts" alone would
+          leave two columns of unlabelled numbers. */}
       <div
         className={cn(
           ROW_GRID,
-          'shrink-0 border-b border-border/40 bg-[#111317] px-2 py-1.5 text-[11px] font-medium text-muted-foreground/80'
+          'shrink-0 border-b px-2 py-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70'
         )}
       >
-        <span className="text-right pr-2">
+        {/* Each label sits on the side its numbers do. Calls are right
+            aligned against the strike and puts left aligned, so a label at
+            the outer edge sat ~130px from the column it names. */}
+        {/* normal-case on the notation: CSS uppercase maps sigma to capital
+            sigma, which in this domain reads as a sum rather than volatility,
+            so selecting IV rendered "CALLS Σ". */}
+        <span className="text-right">
           Calls <span className="normal-case">{metricLabel}</span>
         </span>
-        <span className="text-center font-medium text-white/90">Strike</span>
-        <span className="text-left pl-2">
+        <span className="text-center">Strike</span>
+        <span className="text-left">
           Puts <span className="normal-case">{metricLabel}</span>
         </span>
       </div>
 
-      {/* ── STRIKE ROWS ────────────────────────────────────────────────────── */}
-      <div className="min-h-0 flex-1 overflow-y-auto bg-[#0c0d10]">
+      <div className="min-h-0 flex-1 overflow-y-auto">
         {chainError && rows.length === 0 ? (
           <div className="flex flex-col items-center gap-2 p-6 text-center">
             <p className="text-[12px] text-muted-foreground">{chainError}</p>
@@ -831,11 +846,9 @@ export function OptionChainPanel({ apiKey, onPick, activeSymbol }: Props) {
         ) : (
           rows.map((row) => {
             const atm = chain != null && row.strike === chain.atm_strike
-            // In Indian standard option chains:
-            // Call ITM: Strike < Spot (shaded)
-            // Put ITM: Strike > Spot (shaded)
-            const isCeItm = chain != null && !atm && row.strike < chain.atm_strike
-            const isPeItm = chain != null && !atm && row.strike > chain.atm_strike
+            // Above ATM the call is out of the money; below it, the put is.
+            const ceOtm = chain != null && !atm && row.strike > chain.atm_strike
+            const peOtm = chain != null && !atm && row.strike < chain.atm_strike
 
             const isResistance = r1 !== null && row.strike === r1
             const isSupport = s1 !== null && row.strike === s1
@@ -843,36 +856,23 @@ export function OptionChainPanel({ apiKey, onPick, activeSymbol }: Props) {
             const ceFlash = row.ce?.symbol ? flashes[row.ce.symbol] : undefined
             const peFlash = row.pe?.symbol ? flashes[row.pe.symbol] : undefined
 
-            // Percent change calculation
-            const ceChgPct = row.ce?.prev_close && row.ce.ltp
-              ? ((row.ce.ltp - row.ce.prev_close) / row.ce.prev_close) * 100
-              : null
-            const peChgPct = row.pe?.prev_close && row.pe.ltp
-              ? ((row.pe.ltp - row.pe.prev_close) / row.pe.prev_close) * 100
-              : null
-
-            // OI ratio for horizontal bars under the strike
-            const ceOiRatio = Math.min(100, ((row.ce?.oi ?? 0) / peakOi) * 100)
-            const peOiRatio = Math.min(100, ((row.pe?.oi ?? 0) / peakOi) * 100)
-
             return (
               <div
                 key={row.strike}
-                className="grid grid-cols-[1fr_64px_1fr] items-stretch border-b border-[#1c1f26]/60 text-[12px]"
+                className={cn(ROW_GRID, 'items-stretch border-b border-border/40 text-[12px]')}
               >
-                {/* ── CALL CELL (Left Side) ── */}
+                {/* Calls cell: Right aligned against the strike */}
                 <div
                   className={cn(
-                    'group/leg relative flex items-center justify-between px-2 py-1.5 transition-colors duration-150',
+                    'group/leg relative flex items-center gap-1 justify-end px-2 py-1 transition-colors duration-200',
                     ceFlash === 'up' && 'bg-emerald-500/25',
                     ceFlash === 'down' && 'bg-rose-500/25',
-                    !ceFlash && isCeItm && 'bg-[#191410] hover:bg-[#241c16]',
-                    !ceFlash && !isCeItm && 'bg-[#0c0d10] hover:bg-white/[0.04]',
+                    !ceFlash && (ceOtm ? 'bg-amber-500/5 hover:bg-amber-500/15' : 'hover:bg-accent'),
                     activeSymbol === `${prefs.exchange}:${row.ce?.symbol}` &&
                       'font-medium ring-1 ring-inset ring-primary/60'
                   )}
                 >
-                  {/* Metric = OI bar gradient when in OI mode */}
+                  {/* OI Bar gradient */}
                   {metric === 'oi' && (
                     <span
                       className="pointer-events-none absolute inset-y-0 right-0 bg-gradient-to-l from-emerald-500/25 to-transparent transition-all duration-300"
@@ -880,8 +880,7 @@ export function OptionChainPanel({ apiKey, onPick, activeSymbol }: Props) {
                       aria-hidden="true"
                     />
                   )}
-
-                  {/* Click target for charting leg */}
+                  {/* The click target, stretched underneath */}
                   <button
                     type="button"
                     onClick={() => chartLeg(row.ce)}
@@ -897,101 +896,72 @@ export function OptionChainPanel({ apiKey, onPick, activeSymbol }: Props) {
                         : undefined
                     }
                   />
-
-                  {/* Call % Change on Left */}
-                  <span className="pointer-events-none relative text-[11px] font-mono tabular-nums text-rose-500/90 pr-1">
-                    {ceChgPct !== null ? `${ceChgPct > 0 ? '+' : ''}${ceChgPct.toFixed(2)}%` : ''}
+                  <OrderPills leg={row.ce} onOrder={(leg, action) => setOrder({ leg, action })} />
+                  <span className={cn(
+                    "pointer-events-none relative tabular-nums font-mono text-[11px]",
+                    ceFlash === 'up' && 'text-emerald-600 dark:text-emerald-400 font-bold',
+                    ceFlash === 'down' && 'text-rose-600 dark:text-rose-400 font-bold'
+                  )}>
+                    {metricOf(row.ce, metric)}
                   </span>
+                </div>
 
-                  {/* Order Pills on hover */}
-                  <div className="flex items-center gap-1.5">
-                    <OrderPills leg={row.ce} onOrder={(leg, action) => setOrder({ leg, action })} />
-
-                    {/* Call LTP / Metric */}
+                {/* Strike center column: with ATM, S1, and R1 highlights */}
+                {(() => {
+                  const isMaxOi = maxOiStrike !== null && row.strike === maxOiStrike
+                  return (
                     <span
                       className={cn(
-                        'pointer-events-none relative tabular-nums font-mono text-[12px] font-medium text-white/90',
-                        ceFlash === 'up' && 'text-emerald-400 font-bold',
-                        ceFlash === 'down' && 'text-rose-400 font-bold'
+                        'relative flex items-center justify-center border-x border-border/40 py-1 tabular-nums font-mono text-[11px]',
+                        atm
+                          ? 'bg-primary/10 font-semibold text-foreground ring-1 ring-inset ring-primary/50'
+                          : isMaxOi
+                          ? 'bg-amber-500/10 font-bold text-amber-500 ring-1 ring-inset ring-amber-500/40'
+                          : isResistance
+                          ? 'bg-rose-500/10 font-semibold text-rose-600 dark:text-rose-400'
+                          : isSupport
+                          ? 'bg-emerald-500/10 font-semibold text-emerald-600 dark:text-emerald-400'
+                          : 'text-muted-foreground'
                       )}
+                      title={
+                        atm
+                          ? 'At The Money (ATM)'
+                          : isMaxOi
+                          ? `Max Open Interest Strike: ${row.strike} (Call OI: ${compact(row.ce?.oi)}, Put OI: ${compact(row.pe?.oi)})`
+                          : isResistance
+                          ? `Major Resistance R1 (Max CE OI: ${compact(r1Oi)})`
+                          : isSupport
+                          ? `Major Support S1 (Max PE OI: ${compact(s1Oi)})`
+                          : `Strike ${row.strike} - CE OI: ${compact(row.ce?.oi)} | PE OI: ${compact(row.pe?.oi)}`
+                      }
                     >
-                      {metricOf(row.ce, metric)}
+                      {row.strike}
+                      {isSupport && !atm && (
+                        <span className="pointer-events-none absolute left-0.5 top-0.5 text-[8px] font-extrabold text-emerald-600 dark:text-emerald-400" aria-hidden="true" title="Major Support (Max Put OI)">
+                          ●
+                        </span>
+                      )}
+                      {isResistance && !atm && (
+                        <span className="pointer-events-none absolute right-0.5 top-0.5 text-[8px] font-extrabold text-rose-600 dark:text-rose-400" aria-hidden="true" title="Major Resistance (Max Call OI)">
+                          ▲
+                        </span>
+                      )}
                     </span>
-                  </div>
-                </div>
+                  )
+                })()}
 
-                {/* ── STRIKE CELL (Center Column with exact ATM badge & S/R OI bars) ── */}
+                {/* Puts cell: Left aligned against the strike */}
                 <div
                   className={cn(
-                    'relative flex flex-col items-center justify-center border-x border-[#1c1f26]/80 py-1 select-none',
-                    isCeItm ? 'bg-[#191410]' : isPeItm ? 'bg-[#191410]' : 'bg-[#0c0d10]'
-                  )}
-                >
-                  {/* Strike Badge */}
-                  <span
-                    className={cn(
-                      'relative z-10 flex items-center justify-center font-mono text-[11.5px] tabular-nums transition-all',
-                      atm
-                        ? 'bg-primary/10 rounded-sm px-1.5 py-0.5 font-bold text-foreground ring-1 ring-inset ring-primary/50 shadow-sm'
-                        : isResistance
-                        ? 'font-bold text-rose-400'
-                        : isSupport
-                        ? 'font-bold text-emerald-400'
-                        : 'font-semibold text-white/90'
-                    )}
-                    title={
-                      atm
-                        ? 'At The Money (ATM)'
-                        : isResistance
-                        ? `Major Resistance R1 (Max CE OI: ${compact(r1Oi)})`
-                        : isSupport
-                        ? `Major Support S1 (Max PE OI: ${compact(s1Oi)})`
-                        : undefined
-                    }
-                  >
-                    {row.strike}
-                    {isSupport && !atm && (
-                      <span className="pointer-events-none absolute left-0.5 top-0.5 text-[8px] font-extrabold text-emerald-600 dark:text-emerald-400" aria-hidden="true">
-                        ●
-                      </span>
-                    )}
-                    {isResistance && !atm && (
-                      <span className="pointer-events-none absolute right-0.5 top-0.5 text-[8px] font-extrabold text-rose-600 dark:text-rose-400" aria-hidden="true">
-                        ▲
-                      </span>
-                    )}
-                  </span>
-
-                  {/* Horizontal Red/Green S/R & OI Bars right below strike */}
-                  <div className="mt-0.5 flex h-[2px] w-[46px] items-center overflow-hidden rounded-full bg-[#1c1f26]">
-                    {/* Red Call OI bar (Resistance) */}
-                    <div
-                      className="h-full bg-rose-500/80 transition-all duration-300"
-                      style={{ width: `${(ceOiRatio / (ceOiRatio + peOiRatio || 1)) * 100}%` }}
-                      title={`Call OI: ${compact(row.ce?.oi)}`}
-                    />
-                    {/* Green Put OI bar (Support) */}
-                    <div
-                      className="h-full bg-emerald-500/80 transition-all duration-300"
-                      style={{ width: `${(peOiRatio / (ceOiRatio + peOiRatio || 1)) * 100}%` }}
-                      title={`Put OI: ${compact(row.pe?.oi)}`}
-                    />
-                  </div>
-                </div>
-
-                {/* ── PUT CELL (Right Side) ── */}
-                <div
-                  className={cn(
-                    'group/leg relative flex items-center justify-between px-2 py-1.5 transition-colors duration-150',
+                    'group/leg relative flex items-center gap-1 justify-start px-2 py-1 transition-colors duration-200',
                     peFlash === 'up' && 'bg-emerald-500/25',
                     peFlash === 'down' && 'bg-rose-500/25',
-                    !peFlash && isPeItm && 'bg-[#191410] hover:bg-[#241c16]',
-                    !peFlash && !isPeItm && 'bg-[#0c0d10] hover:bg-white/[0.04]',
+                    !peFlash && (peOtm ? 'bg-amber-500/5 hover:bg-amber-500/15' : 'hover:bg-accent'),
                     activeSymbol === `${prefs.exchange}:${row.pe?.symbol}` &&
                       'font-medium ring-1 ring-inset ring-primary/60'
                   )}
                 >
-                  {/* Metric = OI bar gradient when in OI mode */}
+                  {/* OI Bar gradient */}
                   {metric === 'oi' && (
                     <span
                       className="pointer-events-none absolute inset-y-0 left-0 bg-gradient-to-r from-rose-500/25 to-transparent transition-all duration-300"
@@ -999,8 +969,7 @@ export function OptionChainPanel({ apiKey, onPick, activeSymbol }: Props) {
                       aria-hidden="true"
                     />
                   )}
-
-                  {/* Click target for charting leg */}
+                  {/* The click target, stretched underneath */}
                   <button
                     type="button"
                     onClick={() => chartLeg(row.pe)}
@@ -1016,25 +985,14 @@ export function OptionChainPanel({ apiKey, onPick, activeSymbol }: Props) {
                         : undefined
                     }
                   />
-
-                  {/* Put LTP / Metric + Order Pills */}
-                  <div className="flex items-center gap-1.5">
-                    <span
-                      className={cn(
-                        'pointer-events-none relative tabular-nums font-mono text-[12px] font-medium text-white/90',
-                        peFlash === 'up' && 'text-emerald-400 font-bold',
-                        peFlash === 'down' && 'text-rose-400 font-bold'
-                      )}
-                    >
-                      {metricOf(row.pe, metric)}
-                    </span>
-                    <OrderPills leg={row.pe} onOrder={(leg, action) => setOrder({ leg, action })} />
-                  </div>
-
-                  {/* Put % Change on Right */}
-                  <span className="pointer-events-none relative text-[11px] font-mono tabular-nums text-emerald-500/90 pl-1">
-                    {peChgPct !== null ? `${peChgPct > 0 ? '+' : ''}${peChgPct.toFixed(2)}%` : ''}
+                  <span className={cn(
+                    "pointer-events-none relative tabular-nums font-mono text-[11px]",
+                    peFlash === 'up' && 'text-emerald-600 dark:text-emerald-400 font-bold',
+                    peFlash === 'down' && 'text-rose-600 dark:text-rose-400 font-bold'
+                  )}>
+                    {metricOf(row.pe, metric)}
                   </span>
+                  <OrderPills leg={row.pe} onOrder={(leg, action) => setOrder({ leg, action })} />
                 </div>
               </div>
             )
@@ -1042,63 +1000,33 @@ export function OptionChainPanel({ apiKey, onPick, activeSymbol }: Props) {
         )}
       </div>
 
-      {/* ── FOOTER: PCR, Max Pain, ATM IV, IV Percentile ─────────────────────── */}
-      <div className="shrink-0 border-t border-border/40 bg-[#0d0e12] px-3 py-2 text-white">
-        <div className="grid grid-cols-4 gap-1 text-center">
-          <div>
-            <div className="text-[10px] font-medium text-muted-foreground/80">PCR</div>
-            <div className="text-[12px] font-bold tabular-nums text-white mt-0.5">
-              {pcr ? pcr.toFixed(2) : '0.89'}
-            </div>
-          </div>
-          <div>
-            <div className="text-[10px] font-medium text-muted-foreground/80">Max Pain</div>
-            <div className="text-[12px] font-bold tabular-nums text-white mt-0.5">
-              {maxPain ?? (chain?.atm_strike ? chain.atm_strike + 100 : '-')}
-            </div>
-          </div>
-          <div>
-            <div className="text-[10px] font-medium text-muted-foreground/80">ATM IV</div>
-            <div className="text-[12px] font-bold tabular-nums text-white mt-0.5">
-              {atmIV ? atmIV.toFixed(2) : '15.70'}
-            </div>
-          </div>
-          <div>
-            <div className="text-[10px] font-medium text-muted-foreground/80">IV Percentile</div>
-            <div className="text-[11px] font-bold tabular-nums text-white mt-0.5">
-              67.00 - High
-            </div>
-          </div>
-        </div>
+      {/* A chain that stopped updating an hour ago otherwise looks live. The
+          poll is silent by design, so this line is the only thing that says
+          the numbers above have stopped moving. */}
+      {rows.length > 0 &&
+        (chainError && lastUpdate ? (
+          <p className="shrink-0 border-t px-2 py-1 text-[10px] text-amber-600 dark:text-amber-400">
+            Not updating. Last loaded {lastUpdate.toLocaleTimeString()}
+          </p>
+        ) : marketOpen && !isStreaming && lastUpdate ? (
+          // Streaming is the point of this panel. If the socket is not up the
+          // numbers are still refreshed by the structural poll, just far more
+          // slowly, and saying so beats letting them read as live.
+          <p className="shrink-0 border-t px-2 py-1 text-[10px] text-amber-600 dark:text-amber-400">
+            Not streaming. Last update {lastUpdate.toLocaleTimeString()}
+          </p>
+        ) : !marketOpen ? (
+          // The panel already backs the poll off to a minute when the market is
+          // shut; saying so is what stops a static chain reading as a stalled
+          // one. The watchlist has carried this caption from the start.
+          <p className="shrink-0 border-t px-2 py-1 text-[10px] text-muted-foreground">
+            Market closed. Showing last traded prices.
+          </p>
+        ) : null)}
 
-        {/* Hidden indicators to maintain compatibility with test cases */}
-        <div className="sr-only">
-          <span>SUP S1</span>
-          <span>RES R1</span>
-          <span>{s1 ?? ''}</span>
-          <span>{r1 ?? ''}</span>
-          {/* ATM text for tests */}
-          <span className="bg-primary/10 ring-inset">{chain?.atm_strike}</span>
-        </div>
-
-        {/* Status indicator line */}
-        {rows.length > 0 &&
-          (chainError && lastUpdate ? (
-            <p className="mt-1 border-t border-border/20 pt-1 text-[9px] text-amber-500">
-              Not updating. Last loaded {lastUpdate.toLocaleTimeString()}
-            </p>
-          ) : marketOpen && !isStreaming && lastUpdate ? (
-            <p className="mt-1 border-t border-border/20 pt-1 text-[9px] text-amber-500">
-              Not streaming. Last update {lastUpdate.toLocaleTimeString()}
-            </p>
-          ) : !marketOpen ? (
-            <p className="mt-1 border-t border-border/20 pt-1 text-[9px] text-muted-foreground">
-              Market closed. Showing last traded prices.
-            </p>
-          ) : null)}
-      </div>
-
-      {/* Place Order Dialog */}
+      {/* The same dialog pages/OptionChain.tsx opens. Quantity, product and
+          price type are confirmed there, so a pill starts an order but never
+          places one, and analyze mode is honoured the same way everywhere. */}
       <PlaceOrderDialog
         open={order !== null}
         onOpenChange={(next) => !next && setOrder(null)}
@@ -1113,4 +1041,3 @@ export function OptionChainPanel({ apiKey, onPick, activeSymbol }: Props) {
     </PanelShell>
   )
 }
-
