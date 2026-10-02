@@ -157,9 +157,59 @@ type DrawingControllerInstance = InstanceType<typeof DrawingController>
 /** The document a pane holds when it has nothing drawn. A fresh one each time, never shared. */
 const emptyDrawings = (): DrawingsDocument => ({ version: 2, drawings: [] })
 
-/** High-speed in-memory caches for 0-1ms symbol metadata and search lookup */
-const symbolMetadataCache = new Map<string, Record<string, unknown>>()
-const searchCache = new Map<string, SearchRow[]>()
+/** High-speed in-memory caches for 0-1ms symbol metadata, search lookup, and bars */
+export const symbolMetadataCache = new Map<string, Record<string, unknown>>()
+export const searchCache = new Map<string, SearchRow[]>()
+export const globalBarMemoryCache = new Map<string, { bars: readonly Bar[]; time: number }>()
+
+export async function prefetchSymbolData(
+  apiKey: string,
+  symbol: string,
+  exchange: string,
+  interval = '5m'
+): Promise<void> {
+  const symKey = `${symbol.toUpperCase()}:${(exchange || '').toUpperCase()}`
+  if (!symbolMetadataCache.has(symKey)) {
+    try {
+      const res = await fetch('/api/v1/symbol', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apikey: apiKey, symbol, exchange }),
+      })
+      const j = await res.json()
+      if (j?.data) symbolMetadataCache.set(symKey, j.data)
+    } catch {
+      /* ignore prefetch error */
+    }
+  }
+
+  const barKey = `${symKey}:${interval}`
+  const cached = globalBarMemoryCache.get(barKey)
+  if (!cached || Date.now() - cached.time > 120_000) {
+    try {
+      const to = Math.floor(Date.now() / 1000)
+      const from = to - lookbackDays(interval) * 86400
+      const res = await fetch('/api/v1/history', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          apikey: apiKey,
+          symbol,
+          exchange,
+          interval,
+          from_date: from,
+          to_date: to,
+        }),
+      })
+      const j = await res.json()
+      if (Array.isArray(j?.data)) {
+        globalBarMemoryCache.set(barKey, { bars: j.data, time: Date.now() })
+      }
+    } catch {
+      /* ignore prefetch error */
+    }
+  }
+}
 
 /**
  * Whether a stored value is already the 2.0 document. A 1.9.x save is a bare
@@ -7082,7 +7132,16 @@ export class TradingTerminal {
         from: to - lookbackDays(this.interval) * 86400,
         to,
       }
-      bars = this.data ? await this.data.load(request) : await feed.getBars(request)
+      const memKey = `${this.sym.symbol.toUpperCase()}:${(this.sym.exchange || '').toUpperCase()}:${this.interval}`
+      const memCached = globalBarMemoryCache.get(memKey)
+      if (memCached && memCached.bars.length && Date.now() - memCached.time < 300_000) {
+        bars = memCached.bars
+      } else {
+        bars = this.data ? await this.data.load(request) : await feed.getBars(request)
+        if (bars?.length) {
+          globalBarMemoryCache.set(memKey, { bars, time: Date.now() })
+        }
+      }
     } catch (e) {
       if (this.destroyed || ticket !== this.loadTicket) return false
       bars = []
@@ -8017,14 +8076,14 @@ export class TradingTerminal {
       return
     }
 
-    // restore the last symbol; fall back to BHEL/NSE if it's gone or has no data.
+    // restore the last symbol; fall back to NIFTY/NSE_INDEX by default if it's gone or has no data.
     let loaded = false
     try {
       const saved = JSON.parse(this.lsGet('symbol') || 'null') as {
         symbol?: string
         exchange?: string
       } | null
-      if (saved?.symbol) {
+      if (saved?.symbol && saved.symbol !== 'BHEL') {
         const rows = await this.search(saved.symbol, saved.exchange)
         const row = rows.find((r) => r.symbol === saved.symbol && r.exchange === saved.exchange)
         if (row) loaded = await this.loadSymbol(row, { silent: true })
@@ -8034,9 +8093,18 @@ export class TradingTerminal {
     }
     if (!loaded && !this.destroyed) {
       try {
-        const rows = await this.search('BHEL', 'NSE')
-        const bhel = rows.find((r) => r.symbol === 'BHEL' && r.exchange === 'NSE')
-        if (bhel) await this.loadSymbol(bhel)
+        const rows = await this.search('NIFTY', 'NSE_INDEX')
+        const nifty = rows.find((r) => r.symbol === 'NIFTY' && r.exchange === 'NSE_INDEX') || rows[0]
+        if (nifty) loaded = await this.loadSymbol(nifty)
+      } catch {
+        /* try SENSEX fallback */
+      }
+    }
+    if (!loaded && !this.destroyed) {
+      try {
+        const rows = await this.search('SENSEX', 'BSE_INDEX')
+        const sensex = rows.find((r) => r.symbol === 'SENSEX' && r.exchange === 'BSE_INDEX') || rows[0]
+        if (sensex) await this.loadSymbol(sensex)
       } catch {
         /* leave the chart empty; the user can search */
       }

@@ -1034,8 +1034,8 @@ function TradingWorkspace({ account }: { account: string | null }) {
       [
         {
           id: 'p0',
-          symbol: 'BHEL',
-          exchange: 'NSE',
+          symbol: 'NIFTY',
+          exchange: 'NSE_INDEX',
           interval: '5m',
           chartType: 'candlestick',
           chart: { version: 1 },

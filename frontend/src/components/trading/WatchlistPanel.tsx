@@ -45,7 +45,7 @@ import { Input } from '@/components/ui/input'
 import { type PriceableItem, useLivePrice } from '@/hooks/useLivePrice'
 import { useMarketStatus } from '@/hooks/useMarketStatus'
 import { needsPreviousClose, previousClose } from '@/lib/trading/previousClose'
-import type { SearchRow } from '@/lib/trading/terminal'
+import { prefetchSymbolData, type SearchRow } from '@/lib/trading/terminal'
 import { cn } from '@/lib/utils'
 import { showToast } from '@/utils/toast'
 import { PANEL_HEADER, PanelShell } from './panelShell'
@@ -372,6 +372,16 @@ export function WatchlistPanel({ apiKey, onPick, search, activeSymbol }: Props) 
     () => items.map((i) => ({ symbol: i.symbol, exchange: i.exchange })),
     [symbolKey]
   )
+
+  // Background prefetch chart data for top watchlist items for 0-1ms instant load
+  useEffect(() => {
+    if (!apiKey || !items.length) return
+    const top = items.slice(0, 10)
+    for (const it of top) {
+      void prefetchSymbolData(apiKey, it.symbol, it.exchange, '5m')
+      void prefetchSymbolData(apiKey, it.symbol, it.exchange, '1m')
+    }
+  }, [apiKey, symbolKey])
 
   const {
     data: priced,
@@ -924,6 +934,8 @@ export function WatchlistPanel({ apiKey, onPick, search, activeSymbol }: Props) 
                     plain button is not itself draggable. */}
                 <button
                   type="button"
+                  onMouseEnter={() => void prefetchSymbolData(apiKey, item.symbol, item.exchange)}
+                  onPointerDown={() => void prefetchSymbolData(apiKey, item.symbol, item.exchange)}
                   onClick={() => onPick({ symbol: item.symbol, exchange: item.exchange })}
                   onKeyDown={(e) => {
                     // Removing from the row itself is what lets the trash stay
