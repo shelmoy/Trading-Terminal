@@ -389,4 +389,35 @@ describe('OptionChainPanel', () => {
     // The 24200 put is absent from this fixture.
     expect(screen.queryByLabelText('Buy NIFTY01SEP2624200PE')).not.toBeInTheDocument()
   })
+
+  it('displays Support S1 and Resistance R1 summary badges', async () => {
+    renderPanel()
+    await screen.findByTitle('Chart NIFTY01SEP2624200CE')
+
+    // In fixture: Max CE OI is at 24200 (9405000), Max PE OI is at 24150 (6184000)
+    expect(await screen.findByText('SUP S1')).toBeInTheDocument()
+    expect(screen.getByText('RES R1')).toBeInTheDocument()
+    expect(screen.getAllByText('24150').length).toBeGreaterThan(0)
+  })
+
+  it('auto-syncs to activeSymbol when chart changes to BSE Sensex', async () => {
+    getAllUnderlyings.mockImplementation((ex: string) => {
+      if (ex === 'BFO') return Promise.resolve({ status: 'success', data: ['SENSEX', 'BANKEX'] })
+      return Promise.resolve({ status: 'success', data: ['NIFTY', 'BANKNIFTY'] })
+    })
+
+    const { rerender } = render(<OptionChainPanel apiKey="k" onPick={vi.fn()} activeSymbol="NSE_INDEX:NIFTY" />)
+    await waitFor(() => expect(useOptionChainLive).toHaveBeenCalled())
+
+    // Switch active symbol to BSE Sensex
+    rerender(<OptionChainPanel apiKey="k" onPick={vi.fn()} activeSymbol="BSE_INDEX:SENSEX" />)
+
+    await waitFor(() => {
+      const calls = useOptionChainLive.mock.calls
+      const lastCall = calls[calls.length - 1]
+      expect(lastCall[1]).toBe('SENSEX')
+      expect(lastCall[2]).toBe('BFO')
+    })
+  })
 })
+

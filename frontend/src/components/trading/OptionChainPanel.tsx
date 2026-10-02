@@ -22,7 +22,7 @@
  */
 
 import { Check, ChevronsUpDown, RefreshCw } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { useOptionChainLive } from '@/hooks/useOptionChainLive'
 import { scalpingApi } from '@/api/scalping'
@@ -225,17 +225,13 @@ function OrderPills({
 export function OptionChainPanel({ apiKey, onPick, activeSymbol }: Props) {
   const [prefs, setPrefs] = useState<Prefs>(readPrefs)
   const [underlyings, setUnderlyings] = useState<string[]>([])
+  const [globalUnderlyings, setGlobalUnderlyings] = useState<Array<{ name: string; exchange: Exchange }>>([])
+  const [underlyingSearch, setUnderlyingSearch] = useState('')
   const [expiries, setExpiries] = useState<string[]>([])
   const [metric, setMetric] = useState<Metric>('ltp')
   const [pickerOpen, setPickerOpen] = useState(false)
   /**
    * One slot per loader, not one shared between them.
-   *
-   * Shared, the failures cancelled each other: an underlyings request that
-   * 500s set the message, the expiries then resolved from the persisted
-   * symbol, the chain loaded fine and cleared it. The user was left with a
-   * combobox reading "No underlying found", no error and no retry, which is
-   * exactly the reading these states exist to prevent.
    */
   const [underlyingError, setUnderlyingError] = useState<string | null>(null)
   const [expiryError, setExpiryError] = useState<string | null>(null)
@@ -243,12 +239,15 @@ export function OptionChainPanel({ apiKey, onPick, activeSymbol }: Props) {
   /** Bumped to re-run the loaders after a Retry. */
   const [attempt, setAttempt] = useState(0)
 
+  /** Flash map for real-time 0-1ms micro-price changes */
+  const [flashes, setFlashes] = useState<Record<string, 'up' | 'down'>>({})
+  const prevPricesRef = useRef<Map<string, number>>(new Map())
+
+  /** Track previously synced active symbol to avoid feedback loops */
+  const lastSyncedSymbolRef = useRef<string | null>(null)
+
   /**
    * The leg an order is being placed on, or null.
-   *
-   * Opens PlaceOrderDialog, the same component pages/OptionChain.tsx uses, so
-   * quantity, product and price type are confirmed there rather than fired off
-   * a 20px pill. Nothing here places an order by itself.
    */
   const [order, setOrder] = useState<{
     leg: OptionData
@@ -261,30 +260,55 @@ export function OptionChainPanel({ apiKey, onPick, activeSymbol }: Props) {
     localStorage.setItem(PREFS_KEY, JSON.stringify(prefs))
   }, [prefs])
 
-  /* ── underlyings for the chosen segment ───────────────────────────────── */
-  // biome-ignore lint/correctness/useExhaustiveDependencies: `attempt` is a deliberate re-run trigger, not a value this effect reads; Retry bumps it to refetch without changing the contract
+  /* ── Fetch underlyings globally across ALL derivative segments ──────────────── */
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `attempt` is a deliberate re-run trigger
   useEffect(() => {
     let alive = true
     ;(async () => {
       try {
-        const res = await scalpingApi.getAllUnderlyings(prefs.exchange, 'options')
-        if (!alive) return
-        const names = res.data ?? []
-        setUnderlyings(names)
-        setUnderlyingError(null)
-        // Switching segment leaves the old underlying selected and it will not
-        // resolve, so fall back to the first one the new segment actually has.
-        setPrefs((p) =>
-          names.length === 0 || names.includes(p.underlying)
-            ? p
-            : { ...p, underlying: names[0], expiry: '' }
+        const results = await Promise.allSettled(
+          EXCHANGES.map(async (ex) => {
+            const res = await scalpingApi.getAllUnderlyings(ex, 'options')
+            return { exchange: ex, list: res.data ?? [] }
+          })
         )
+        if (!alive) return
+
+        const allItems: Array<{ name: string; exchange: Exchange }> = []
+        let currentSegmentList: string[] = []
+
+        for (const r of results) {
+          if (r.status === 'fulfilled') {
+            for (const item of r.value.list) {
+              allItems.push({ name: item, exchange: r.value.exchange })
+            }
+            if (r.value.exchange === prefs.exchange) {
+              currentSegmentList = r.value.list
+            }
+          }
+        }
+
+        // De-duplicate if same symbol exists in multiple
+        setGlobalUnderlyings(allItems)
+        setUnderlyings(currentSegmentList)
+        setUnderlyingError(null)
+
+        // If current underlying isn't in current segment or global, ensure fallback
+        setPrefs((p) => {
+          if (currentSegmentList.length > 0 && !currentSegmentList.includes(p.underlying)) {
+            // Check if current underlying exists in any exchange
+            const match = allItems.find((item) => item.name.toUpperCase() === p.underlying.toUpperCase())
+            if (match) {
+              return { ...p, exchange: match.exchange, underlying: match.name, expiry: '' }
+            }
+            return { ...p, underlying: currentSegmentList[0], expiry: '' }
+          }
+          return p
+        })
       } catch {
         if (!alive) return
         setUnderlyings([])
-        // Reported rather than swallowed. Silently emptying the list left a
-        // combobox saying "No underlying found", which reads as "this segment
-        // has no options" rather than "the request failed".
+        setGlobalUnderlyings([])
         setUnderlyingError(`Could not load ${prefs.exchange} underlyings`)
       }
     })()
@@ -293,8 +317,65 @@ export function OptionChainPanel({ apiKey, onPick, activeSymbol }: Props) {
     }
   }, [prefs.exchange, attempt])
 
+  /* ── Auto-sync with active chart symbol ───────────────────────────────────── */
+  useEffect(() => {
+    if (!activeSymbol || activeSymbol === lastSyncedSymbolRef.current) return
+    lastSyncedSymbolRef.current = activeSymbol
+
+    // Parse active symbol format: e.g. "BSE_INDEX:SENSEX", "BFO:SENSEX...", "NSE_INDEX:NIFTY", "NFO:NIFTY...", "NSE:RELIANCE"
+    const parts = activeSymbol.split(':')
+    const rawSym = (parts.length > 1 ? parts[1] : parts[0]).toUpperCase()
+    const rawEx = (parts.length > 1 ? parts[0] : '').toUpperCase()
+
+    let detectedExchange: Exchange | null = null
+    let detectedUnderlying: string | null = null
+
+    // 1. Direct index or common underlying detection
+    if (rawSym.includes('SENSEX') || rawEx === 'BSE_INDEX' || rawEx === 'BFO') {
+      detectedExchange = 'BFO'
+      detectedUnderlying = rawSym.includes('BANKEX') ? 'BANKEX' : 'SENSEX'
+    } else if (rawSym.includes('NIFTY') || rawEx === 'NSE_INDEX' || rawEx === 'NFO') {
+      detectedExchange = 'NFO'
+      if (rawSym.includes('BANKNIFTY')) detectedUnderlying = 'BANKNIFTY'
+      else if (rawSym.includes('FINNIFTY')) detectedUnderlying = 'FINNIFTY'
+      else if (rawSym.includes('MIDCPNIFTY')) detectedUnderlying = 'MIDCPNIFTY'
+      else if (rawSym.includes('NIFTYNXT50')) detectedUnderlying = 'NIFTYNXT50'
+      else detectedUnderlying = 'NIFTY'
+    } else if (rawEx === 'MCX' || rawSym === 'CRUDEOIL' || rawSym === 'GOLD' || rawSym === 'SILVER' || rawSym === 'NATURALGAS') {
+      detectedExchange = 'MCX'
+      detectedUnderlying = rawSym.replace(/[0-9].*$/, '')
+    } else {
+      // 2. Check if clean symbol matches any global derivative underlying
+      const cleanSym = rawSym.replace(/(CE|PE)$/i, '').replace(/[0-9].*$/, '')
+      const match = globalUnderlyings.find(
+        (u) => u.name.toUpperCase() === cleanSym || cleanSym.startsWith(u.name.toUpperCase())
+      )
+      if (match) {
+        detectedExchange = match.exchange
+        detectedUnderlying = match.name
+      } else if (cleanSym) {
+        // Assume default NFO for equity stocks like RELIANCE, TCS, etc.
+        detectedExchange = 'NFO'
+        detectedUnderlying = cleanSym
+      }
+    }
+
+    if (detectedExchange && detectedUnderlying) {
+      setPrefs((p) => {
+        if (p.underlying === detectedUnderlying && p.exchange === detectedExchange) {
+          return p
+        }
+        return {
+          exchange: detectedExchange!,
+          underlying: detectedUnderlying!,
+          expiry: '', // Will auto-select nearest expiry upon expiries load
+        }
+      })
+    }
+  }, [activeSymbol, globalUnderlyings])
+
   /* ── expiries for the chosen underlying ───────────────────────────────── */
-  // biome-ignore lint/correctness/useExhaustiveDependencies: `attempt` is a deliberate re-run trigger, not a value this effect reads; Retry bumps it to refetch without changing the contract
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `attempt` is a deliberate re-run trigger
   useEffect(() => {
     if (!prefs.underlying) return
     let alive = true
@@ -320,21 +401,6 @@ export function OptionChainPanel({ apiKey, onPick, activeSymbol }: Props) {
   }, [prefs.underlying, prefs.exchange, attempt])
 
   /* ── the chain itself ─────────────────────────────────────────────────── */
-  /**
-   * The same stream `/optionchain` runs on.
-   *
-   * This panel used to fetch the whole chain over REST on a five second timer,
-   * which is why it lagged the dedicated page so badly: every quote was up to
-   * five seconds old, and each refresh was a full broker round trip for eighty
-   * legs. `useOptionChainLive` polls only the structural columns (open interest,
-   * volume) on a slow interval and takes every price off the websocket, then
-   * recomputes the Greeks client-side on each tick batch. Prices move as they
-   * happen and the broker sees a fraction of the calls.
-   *
-   * `exchange` and `optionExchange` are the same segment here, as they are on
-   * the dedicated page: the panel only lists derivative segments, so the
-   * underlying and its options are quoted on the one the user picked.
-   */
   const {
     data: chain,
     isLoading: loading,
@@ -376,22 +442,75 @@ export function OptionChainPanel({ apiKey, onPick, activeSymbol }: Props) {
     return ce > 0 ? pe / ce : 0
   }, [rows])
 
+  /**
+   * Support and Resistance Analysis:
+   * Resistance (R1): Strike with maximum Call OI (highest hurdle for bulls)
+   * Support (S1): Strike with maximum Put OI (strongest floor for bears)
+   */
+  const { r1, s1, r1Oi, s1Oi } = useMemo(() => {
+    let maxCeOi = 0
+    let r1Strike: number | null = null
+    let maxPeOi = 0
+    let s1Strike: number | null = null
+
+    for (const r of rows) {
+      if (r.ce?.oi && r.ce.oi > maxCeOi) {
+        maxCeOi = r.ce.oi
+        r1Strike = r.strike
+      }
+      if (r.pe?.oi && r.pe.oi > maxPeOi) {
+        maxPeOi = r.pe.oi
+        s1Strike = r.strike
+      }
+    }
+    return { r1: r1Strike, s1: s1Strike, r1Oi: maxCeOi, s1Oi: maxPeOi }
+  }, [rows])
+
+  /* ── Real-time 0-1ms micro-price tick flash detector ────────────────────── */
+  useEffect(() => {
+    if (!rows.length) return
+    const newFlashes: Record<string, 'up' | 'down'> = {}
+    let hasChanged = false
+
+    for (const row of rows) {
+      if (row.ce?.symbol && typeof row.ce.ltp === 'number' && row.ce.ltp > 0) {
+        const prev = prevPricesRef.current.get(row.ce.symbol)
+        if (prev !== undefined && prev !== row.ce.ltp) {
+          newFlashes[row.ce.symbol] = row.ce.ltp > prev ? 'up' : 'down'
+          hasChanged = true
+        }
+        prevPricesRef.current.set(row.ce.symbol, row.ce.ltp)
+      }
+      if (row.pe?.symbol && typeof row.pe.ltp === 'number' && row.pe.ltp > 0) {
+        const prev = prevPricesRef.current.get(row.pe.symbol)
+        if (prev !== undefined && prev !== row.pe.ltp) {
+          newFlashes[row.pe.symbol] = row.pe.ltp > prev ? 'up' : 'down'
+          hasChanged = true
+        }
+        prevPricesRef.current.set(row.pe.symbol, row.pe.ltp)
+      }
+    }
+
+    if (hasChanged) {
+      setFlashes((prev) => ({ ...prev, ...newFlashes }))
+      const timer = setTimeout(() => {
+        setFlashes({})
+      }, 400)
+      return () => clearTimeout(timer)
+    }
+  }, [rows])
+
   const chartLeg = (leg: OptionData | null) => {
     if (!leg?.symbol) return
     onPick({ symbol: leg.symbol, exchange: prefs.exchange })
   }
 
   /**
-   * Tri-state, not a boolean. With no previous close there is no direction, and
-   * collapsing that into "down" paints the spot red pre-open and on any
-   * underlying whose previous close comes back as zero.
+   * Tri-state, not a boolean. With no previous close there is no direction.
    */
   const spotDirection: 'up' | 'down' | 'flat' = (() => {
     const ltp = chain?.underlying_ltp
     if (typeof ltp !== 'number') return 'flat'
-    // The same broker field previousClose.ts exists because it cannot be
-    // trusted: where it carries the CURRENT session's close it equals the LTP,
-    // and `>=` then painted the spot green every hour of every day.
     if (needsPreviousClose(chain?.underlying_prev_close, ltp)) return 'flat'
     const prev = chain?.underlying_prev_close as number
     if (ltp === prev) return 'flat'
@@ -401,6 +520,46 @@ export function OptionChainPanel({ apiKey, onPick, activeSymbol }: Props) {
   const activeMetric = METRICS.find((m) => m.id === metric)
   const metricLabel = activeMetric?.symbol ?? ''
 
+  // Filter global items or current exchange items based on underlyingSearch
+  const filteredUnderlyings = useMemo(() => {
+    const query = underlyingSearch.trim().toUpperCase()
+    if (!query) {
+      // Default: current exchange underlyings first
+      return underlyings.map((name) => ({ name, exchange: prefs.exchange }))
+    }
+    // Search across ALL underlyings globally
+    const matches: Array<{ name: string; exchange: Exchange }> = []
+    const seen = new Set<string>()
+
+    // Prioritize startsWith matches
+    for (const item of globalUnderlyings) {
+      if (item.name.toUpperCase().startsWith(query)) {
+        const key = `${item.exchange}:${item.name}`
+        if (!seen.has(key)) {
+          seen.add(key)
+          matches.push(item)
+        }
+      }
+    }
+    // Then includes matches
+    for (const item of globalUnderlyings) {
+      if (!item.name.toUpperCase().startsWith(query) && item.name.toUpperCase().includes(query)) {
+        const key = `${item.exchange}:${item.name}`
+        if (!seen.has(key)) {
+          seen.add(key)
+          matches.push(item)
+        }
+      }
+    }
+    // Fallback: if query matches none, keep current underlyings filtered
+    if (matches.length === 0 && underlyings.length > 0) {
+      return underlyings
+        .filter((u) => u.toUpperCase().includes(query))
+        .map((name) => ({ name, exchange: prefs.exchange }))
+    }
+    return matches
+  }, [underlyingSearch, globalUnderlyings, underlyings, prefs.exchange])
+
   return (
     <PanelShell
       id="oa-panel-options"
@@ -408,8 +567,7 @@ export function OptionChainPanel({ apiKey, onPick, activeSymbol }: Props) {
       storageKey="oa-trading-optionchain-width"
       defaultWidth={340}
     >
-      {/* Header: the contract. Its rule lands on the same line as every pane
-          toolbar's, so the workspace reads as one horizon. */}
+      {/* Header: the contract. Global Search across segments & Segment selector */}
       <div className={PANEL_HEADER}>
         <Select
           value={prefs.exchange}
@@ -417,7 +575,7 @@ export function OptionChainPanel({ apiKey, onPick, activeSymbol }: Props) {
             setPrefs((p) => ({ ...p, exchange: value as Exchange, expiry: '' }))
           }
         >
-          <SelectTrigger className="h-8 w-[76px] text-[12px]" aria-label="Exchange segment">
+          <SelectTrigger className="h-8 w-[76px] text-[12px] font-semibold tracking-wide border-border/60 bg-muted/20" aria-label="Exchange segment">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -429,50 +587,86 @@ export function OptionChainPanel({ apiKey, onPick, activeSymbol }: Props) {
           </SelectContent>
         </Select>
 
-        {/* A searchable combobox, not a Select: NFO alone lists nearly two
-            hundred underlyings and scrolling to one is not a UI. */}
-        <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
+        {/* Global searchable combobox across ALL exchanges */}
+        <Popover open={pickerOpen} onOpenChange={(open) => {
+          setPickerOpen(open)
+          if (!open) setUnderlyingSearch('')
+        }}>
           <PopoverTrigger asChild>
             <Button
               variant="outline"
               role="combobox"
               aria-expanded={pickerOpen}
               aria-label="Underlying"
-              className="h-8 min-w-0 flex-1 justify-between px-2 text-[12px] font-medium"
+              className="h-8 min-w-0 flex-1 justify-between px-2 text-[12px] font-semibold border-border/60 bg-muted/20 hover:bg-muted/40 transition-colors"
             >
-              <span className="truncate">{prefs.underlying || 'Select'}</span>
+              <div className="flex items-center gap-1.5 truncate">
+                <span className="truncate">{prefs.underlying || 'Select'}</span>
+                <span className="rounded bg-primary/10 px-1 py-0.2 text-[9px] font-mono text-primary/80 uppercase">
+                  {prefs.exchange}
+                </span>
+              </div>
               <ChevronsUpDown className="h-3 w-3 shrink-0 opacity-50" />
             </Button>
           </PopoverTrigger>
-          <PopoverContent className="w-[220px] p-0" align="start">
-            <Command>
-              <CommandInput placeholder="Search underlying..." className="h-8 text-[12px]" />
-              <CommandList>
+          <PopoverContent className="w-[240px] p-0 shadow-lg border-border/80" align="start">
+            <Command shouldFilter={false}>
+              <CommandInput
+                placeholder="Search global (e.g. SENSEX, NIFTY)..."
+                value={underlyingSearch}
+                onValueChange={setUnderlyingSearch}
+                className="h-8 text-[12px]"
+              />
+              <CommandList className="max-h-[260px]">
                 <CommandEmpty className="py-4 text-center text-[12px]">
-                  {/* "No underlying found" reads as "this segment has none".
-                      When the request failed, say that instead. */}
                   {underlyingError ?? 'No underlying found.'}
                 </CommandEmpty>
                 <CommandGroup>
-                  {underlyings.map((name) => (
-                    <CommandItem
-                      key={name}
-                      value={name}
-                      onSelect={() => {
-                        setPrefs((p) => ({ ...p, underlying: name, expiry: '' }))
-                        setPickerOpen(false)
-                      }}
-                      className="text-[12px]"
-                    >
-                      <Check
-                        className={cn(
-                          'mr-2 h-3.5 w-3.5',
-                          prefs.underlying === name ? 'opacity-100' : 'opacity-0'
-                        )}
-                      />
-                      {name}
-                    </CommandItem>
-                  ))}
+                  {filteredUnderlyings.map((item) => {
+                    const isSelected = prefs.underlying === item.name && prefs.exchange === item.exchange
+                    return (
+                      <CommandItem
+                        key={`${item.exchange}:${item.name}`}
+                        value={`${item.name} ${item.exchange}`}
+                        onSelect={() => {
+                          setPrefs({
+                            exchange: item.exchange,
+                            underlying: item.name,
+                            expiry: '',
+                          })
+                          setPickerOpen(false)
+                          setUnderlyingSearch('')
+                        }}
+                        className="flex items-center justify-between text-[12px] py-1.5 cursor-pointer"
+                      >
+                        <div className="flex items-center gap-2">
+                          <Check
+                            className={cn(
+                              'h-3.5 w-3.5 text-primary',
+                              isSelected ? 'opacity-100' : 'opacity-0'
+                            )}
+                          />
+                          <span className={cn('font-medium', isSelected && 'text-primary')}>
+                            {item.name}
+                          </span>
+                        </div>
+                        <span
+                          className={cn(
+                            'rounded px-1.5 py-0.5 text-[9px] font-mono font-semibold',
+                            item.exchange === 'BFO'
+                              ? 'bg-purple-500/15 text-purple-600 dark:text-purple-400 border border-purple-500/20'
+                              : item.exchange === 'NFO'
+                              ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400 border border-blue-500/20'
+                              : item.exchange === 'MCX'
+                              ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/20'
+                              : 'bg-muted text-muted-foreground'
+                          )}
+                        >
+                          {item.exchange}
+                        </span>
+                      </CommandItem>
+                    )
+                  })}
                 </CommandGroup>
               </CommandList>
             </Command>
@@ -482,7 +676,7 @@ export function OptionChainPanel({ apiKey, onPick, activeSymbol }: Props) {
         <Button
           variant="ghost"
           size="icon"
-          className="h-8 w-8 shrink-0"
+          className="h-8 w-8 shrink-0 hover:bg-muted/40"
           onClick={() => refetch()}
           title="Refresh"
           aria-label="Refresh option chain"
@@ -542,35 +736,53 @@ export function OptionChainPanel({ apiKey, onPick, activeSymbol }: Props) {
         </Select>
       </div>
 
-      {/* Spot, ATM, PCR */}
+      {/* Spot, ATM, PCR, Support & Resistance Summary */}
       {chain && (
-        <div className="flex shrink-0 items-center justify-between border-b px-2 py-1 text-[11px]">
-          <span className="flex items-center gap-1">
-            <span className="text-muted-foreground">Spot</span>
-            <span
-              className={cn(
-                'font-medium tabular-nums',
-                spotDirection === 'up' && 'text-emerald-600 dark:text-emerald-400',
-                spotDirection === 'down' && 'text-rose-600 dark:text-rose-400',
-                spotDirection === 'flat' && 'text-foreground'
-              )}
-            >
-              {chain.underlying_ltp?.toFixed(2) ?? '-'}
+        <div className="flex flex-col border-b bg-muted/10 text-[11px]">
+          <div className="flex shrink-0 items-center justify-between px-2 py-1">
+            <span className="flex items-center gap-1">
+              <span className="text-muted-foreground font-medium">Spot</span>
+              <span
+                className={cn(
+                  'font-semibold tabular-nums',
+                  spotDirection === 'up' && 'text-emerald-600 dark:text-emerald-400',
+                  spotDirection === 'down' && 'text-rose-600 dark:text-rose-400',
+                  spotDirection === 'flat' && 'text-foreground'
+                )}
+              >
+                {chain.underlying_ltp?.toFixed(2) ?? '-'}
+              </span>
             </span>
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="text-muted-foreground">ATM</span>
-            <span className="font-medium tabular-nums">{chain.atm_strike}</span>
-          </span>
-          {/* Labelled with the strike count, because this is the ratio across
-              the strikes on screen, not the whole chain a trader may expect. */}
-          <span
-            className="flex items-center gap-1"
-            title={`Across ${rows.length} strikes on screen`}
-          >
-            <span className="text-muted-foreground">PCR({rows.length})</span>
-            <span className="font-medium tabular-nums">{pcr ? pcr.toFixed(2) : '-'}</span>
-          </span>
+            <span className="flex items-center gap-1">
+              <span className="text-muted-foreground font-medium">ATM</span>
+              <span className="font-semibold tabular-nums text-foreground">{chain.atm_strike}</span>
+            </span>
+            {/* Labelled with the strike count, because this is the ratio across
+                the strikes on screen, not the whole chain a trader may expect. */}
+            <span
+              className="flex items-center gap-1"
+              title={`Across ${rows.length} strikes on screen`}
+            >
+              <span className="text-muted-foreground font-medium">PCR({rows.length})</span>
+              <span className={cn('font-semibold tabular-nums', pcr >= 1 ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400')}>
+                {pcr ? pcr.toFixed(2) : '-'}
+              </span>
+            </span>
+          </div>
+
+          {/* S & R Strike Insights Row */}
+          {(s1 || r1) && (
+            <div className="flex shrink-0 items-center justify-between border-t border-border/40 px-2 py-0.5 text-[10px] bg-muted/20">
+              <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-medium" title={`Support S1 (Max Put OI: ${compact(s1Oi)})`}>
+                <span className="rounded bg-emerald-500/15 px-1 py-0.2 text-[9px] font-bold border border-emerald-500/30">SUP S1</span>
+                <span className="tabular-nums font-semibold">{s1 ?? '-'}</span>
+              </span>
+              <span className="flex items-center gap-1 text-rose-600 dark:text-rose-400 font-medium" title={`Resistance R1 (Max Call OI: ${compact(r1Oi)})`}>
+                <span className="tabular-nums font-semibold">{r1 ?? '-'}</span>
+                <span className="rounded bg-rose-500/15 px-1 py-0.2 text-[9px] font-bold border border-rose-500/30">RES R1</span>
+              </span>
+            </div>
+          )}
         </div>
       )}
 
@@ -619,45 +831,38 @@ export function OptionChainPanel({ apiKey, onPick, activeSymbol }: Props) {
             // Above ATM the call is out of the money; below it, the put is.
             const ceOtm = chain != null && !atm && row.strike > chain.atm_strike
             const peOtm = chain != null && !atm && row.strike < chain.atm_strike
+
+            const isResistance = r1 !== null && row.strike === r1
+            const isSupport = s1 !== null && row.strike === s1
+
+            const ceFlash = row.ce?.symbol ? flashes[row.ce.symbol] : undefined
+            const peFlash = row.pe?.symbol ? flashes[row.pe.symbol] : undefined
+
             return (
               <div
                 key={row.strike}
                 className={cn(ROW_GRID, 'items-stretch border-b border-border/40 text-[12px]')}
               >
-                {/* Both values sit against the strike and both OI bars grow
-                    away from it. Anchoring them to the panel's outer edges
-                    instead put 120px of empty cell between the number and the
-                    strike it belongs to, and turned the OI profile into an
-                    hourglass rather than the butterfly it is read as.
-
-                    Calls green and puts red, matching pages/OptionChain.tsx.
-                    The same chain rendered with the colours swapped in another
-                    tab is a way to read resistance as support. */}
-                {/* A wrapper, so the order pills are SIBLINGS of the chart
-                    button rather than nested inside it: a button within a
-                    button is invalid HTML and behaves like it. */}
+                {/* Calls cell: Right aligned against the strike */}
                 <div
                   className={cn(
-                    'group/leg relative flex items-center gap-1 justify-end px-2 py-1 transition-colors',
-                    ceOtm ? 'bg-amber-500/5 hover:bg-amber-500/15' : 'hover:bg-accent',
+                    'group/leg relative flex items-center gap-1 justify-end px-2 py-1 transition-colors duration-200',
+                    ceFlash === 'up' && 'bg-emerald-500/25',
+                    ceFlash === 'down' && 'bg-rose-500/25',
+                    !ceFlash && (ceOtm ? 'bg-amber-500/5 hover:bg-amber-500/15' : 'hover:bg-accent'),
                     activeSymbol === `${prefs.exchange}:${row.ce?.symbol}` &&
                       'font-medium ring-1 ring-inset ring-primary/60'
                   )}
                 >
-                  {/* Only while the cells show OI. A bar encoding one quantity
-                      under a number showing another says two different things
-                      in the same cell with nothing to tell them apart. */}
+                  {/* OI Bar gradient */}
                   {metric === 'oi' && (
                     <span
-                      className="pointer-events-none absolute inset-y-0 right-0 bg-gradient-to-l from-emerald-500/25 to-transparent"
+                      className="pointer-events-none absolute inset-y-0 right-0 bg-gradient-to-l from-emerald-500/25 to-transparent transition-all duration-300"
                       style={{ width: `${Math.min(100, ((row.ce?.oi ?? 0) / peakOi) * 100)}%` }}
                       aria-hidden="true"
                     />
                   )}
-                  {/* The click target, stretched underneath. The value and the
-                      order pills are siblings above it rather than children: a
-                      button inside a button is invalid HTML, and keeping the
-                      value out here is what lets the pills sit against it. */}
+                  {/* The click target, stretched underneath */}
                   <button
                     type="button"
                     onClick={() => chartLeg(row.ce)}
@@ -674,51 +879,70 @@ export function OptionChainPanel({ apiKey, onPick, activeSymbol }: Props) {
                     }
                   />
                   <OrderPills leg={row.ce} onOrder={(leg, action) => setOrder({ leg, action })} />
-                  <span className="pointer-events-none relative tabular-nums">
+                  <span className={cn(
+                    "pointer-events-none relative tabular-nums font-mono text-[11px]",
+                    ceFlash === 'up' && 'text-emerald-600 dark:text-emerald-400 font-bold',
+                    ceFlash === 'down' && 'text-rose-600 dark:text-rose-400 font-bold'
+                  )}>
                     {metricOf(row.ce, metric)}
                   </span>
                 </div>
 
-                {/* ATM as a tinted, ringed chip rather than a filled one.
-                    `--primary` in this app is near-black in light and near-white
-                    in dark, so bg-primary would put the loudest element on the
-                    page in the middle of a 21-row table. */}
+                {/* Strike center column: with ATM, S1, and R1 highlights */}
                 <span
                   className={cn(
-                    'flex items-center justify-center border-x border-border/40 py-1 tabular-nums',
+                    'relative flex items-center justify-center border-x border-border/40 py-1 tabular-nums font-mono text-[11px]',
                     atm
                       ? 'bg-primary/10 font-semibold text-foreground ring-1 ring-inset ring-primary/50'
+                      : isResistance
+                      ? 'bg-rose-500/10 font-semibold text-rose-600 dark:text-rose-400'
+                      : isSupport
+                      ? 'bg-emerald-500/10 font-semibold text-emerald-600 dark:text-emerald-400'
                       : 'text-muted-foreground'
                   )}
+                  title={
+                    atm
+                      ? 'At The Money (ATM)'
+                      : isResistance
+                      ? `Major Resistance R1 (Max CE OI: ${compact(r1Oi)})`
+                      : isSupport
+                      ? `Major Support S1 (Max PE OI: ${compact(s1Oi)})`
+                      : undefined
+                  }
                 >
                   {row.strike}
+                  {isSupport && !atm && (
+                    <span className="pointer-events-none absolute left-0.5 top-0.5 text-[8px] font-extrabold text-emerald-600 dark:text-emerald-400" aria-hidden="true">
+                      ●
+                    </span>
+                  )}
+                  {isResistance && !atm && (
+                    <span className="pointer-events-none absolute right-0.5 top-0.5 text-[8px] font-extrabold text-rose-600 dark:text-rose-400" aria-hidden="true">
+                      ▲
+                    </span>
+                  )}
                 </span>
 
-                {/* A wrapper, so the order pills are SIBLINGS of the chart
-                    button rather than nested inside it: a button within a
-                    button is invalid HTML and behaves like it. */}
+                {/* Puts cell: Left aligned against the strike */}
                 <div
                   className={cn(
-                    'group/leg relative flex items-center gap-1 justify-start px-2 py-1 transition-colors',
-                    peOtm ? 'bg-amber-500/5 hover:bg-amber-500/15' : 'hover:bg-accent',
+                    'group/leg relative flex items-center gap-1 justify-start px-2 py-1 transition-colors duration-200',
+                    peFlash === 'up' && 'bg-emerald-500/25',
+                    peFlash === 'down' && 'bg-rose-500/25',
+                    !peFlash && (peOtm ? 'bg-amber-500/5 hover:bg-amber-500/15' : 'hover:bg-accent'),
                     activeSymbol === `${prefs.exchange}:${row.pe?.symbol}` &&
                       'font-medium ring-1 ring-inset ring-primary/60'
                   )}
                 >
-                  {/* Only while the cells show OI. A bar encoding one quantity
-                      under a number showing another says two different things
-                      in the same cell with nothing to tell them apart. */}
+                  {/* OI Bar gradient */}
                   {metric === 'oi' && (
                     <span
-                      className="pointer-events-none absolute inset-y-0 left-0 bg-gradient-to-r from-rose-500/25 to-transparent"
+                      className="pointer-events-none absolute inset-y-0 left-0 bg-gradient-to-r from-rose-500/25 to-transparent transition-all duration-300"
                       style={{ width: `${Math.min(100, ((row.pe?.oi ?? 0) / peakOi) * 100)}%` }}
                       aria-hidden="true"
                     />
                   )}
-                  {/* The click target, stretched underneath. The value and the
-                      order pills are siblings above it rather than children: a
-                      button inside a button is invalid HTML, and keeping the
-                      value out here is what lets the pills sit against it. */}
+                  {/* The click target, stretched underneath */}
                   <button
                     type="button"
                     onClick={() => chartLeg(row.pe)}
@@ -734,7 +958,11 @@ export function OptionChainPanel({ apiKey, onPick, activeSymbol }: Props) {
                         : undefined
                     }
                   />
-                  <span className="pointer-events-none relative tabular-nums">
+                  <span className={cn(
+                    "pointer-events-none relative tabular-nums font-mono text-[11px]",
+                    peFlash === 'up' && 'text-emerald-600 dark:text-emerald-400 font-bold',
+                    peFlash === 'down' && 'text-rose-600 dark:text-rose-400 font-bold'
+                  )}>
                     {metricOf(row.pe, metric)}
                   </span>
                   <OrderPills leg={row.pe} onOrder={(leg, action) => setOrder({ leg, action })} />
