@@ -6965,7 +6965,12 @@ export class TradingTerminal {
     const ticket = ++this.loadTicket
     this.lastPick = pick
     this.loadOutcome = null
-    this.cb.onChartState?.({ kind: 'loading', symbol: pick.symbol, interval: this.interval })
+    const symKey = `${pick.symbol.toUpperCase()}:${(pick.exchange || '').toUpperCase()}`
+    const memKey = `${symKey}:${this.interval}`
+    const isCached = globalBarMemoryCache.has(memKey) && symbolMetadataCache.has(symKey)
+    if (!isCached) {
+      this.cb.onChartState?.({ kind: 'loading', symbol: pick.symbol, interval: this.interval })
+    }
     this.historyPending = true
     this.historyFailed = false
     this.syncAlertPause()

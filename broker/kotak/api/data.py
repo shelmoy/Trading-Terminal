@@ -6,10 +6,12 @@ from datetime import datetime, timedelta
 
 import httpx
 import pandas as pd
+import pytz
 
 from database.token_db import get_br_symbol, get_brexchange, get_token
 from utils.httpx_client import get_httpx_client
 from utils.logging import get_logger
+from utils.trading_calendar import is_trading_day, prev_trading_day
 
 logger = get_logger(__name__)
 
@@ -1134,6 +1136,20 @@ class BrokerData:
             if start > end:
                 raise Exception(f"start_date {start_date} is after end_date {end_date}")
 
+            # Calendar awareness: If end date is today or later, check if today is a trading day
+            # and if market has opened (09:15 IST). If not trading today or market hasn't opened yet,
+            # clamp end to the latest trading session to prevent Kotak Neo from hanging/timing out.
+            now_ist = datetime.now(pytz.timezone("Asia/Kolkata"))
+            today_ist = now_ist.date()
+            market_open_ist = now_ist.replace(hour=9, minute=15, second=0, microsecond=0)
+            if end.date() >= today_ist:
+                if not is_trading_day(today_ist) or now_ist < market_open_ist:
+                    last_trading_dt = pd.to_datetime(prev_trading_day(today_ist))
+                    if end > last_trading_dt:
+                        end = last_trading_dt
+                        if start > end:
+                            start = end
+
             earliest = _history_earliest_start()
             if end < earliest:
                 logger.info(
@@ -1154,6 +1170,15 @@ class BrokerData:
             current_start = start
 
             while current_start <= end:
+                # If we already have candles from previous chunk(s) and current_start is today/future
+                # and today is not a trading day or market not yet opened, break immediately
+                if dfs and current_start.date() >= today_ist:
+                    if not is_trading_day(today_ist) or now_ist < market_open_ist:
+                        logger.info(
+                            f"HISTORY API - Current start {current_start.date()} is closed market/pre-open, returning existing {len(dfs)} chunks"
+                        )
+                        break
+
                 current_end = min(current_start + timedelta(days=chunk_days - 1), end)
 
                 # Once a candidate has actually produced candles, stay on it.
