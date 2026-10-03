@@ -5,10 +5,13 @@
 !.gitignore
 !README.md
 
-# Open Range Breakout, Pure Renko & Alpha Trend Version 2 ship with OpenAlgo as working indicators.
+# Open Range Breakout, Pure Renko, Alpha Trend Version 2, SuperTrend AI, Supertrend MTF HA & Gaussian Filter Trend ship with OpenAlgo as working indicators.
 !open_range_breakout.js
 !pure_renko.js
 !alpha_trend_v2.js
+!supertrend_ai.js
+!supertrend_mtf_ha.js
+!gaussian_filter_trend.js
 
 # Ignore backup and editor files
 *.bak

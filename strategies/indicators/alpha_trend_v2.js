@@ -222,7 +222,7 @@ export default function ({ registerIndicator, sourceValues, sma, rsi, nulls }) {
         key: 'showRenkoStep',
         type: 'boolean',
         label: 'Show Renko Trailing Line?',
-        default: false,
+        default: true,
         group: '2. AlphaTrend Parameters',
       },
       {
@@ -320,12 +320,13 @@ export default function ({ registerIndicator, sourceValues, sma, rsi, nulls }) {
           alphatrend: alphatrendArr,
           lagged: laggedArr,
           renkoStep: renkoStepArr,
-          _internal: {
-            buySignalPrice: buySignalPriceArr,
-            sellSignalPrice: sellSignalPriceArr,
-            isBuy: isBuyArr,
-            isSell: isSellArr,
-          },
+          buySignalPrice: buySignalPriceArr,
+          sellSignalPrice: sellSignalPriceArr,
+          isBuy: isBuyArr,
+          isSell: isSellArr,
+          renkoClose: new Array(n).fill(null),
+          renkoDir: new Array(n).fill(0),
+          streakCount: new Array(n).fill(0),
         }
       }
 
@@ -354,6 +355,9 @@ export default function ({ registerIndicator, sourceValues, sma, rsi, nulls }) {
       // 1. Run Pure Renko V2 State Machine
       // ==========================================
       const renkoBars = new Array(n)
+      const renkoCloseArr = new Array(n).fill(null)
+      const renkoDirArr = new Array(n).fill(0)
+      const streakCountArr = new Array(n).fill(0)
       let renkoOpen = null
       let renkoClose = null
       let renkoDir = 0 // 1 = Bullish, -1 = Bearish
@@ -441,6 +445,10 @@ export default function ({ registerIndicator, sourceValues, sma, rsi, nulls }) {
           dir: renkoDir,
           streak: streakCount,
         }
+
+        renkoCloseArr[i] = renkoClose
+        renkoDirArr[i] = renkoDir
+        streakCountArr[i] = streakCount
 
         if (showRenkoStep) {
           renkoStepArr[i] = renkoClose
@@ -553,40 +561,39 @@ export default function ({ registerIndicator, sourceValues, sma, rsi, nulls }) {
         alphatrend: alphatrendArr,
         lagged: laggedArr,
         renkoStep: renkoStepArr,
-        _internal: {
-          buySignalPrice: buySignalPriceArr,
-          sellSignalPrice: sellSignalPriceArr,
-          isBuy: isBuyArr,
-          isSell: isSellArr,
-          renkoBars,
-        },
+        buySignalPrice: buySignalPriceArr,
+        sellSignalPrice: sellSignalPriceArr,
+        isBuy: isBuyArr,
+        isSell: isSellArr,
+        renkoClose: renkoCloseArr,
+        renkoDir: renkoDirArr,
+        streakCount: streakCountArr,
       }
     },
     markers({ bars, values, settings }) {
       if (settings.showsignalsk === false) return []
-      const internal = values?._internal
-      if (!internal || !internal.isBuy || !internal.isSell) return []
+      if (!values.isBuy || !values.isSell) return []
 
       const buyColor = settings.buyColor || '#0022fc'
       const sellColor = settings.sellColor || '#880e4f'
       const out = []
 
       for (let i = 0; i < bars.length; i++) {
-        if (internal.isBuy[i]) {
+        if (values.isBuy[i]) {
           out.push({
             time: bars[i].time,
             position: 'atPrice',
-            price: internal.buySignalPrice[i] ?? bars[i].low,
+            price: values.buySignalPrice[i] ?? bars[i].low,
             shape: 'labelUp',
             size: 'tiny',
             color: buyColor,
             text: 'BUY',
           })
-        } else if (internal.isSell[i]) {
+        } else if (values.isSell[i]) {
           out.push({
             time: bars[i].time,
             position: 'atPrice',
-            price: internal.sellSignalPrice[i] ?? bars[i].high,
+            price: values.sellSignalPrice[i] ?? bars[i].high,
             shape: 'labelDown',
             size: 'tiny',
             color: sellColor,
@@ -603,11 +610,9 @@ export default function ({ registerIndicator, sourceValues, sma, rsi, nulls }) {
       if (n === 0) return null
 
       const lastIdx = n - 1
-      const internal = values?._internal
-      if (!internal || !internal.renkoBars) return null
-
-      const rBar = internal.renkoBars[lastIdx]
-      if (!rBar) return null
+      const rDir = values.renkoDir ? values.renkoDir[lastIdx] : 0
+      const rStreak = values.streakCount ? values.streakCount[lastIdx] : 0
+      const rClose = values.renkoClose ? values.renkoClose[lastIdx] : null
 
       const calcMode = String(settings.calcMode || 'Percentage (%)')
       const pctSize = Number(settings.pctSize) || 0.04
@@ -623,10 +628,10 @@ export default function ({ registerIndicator, sourceValues, sma, rsi, nulls }) {
             ? `${ptsSize} Pts`
             : 'ATR'
 
-      const isBullRenko = rBar.dir === 1
+      const isBullRenko = rDir === 1
       const renkoStatus = isBullRenko
-        ? `BULLISH (${rBar.streak})`
-        : `BEARISH (${rBar.streak})`
+        ? `BULLISH (${rStreak})`
+        : `BEARISH (${rStreak})`
       const renkoBgColor = isBullRenko ? '#2e7d32' : '#d32f2f'
 
       const isLongAT = at !== null && lag !== null && at > lag
@@ -634,35 +639,56 @@ export default function ({ registerIndicator, sourceValues, sma, rsi, nulls }) {
       const atSignalBg = isLongAT ? '#0022fc' : '#880e4f'
 
       const atStr = at !== null ? at.toFixed(2) : '--'
-      const rCloseStr = rBar.close !== null ? rBar.close.toFixed(2) : '--'
+      const rCloseStr = rClose !== null ? rClose.toFixed(2) : '--'
+
+      const headerTitleBg = 'rgba(15, 23, 42, 0.94)'
+      const headerBadgeBg = 'rgba(30, 41, 59, 0.94)'
+      const rowLabelBg = 'rgba(15, 23, 42, 0.88)'
+      const rowValueBg = 'rgba(15, 23, 42, 0.82)'
+      const labelColor = '#94a3b8'
+      const valueColor = '#f8fafc'
+
+      const renkoStatusText = isBullRenko ? `▲ BULLISH (${rStreak})` : `▼ BEARISH (${rStreak})`
+      const renkoStatusColor = isBullRenko ? '#10b981' : '#f43f5e'
+      const renkoCellBg = isBullRenko ? 'rgba(16, 185, 129, 0.16)' : 'rgba(244, 63, 94, 0.16)'
+
+      const atText = isLongAT ? '▲ LONG / BUY' : '▼ SHORT / SELL'
+      const atColor = isLongAT ? '#38bdf8' : '#ec4899'
+      const atCellBg = isLongAT ? 'rgba(56, 189, 248, 0.16)' : 'rgba(236, 72, 153, 0.16)'
 
       return {
         rows: [
           [
-            { text: 'AlphaTrend + Renko V2', bgColor: '#212121', textColor: '#ffffff', bold: true },
-            { text: modeText, bgColor: '#212121', textColor: '#ffeb3b', bold: true },
+            { text: '  AlphaTrend + Renko V2', bgColor: headerTitleBg, textColor: '#f8fafc', bold: true, align: 'left', fontSize: 11 },
+            { text: `${modeText} `, bgColor: headerBadgeBg, textColor: '#fbbf24', bold: true, align: 'right', fontSize: 11 },
           ],
           [
-            { text: 'Renko Trend', textColor: '#c0c0c0' },
-            { text: renkoStatus, bgColor: renkoBgColor, textColor: '#ffffff', bold: true },
+            { text: '  Renko Trend', bgColor: rowLabelBg, textColor: labelColor, align: 'left', fontSize: 11 },
+            { text: `${renkoStatusText} `, bgColor: renkoCellBg, textColor: renkoStatusColor, bold: true, align: 'right', fontSize: 11 },
           ],
           [
-            { text: 'AlphaTrend Signal', textColor: '#c0c0c0' },
-            { text: atSignalText, bgColor: atSignalBg, textColor: '#ffffff', bold: true },
+            { text: '  AlphaTrend Signal', bgColor: rowLabelBg, textColor: labelColor, align: 'left', fontSize: 11 },
+            { text: `${atText} `, bgColor: atCellBg, textColor: atColor, bold: true, align: 'right', fontSize: 11 },
           ],
           [
-            { text: 'AlphaTrend Value', textColor: '#c0c0c0' },
-            { text: atStr, textColor: '#ffffff' },
+            { text: '  AlphaTrend Value', bgColor: rowLabelBg, textColor: labelColor, align: 'left', fontSize: 11 },
+            { text: `${atStr} `, bgColor: rowValueBg, textColor: valueColor, bold: true, align: 'right', fontSize: 11 },
           ],
           [
-            { text: 'Renko Brick Level', textColor: '#c0c0c0' },
-            { text: rCloseStr, textColor: '#ffeb3b', bold: true },
+            { text: '  Renko Brick Level', bgColor: rowLabelBg, textColor: labelColor, align: 'left', fontSize: 11 },
+            { text: `${rCloseStr} `, bgColor: rowValueBg, textColor: '#fbbf24', bold: true, align: 'right', fontSize: 11 },
           ],
         ],
         options: {
           position: 'top-right',
           cellWidth: 'auto',
-          margin: 10,
+          cellHeight: 22,
+          margin: 12,
+          borderColor: 'rgba(255, 255, 255, 0.08)',
+          borderWidth: 1,
+          frameColor: 'rgba(56, 189, 248, 0.35)',
+          frameWidth: 1,
+          background: 'rgba(15, 23, 42, 0.90)',
         },
       }
     },
@@ -675,7 +701,7 @@ export default function ({ registerIndicator, sourceValues, sma, rsi, nulls }) {
           return `Renko AlphaTrend: Confirmed BUY at ${price}`
         },
         when: ({ values, index }) => {
-          return values?._internal?.isBuy?.[index] === true
+          return values?.isBuy?.[index] === true
         },
       },
       {
@@ -686,7 +712,7 @@ export default function ({ registerIndicator, sourceValues, sma, rsi, nulls }) {
           return `Renko AlphaTrend: Confirmed SELL at ${price}`
         },
         when: ({ values, index }) => {
-          return values?._internal?.isSell?.[index] === true
+          return values?.isSell?.[index] === true
         },
       },
     ],

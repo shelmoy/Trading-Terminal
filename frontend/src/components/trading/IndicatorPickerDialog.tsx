@@ -137,20 +137,39 @@ export function IndicatorPickerDialog({
   const favSet = useMemo(() => new Set(favourites), [favourites])
 
   /**
-   * The rows for the chosen section, always alphabetical -- except Recent,
-   * whose whole point is its order.
+   * The rows for the chosen section, with featured custom indicators pinned at top
+   * (SuperTrend AI, AlphaTrend, Pure Renko), and the rest alphabetical.
+   * Recent keeps its usage order.
    */
   const rows = useMemo(() => {
-    const alpha = (list: CatalogEntry[]) => [...list].sort((a, b) => a.name.localeCompare(b.name))
+    // Featured indicators pinned at top of the list
+    const PINNED_IDS = [
+      'oa-gaussian-filter-trend',
+      'oa-supertrend-mtf-ha',
+      'oa-supertrend-ai',
+      'oa-alpha-trend-v2',
+      'oa-pure-renko',
+    ]
+    const sortWithPinned = (list: CatalogEntry[]) => {
+      return [...list].sort((a, b) => {
+        const aPin = PINNED_IDS.indexOf(a.id)
+        const bPin = PINNED_IDS.indexOf(b.id)
+        if (aPin !== -1 && bPin !== -1) return aPin - bPin
+        if (aPin !== -1) return -1
+        if (bPin !== -1) return 1
+        return a.name.localeCompare(b.name)
+      })
+    }
+
     if (section === 'favourites')
-      return alpha(favourites.map((id) => byId.get(id)).filter((d): d is CatalogEntry => !!d))
+      return sortWithPinned(favourites.map((id) => byId.get(id)).filter((d): d is CatalogEntry => !!d))
     if (section === 'recent')
       return recent.map((id) => byId.get(id)).filter((d): d is CatalogEntry => !!d)
-    if (section === 'mine') return alpha(mine)
-    if (section === 'all') return alpha(catalog)
+    if (section === 'mine') return sortWithPinned(mine)
+    if (section === 'all') return sortWithPinned(catalog)
     // Excluding the trader's own for the same reason the rail does: a library
     // category is what shipped, and theirs is listed above it.
-    return alpha(catalog.filter((d) => d.category === section && !mineIds.has(d.id)))
+    return sortWithPinned(catalog.filter((d) => d.category === section && !mineIds.has(d.id)))
   }, [section, catalog, favourites, recent, byId, mine, mineIds])
 
   const filter = query.trim().toLowerCase()
@@ -319,10 +338,30 @@ export function IndicatorPickerDialog({
                   <button
                     type="button"
                     onClick={() => add(d.id)}
-                    className="flex-1 truncate py-1.5 text-left text-[13px]"
+                    className="flex-1 truncate py-1.5 text-left text-[13px] flex items-center gap-2"
                     title={`Add ${d.name}`}
                   >
-                    {d.name}
+                    <span>{d.name}</span>
+                    {d.id === 'oa-gaussian-filter-trend' && (
+                      <span className="shrink-0 rounded bg-violet-500/15 text-violet-400 border border-violet-500/30 px-1.5 py-0 text-[10px] font-bold tracking-wider">
+                        GAUSSIAN
+                      </span>
+                    )}
+                    {d.id === 'oa-supertrend-mtf-ha' && (
+                      <span className="shrink-0 rounded bg-cyan-500/15 text-cyan-400 border border-cyan-500/30 px-1.5 py-0 text-[10px] font-bold tracking-wider">
+                        MTF HA
+                      </span>
+                    )}
+                    {d.id === 'oa-supertrend-ai' && (
+                      <span className="shrink-0 rounded bg-primary/15 text-primary border border-primary/30 px-1.5 py-0 text-[10px] font-bold tracking-wider">
+                        AI
+                      </span>
+                    )}
+                    {(d.id === 'oa-alpha-trend-v2' || d.id === 'oa-pure-renko') && (
+                      <span className="shrink-0 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 px-1.5 py-0 text-[10px] font-bold tracking-wider">
+                        RENKO
+                      </span>
+                    )}
                   </button>
                   <span className="shrink-0 pr-1 text-[10px] uppercase tracking-wide text-muted-foreground/60 opacity-0 transition-opacity group-hover:opacity-100">
                     {d.category}

@@ -43,14 +43,12 @@ export default function ({ registerIndicator }) {
         renkoClose: renkoCloseArr,
         revPrice: revPriceArr,
         contPrice: contPriceArr,
-        _internal: {
-          renkoOpen: renkoOpenArr,
-          buySignals,
-          sellSignals,
-          renkoDir: renkoDirArr,
-          streakCount: streakCountArr,
-          activeBSize: activeBSizeArr,
-        },
+        renkoOpen: renkoOpenArr,
+        buySignals,
+        sellSignals,
+        renkoDir: renkoDirArr,
+        streakCount: streakCountArr,
+        activeBSize: activeBSizeArr,
       }
     }
 
@@ -162,14 +160,12 @@ export default function ({ registerIndicator }) {
       renkoClose: renkoCloseArr,
       revPrice: revPriceArr,
       contPrice: contPriceArr,
-      _internal: {
-        renkoOpen: renkoOpenArr,
-        buySignals,
-        sellSignals,
-        renkoDir: renkoDirArr,
-        streakCount: streakCountArr,
-        activeBSize: activeBSizeArr,
-      },
+      renkoOpen: renkoOpenArr,
+      buySignals,
+      sellSignals,
+      renkoDir: renkoDirArr,
+      streakCount: streakCountArr,
+      activeBSize: activeBSizeArr,
     }
   }
 
@@ -281,9 +277,8 @@ export default function ({ registerIndicator }) {
         title: 'Renko Trailing Step',
         style: { color: COLOR_BULLISH, lineWidth: 2 },
         colorBy: ({ index, values }) => {
-          const internal = values?._internal
-          if (!internal || !internal.renkoDir) return COLOR_BULLISH
-          return internal.renkoDir[index] === 1 ? COLOR_BULLISH : COLOR_BEARISH
+          if (!values.renkoDir) return COLOR_BULLISH
+          return values.renkoDir[index] === 1 ? COLOR_BULLISH : COLOR_BEARISH
         },
       },
       {
@@ -304,8 +299,7 @@ export default function ({ registerIndicator }) {
     },
     markers({ bars, values, settings }) {
       if (settings.showLabels === false) return []
-      const internal = values?._internal
-      if (!internal || !internal.buySignals || !internal.sellSignals) return []
+      if (!values.buySignals || !values.sellSignals) return []
 
       const pad = markerPad(bars)
       const out = []
@@ -313,7 +307,7 @@ export default function ({ registerIndicator }) {
       for (let i = 0; i < bars.length; i++) {
         const bar = bars[i]
         const rClose = values.renkoClose[i] !== null ? values.renkoClose[i].toFixed(2) : ''
-        if (internal.buySignals[i]) {
+        if (values.buySignals[i]) {
           out.push({
             time: bar.time,
             position: 'atPrice',
@@ -324,7 +318,7 @@ export default function ({ registerIndicator }) {
             text: `BUY\n${rClose}`,
           })
         }
-        if (internal.sellSignals[i]) {
+        if (values.sellSignals[i]) {
           out.push({
             time: bar.time,
             position: 'atPrice',
@@ -340,8 +334,7 @@ export default function ({ registerIndicator }) {
     },
     draws({ bars, values, settings }) {
       if (settings.showShelves === false) return []
-      const internal = values?._internal
-      if (!internal || !internal.buySignals || !internal.sellSignals) return []
+      if (!values.buySignals || !values.sellSignals) return []
 
       const n = bars.length
       if (n === 0) return []
@@ -350,12 +343,12 @@ export default function ({ registerIndicator }) {
       let lastSigIndex = -1
       let lastSigSide = ''
       for (let i = n - 1; i >= 0; i--) {
-        if (internal.buySignals[i]) {
+        if (values.buySignals[i]) {
           lastSigIndex = i
           lastSigSide = 'buy'
           break
         }
-        if (internal.sellSignals[i]) {
+        if (values.sellSignals[i]) {
           lastSigIndex = i
           lastSigSide = 'sell'
           break
@@ -382,7 +375,7 @@ export default function ({ registerIndicator }) {
           kind: 'line',
           from: { time: startTime, price: shelfPrice },
           to: { time: endTime, price: shelfPrice },
-          color: lastSigSide === 'buy' ? '#4caf50' : '#f44336',
+          color: lastSigSide === 'buy' ? '#4caf50' : '#f43f5e',
           lineWidth: 2,
         },
       ]
@@ -393,17 +386,15 @@ export default function ({ registerIndicator }) {
       if (n === 0) return null
 
       const lastIdx = n - 1
-      const internal = values?._internal
-      if (!internal) return null
 
       const calcMode = String(settings.calcMode || 'Percentage (%)')
       const pctSize = Number(settings.pctSize) || 0.04
       const ptsSize = Number(settings.ptsSize) || 10.0
 
-      const renkoDir = internal.renkoDir ? internal.renkoDir[lastIdx] : 0
-      const streakCount = internal.streakCount ? internal.streakCount[lastIdx] : 0
-      const activeBSize = internal.activeBSize ? internal.activeBSize[lastIdx] : 0
-      const renkoOpen = internal.renkoOpen ? internal.renkoOpen[lastIdx] : 0
+      const renkoDir = values.renkoDir ? values.renkoDir[lastIdx] : 0
+      const streakCount = values.streakCount ? values.streakCount[lastIdx] : 0
+      const activeBSize = values.activeBSize ? values.activeBSize[lastIdx] : 0
+      const renkoOpen = values.renkoOpen ? values.renkoOpen[lastIdx] : 0
       const renkoClose = values.renkoClose ? values.renkoClose[lastIdx] : 0
       const contPrice = values.contPrice ? values.contPrice[lastIdx] : 0
       const revPrice = values.revPrice ? values.revPrice[lastIdx] : 0
@@ -427,37 +418,54 @@ export default function ({ registerIndicator }) {
       const contStr = Number(contPrice || 0).toFixed(2)
       const revStr = Number(revPrice || 0).toFixed(2)
 
+      const headerTitleBg = 'rgba(15, 23, 42, 0.94)'
+      const headerBadgeBg = 'rgba(30, 41, 59, 0.94)'
+      const rowLabelBg = 'rgba(15, 23, 42, 0.88)'
+      const rowValueBg = 'rgba(15, 23, 42, 0.82)'
+      const labelColor = '#94a3b8'
+      const valueColor = '#f8fafc'
+
+      const renkoDirText = renkoDir === 1 ? `▲ BULLISH (${streakCount} bricks)` : `▼ BEARISH (${streakCount} bricks)`
+      const renkoDirColor = renkoDir === 1 ? '#10b981' : '#f43f5e'
+      const renkoCellBg = renkoDir === 1 ? 'rgba(16, 185, 129, 0.16)' : 'rgba(244, 63, 94, 0.16)'
+
       return {
         rows: [
           [
-            { text: 'Pure Renko Engine', bgColor: '#212121', textColor: '#ffffff', bold: true },
-            { text: modeText, bgColor: '#212121', textColor: '#ffeb3b', bold: true },
+            { text: '  Pure Renko Engine', bgColor: headerTitleBg, textColor: '#f8fafc', bold: true, align: 'left', fontSize: 11 },
+            { text: `${modeText} `, bgColor: headerBadgeBg, textColor: '#fbbf24', bold: true, align: 'right', fontSize: 11 },
           ],
           [
-            { text: 'Renko State', textColor: '#c0c0c0' },
-            { text: dirText, textColor: dirColor, bold: true },
+            { text: '  Renko State', bgColor: rowLabelBg, textColor: labelColor, align: 'left', fontSize: 11 },
+            { text: `${renkoDirText} `, bgColor: renkoCellBg, textColor: renkoDirColor, bold: true, align: 'right', fontSize: 11 },
           ],
           [
-            { text: 'Active Brick Size', textColor: '#c0c0c0' },
-            { text: `${ptsEquiv} pts (${pctEquiv}%)`, textColor: '#ffffff' },
+            { text: '  Active Brick Size', bgColor: rowLabelBg, textColor: labelColor, align: 'left', fontSize: 11 },
+            { text: `${ptsEquiv} pts (${pctEquiv}%) `, bgColor: rowValueBg, textColor: valueColor, bold: true, align: 'right', fontSize: 11 },
           ],
           [
-            { text: 'Last Brick Open/Close', textColor: '#c0c0c0' },
-            { text: `${openStr} → ${closeStr}`, textColor: '#ffffff' },
+            { text: '  Last Brick Open/Close', bgColor: rowLabelBg, textColor: labelColor, align: 'left', fontSize: 11 },
+            { text: `${openStr} → ${closeStr} `, bgColor: rowValueBg, textColor: valueColor, bold: true, align: 'right', fontSize: 11 },
           ],
           [
-            { text: 'Continuation Target', textColor: '#c0c0c0' },
-            { text: contStr, textColor: '#81c784', bold: true },
+            { text: '  Continuation Target', bgColor: rowLabelBg, textColor: labelColor, align: 'left', fontSize: 11 },
+            { text: `${contStr} `, bgColor: 'rgba(16, 185, 129, 0.14)', textColor: '#10b981', bold: true, align: 'right', fontSize: 11 },
           ],
           [
-            { text: 'Reversal Flip Price', textColor: '#c0c0c0' },
-            { text: revStr, textColor: '#ff8a80', bold: true },
+            { text: '  Reversal Flip Price', bgColor: rowLabelBg, textColor: labelColor, align: 'left', fontSize: 11 },
+            { text: `${revStr} `, bgColor: 'rgba(244, 63, 94, 0.14)', textColor: '#f43f5e', bold: true, align: 'right', fontSize: 11 },
           ],
         ],
         options: {
           position: 'top-right',
           cellWidth: 'auto',
-          margin: 10,
+          cellHeight: 22,
+          margin: 12,
+          borderColor: 'rgba(255, 255, 255, 0.08)',
+          borderWidth: 1,
+          frameColor: 'rgba(56, 189, 248, 0.35)',
+          frameWidth: 1,
+          background: 'rgba(15, 23, 42, 0.90)',
         },
       }
     },
@@ -470,7 +478,7 @@ export default function ({ registerIndicator }) {
           return `Pure Renko BUY: Bullish Reversal Brick Confirmed at ${rClose}`
         },
         when: ({ values, index }) => {
-          return values?._internal?.buySignals?.[index] === true
+          return values?.buySignals?.[index] === true
         },
       },
       {
@@ -481,7 +489,7 @@ export default function ({ registerIndicator }) {
           return `Pure Renko SELL: Bearish Reversal Brick Confirmed at ${rClose}`
         },
         when: ({ values, index }) => {
-          return values?._internal?.sellSignals?.[index] === true
+          return values?.sellSignals?.[index] === true
         },
       },
       {
@@ -492,8 +500,7 @@ export default function ({ registerIndicator }) {
           return `Pure Renko: Direction Flip Confirmed at ${rClose}`
         },
         when: ({ values, index }) => {
-          const internal = values?._internal
-          return internal?.buySignals?.[index] === true || internal?.sellSignals?.[index] === true
+          return values?.buySignals?.[index] === true || values?.sellSignals?.[index] === true
         },
       },
     ],

@@ -124,18 +124,44 @@ class OrderLatency(LatencyBase):
             return False
 
     @staticmethod
-    def get_recent_logs(limit=100):
-        """Get recent latency logs ordered by timestamp"""
+    def get_session_start_utc():
+        """Get the current trading session start in UTC (default 03:00 IST)"""
         try:
-            return OrderLatency.query.order_by(OrderLatency.timestamp.desc()).limit(limit).all()
+            import pytz
+            from utils.session import _todays_rollover_boundary
+            boundary_ist = _todays_rollover_boundary()
+            return boundary_ist.astimezone(pytz.timezone("UTC")).replace(tzinfo=None)
+        except Exception as e:
+            logger.warning(f"Error calculating session start: {e}")
+            now = datetime.utcnow()
+            return datetime(now.year, now.month, now.day, 0, 0, 0)
+
+    @staticmethod
+    def get_recent_logs(limit=100, session_only=False):
+        """Get recent latency logs ordered by timestamp, optionally filtered to current trading day/session"""
+        try:
+            query = OrderLatency.query
+            if session_only:
+                cutoff = OrderLatency.get_session_start_utc()
+                query = query.filter(OrderLatency.timestamp >= cutoff)
+            query = query.order_by(OrderLatency.timestamp.desc())
+            if limit is not None:
+                query = query.limit(limit)
+            return query.all()
         except Exception as e:
             logger.exception(f"Error getting recent latency logs: {str(e)}")
             return []
 
     @staticmethod
-    def get_latency_stats():
-        """Get latency statistics - optimized with minimal database queries"""
-        cached = _stats_cache.get("stats")
+    def clear_stats_cache():
+        """Invalidate the in-memory latency stats cache"""
+        _stats_cache.clear()
+
+    @staticmethod
+    def get_latency_stats(session_only=True):
+        """Get latency statistics - default to current day trading session (auto-resets daily at 03:00 IST)"""
+        cache_key = f"stats_{session_only}"
+        cached = _stats_cache.get(cache_key)
         if cached is not None:
             return cached
 
@@ -143,16 +169,31 @@ class OrderLatency(LatencyBase):
             import numpy as np
             from sqlalchemy import case, func
 
-            percentile_cutoff = datetime.utcnow() - timedelta(days=PERCENTILE_WINDOW_DAYS)
+            session_start_utc = OrderLatency.get_session_start_utc()
+            percentile_cutoff = (
+                session_start_utc
+                if session_only
+                else datetime.utcnow() - timedelta(days=PERCENTILE_WINDOW_DAYS)
+            )
+
+            base_query = latency_session.query(OrderLatency)
+            if session_only:
+                base_query = base_query.filter(OrderLatency.timestamp >= session_start_utc)
 
             # OPTIMIZED: Single query for all overall stats using CASE statements
-            # This replaces 9 separate queries with 1
-            overall_stats = latency_session.query(
+            stats_query = latency_session.query(
                 func.count(OrderLatency.id).label("total"),
                 func.sum(case((OrderLatency.status == "FAILED", 1), else_=0)).label("failed"),
                 func.avg(OrderLatency.rtt_ms).label("avg_rtt"),
+                func.avg(OrderLatency.validation_latency_ms).label("avg_validation"),
+                func.avg(OrderLatency.response_latency_ms).label("avg_response"),
                 func.avg(OrderLatency.overhead_ms).label("avg_overhead"),
                 func.avg(OrderLatency.total_latency_ms).label("avg_total"),
+                func.min(OrderLatency.total_latency_ms).label("min_total"),
+                func.max(OrderLatency.total_latency_ms).label("max_total"),
+                func.sum(case((OrderLatency.total_latency_ms < 50, 1), else_=0)).label(
+                    "under_50"
+                ),
                 func.sum(case((OrderLatency.total_latency_ms < 100, 1), else_=0)).label(
                     "under_100"
                 ),
@@ -162,35 +203,40 @@ class OrderLatency(LatencyBase):
                 func.sum(case((OrderLatency.total_latency_ms < 200, 1), else_=0)).label(
                     "under_200"
                 ),
-            ).first()
+            )
+            if session_only:
+                stats_query = stats_query.filter(OrderLatency.timestamp >= session_start_utc)
+
+            overall_stats = stats_query.first()
 
             total_orders = overall_stats.total or 0
             failed_orders = overall_stats.failed or 0
             avg_rtt = overall_stats.avg_rtt or 0
+            avg_validation = overall_stats.avg_validation or 0
+            avg_response = overall_stats.avg_response or 0
             avg_overhead = overall_stats.avg_overhead or 0
             avg_total = overall_stats.avg_total or 0
+            min_total = overall_stats.min_total or 0
+            max_total = overall_stats.max_total or 0
+            orders_under_50ms = overall_stats.under_50 or 0
             orders_under_100ms = overall_stats.under_100 or 0
             orders_under_150ms = overall_stats.under_150 or 0
             orders_under_200ms = overall_stats.under_200 or 0
 
             # Calculate SLA percentages
+            sla_50ms = (orders_under_50ms / total_orders * 100) if total_orders else 0
             sla_100ms = (orders_under_100ms / total_orders * 100) if total_orders else 0
             sla_150ms = (orders_under_150ms / total_orders * 100) if total_orders else 0
             sla_200ms = (orders_under_200ms / total_orders * 100) if total_orders else 0
 
-            # OPTIMIZED: Single query for percentiles, one column only, bounded
-            # to the recent window so the fetch cannot grow without limit
+            # Percentiles query
             p50_total = p90_total = p95_total = p99_total = 0
             if total_orders > 0:
-                total_latencies = [
-                    row[0]
-                    for row in latency_session.query(OrderLatency.total_latency_ms)
-                    .filter(
-                        OrderLatency.total_latency_ms.isnot(None),
-                        OrderLatency.timestamp >= percentile_cutoff,
-                    )
-                    .all()
-                ]
+                p_query = latency_session.query(OrderLatency.total_latency_ms).filter(
+                    OrderLatency.total_latency_ms.isnot(None),
+                    OrderLatency.timestamp >= percentile_cutoff,
+                )
+                total_latencies = [row[0] for row in p_query.all()]
 
                 if total_latencies:
                     p50_total = float(np.percentile(total_latencies, 50))
@@ -198,57 +244,53 @@ class OrderLatency(LatencyBase):
                     p95_total = float(np.percentile(total_latencies, 95))
                     p99_total = float(np.percentile(total_latencies, 99))
 
-            # OPTIMIZED: Single GROUP BY query for all broker stats
-            # This replaces N x 7 queries (where N = number of brokers) with just 1
-            broker_agg = (
-                latency_session.query(
-                    OrderLatency.broker,
-                    func.count(OrderLatency.id).label("total"),
-                    func.sum(case((OrderLatency.status == "FAILED", 1), else_=0)).label("failed"),
-                    func.avg(OrderLatency.rtt_ms).label("avg_rtt"),
-                    func.avg(OrderLatency.overhead_ms).label("avg_overhead"),
-                    func.avg(OrderLatency.total_latency_ms).label("avg_total"),
-                    func.sum(case((OrderLatency.total_latency_ms < 150, 1), else_=0)).label(
-                        "under_150"
-                    ),
-                )
-                .filter(OrderLatency.broker.isnot(None))
-                .group_by(OrderLatency.broker)
-                .all()
-            )
+            # Broker stats query
+            broker_q = latency_session.query(
+                OrderLatency.broker,
+                func.count(OrderLatency.id).label("total"),
+                func.sum(case((OrderLatency.status == "FAILED", 1), else_=0)).label("failed"),
+                func.avg(OrderLatency.rtt_ms).label("avg_rtt"),
+                func.avg(OrderLatency.validation_latency_ms).label("avg_validation"),
+                func.avg(OrderLatency.response_latency_ms).label("avg_response"),
+                func.avg(OrderLatency.overhead_ms).label("avg_overhead"),
+                func.avg(OrderLatency.total_latency_ms).label("avg_total"),
+                func.min(OrderLatency.total_latency_ms).label("min_total"),
+                func.max(OrderLatency.total_latency_ms).label("max_total"),
+                func.sum(case((OrderLatency.total_latency_ms < 150, 1), else_=0)).label(
+                    "under_150"
+                ),
+            ).filter(OrderLatency.broker.isnot(None))
 
-            # Build broker stats dict from aggregated results
+            if session_only:
+                broker_q = broker_q.filter(OrderLatency.timestamp >= session_start_utc)
+
+            broker_agg = broker_q.group_by(OrderLatency.broker).all()
+
+            # Broker percentiles
             broker_stats = {}
-
-            # For percentiles, we need per-broker latency values
-            # OPTIMIZED: Single query to get all latencies grouped by broker
             broker_latencies = {}
             if broker_agg:
                 broker_names = [b.broker for b in broker_agg]
-                latency_rows = (
-                    latency_session.query(OrderLatency.broker, OrderLatency.total_latency_ms)
-                    .filter(
-                        OrderLatency.broker.in_(broker_names),
-                        OrderLatency.total_latency_ms.isnot(None),
-                        OrderLatency.timestamp >= percentile_cutoff,
-                    )
-                    .all()
+                l_q = latency_session.query(
+                    OrderLatency.broker, OrderLatency.total_latency_ms
+                ).filter(
+                    OrderLatency.broker.in_(broker_names),
+                    OrderLatency.total_latency_ms.isnot(None),
+                    OrderLatency.timestamp >= percentile_cutoff,
                 )
+                latency_rows = l_q.all()
 
-                # Group latencies by broker
                 for row in latency_rows:
                     if row.broker not in broker_latencies:
                         broker_latencies[row.broker] = []
                     broker_latencies[row.broker].append(row.total_latency_ms)
 
-            # Build final broker stats
             for broker_row in broker_agg:
                 broker = broker_row.broker
                 broker_total = broker_row.total or 0
                 broker_under_150 = broker_row.under_150 or 0
                 broker_sla = (broker_under_150 / broker_total * 100) if broker_total else 0
 
-                # Calculate percentiles for this broker
                 broker_p50 = broker_p99 = 0
                 if broker in broker_latencies and broker_latencies[broker]:
                     broker_p50 = float(np.percentile(broker_latencies[broker], 50))
@@ -258,46 +300,68 @@ class OrderLatency(LatencyBase):
                     "total_orders": broker_total,
                     "failed_orders": broker_row.failed or 0,
                     "avg_rtt": float(broker_row.avg_rtt or 0),
+                    "avg_validation": float(broker_row.avg_validation or 0),
+                    "avg_response": float(broker_row.avg_response or 0),
                     "avg_overhead": float(broker_row.avg_overhead or 0),
                     "avg_total": float(broker_row.avg_total or 0),
+                    "min_total": float(broker_row.min_total or 0),
+                    "max_total": float(broker_row.max_total or 0),
                     "p50_total": broker_p50,
                     "p99_total": broker_p99,
                     "sla_150ms": broker_sla,
                 }
 
+            from utils.session import get_trading_session_date
+            session_date = get_trading_session_date()
+
             stats = {
+                "session_date": session_date,
+                "session_only": session_only,
+                "session_start_utc": session_start_utc.isoformat(),
                 "total_orders": total_orders,
                 "failed_orders": failed_orders,
                 "success_rate": ((total_orders - failed_orders) / total_orders * 100)
                 if total_orders
                 else 0,
                 "avg_rtt": float(avg_rtt),
+                "avg_validation": float(avg_validation),
+                "avg_response": float(avg_response),
                 "avg_overhead": float(avg_overhead),
                 "avg_total": float(avg_total),
+                "min_total": float(min_total),
+                "max_total": float(max_total),
                 "p50_total": float(p50_total),
                 "p90_total": float(p90_total),
                 "p95_total": float(p95_total),
                 "p99_total": float(p99_total),
+                "sla_50ms": float(sla_50ms),
                 "sla_100ms": float(sla_100ms),
                 "sla_150ms": float(sla_150ms),
                 "sla_200ms": float(sla_200ms),
                 "broker_stats": broker_stats,
             }
-            _stats_cache["stats"] = stats
+            _stats_cache[cache_key] = stats
             return stats
         except Exception as e:
             logger.exception(f"Error getting latency stats: {str(e)}")
             return {
+                "session_date": "N/A",
+                "session_only": session_only,
                 "total_orders": 0,
                 "failed_orders": 0,
                 "success_rate": 0,
                 "avg_rtt": 0,
+                "avg_validation": 0,
+                "avg_response": 0,
                 "avg_overhead": 0,
                 "avg_total": 0,
-                "p50_rtt": 0,
-                "p90_rtt": 0,
-                "p95_rtt": 0,
-                "p99_rtt": 0,
+                "min_total": 0,
+                "max_total": 0,
+                "p50_total": 0,
+                "p90_total": 0,
+                "p95_total": 0,
+                "p99_total": 0,
+                "sla_50ms": 0,
                 "sla_100ms": 0,
                 "sla_150ms": 0,
                 "sla_200ms": 0,

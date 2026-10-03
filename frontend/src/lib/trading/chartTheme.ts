@@ -95,9 +95,9 @@ const token = (name: string) => rasterize(`var(${name})`)
  */
 export const resolveCssColor = (cssColor: string): string => rasterize(cssColor)
 
-/** True when the app is in live light mode (analyzer is always a dark palette). */
-export function isLightTheme(mode: ThemeMode, appMode: AppMode): boolean {
-  return appMode === 'live' && mode === 'light'
+/** True when the app is in light mode (both live and analyzer mode). */
+export function isLightTheme(mode: ThemeMode, _appMode?: AppMode): boolean {
+  return mode === 'light'
 }
 
 /** Build the canvas theme from the base palette + the app's live token colors. */

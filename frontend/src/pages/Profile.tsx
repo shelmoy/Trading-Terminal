@@ -710,10 +710,6 @@ export default function ProfilePage() {
   }
 
   const handleThemeModeChange = (newMode: ThemeMode) => {
-    if (isAnalyzerMode) {
-      showToast.error('Cannot change theme while in Analyzer Mode', 'system')
-      return
-    }
     setMode(newMode)
     showToast.success(`Theme changed to ${newMode}`, 'system')
   }
@@ -1993,7 +1989,7 @@ export default function ProfilePage() {
           </Card>
 
           {/* Theme Mode Selection */}
-          <Card className={isAnalyzerMode ? 'opacity-60' : ''}>
+          <Card>
             <CardHeader>
               <CardTitle>Theme Mode</CardTitle>
               <CardDescription>Choose between light and dark interface</CardDescription>
@@ -2002,18 +1998,17 @@ export default function ProfilePage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {THEME_MODES.map((themeOption) => {
                   const Icon = themeOption.icon
-                  const isSelected = mode === themeOption.value && !isAnalyzerMode
+                  const isSelected = mode === themeOption.value
                   return (
                     <button
                       type="button"
                       key={themeOption.value}
                       onClick={() => handleThemeModeChange(themeOption.value)}
-                      disabled={isAnalyzerMode}
-                      className={`flex items-start gap-4 p-4 rounded-lg border-2 transition-all text-left ${
+                      className={`flex items-start gap-4 p-4 rounded-lg border-2 transition-all text-left cursor-pointer ${
                         isSelected
                           ? 'border-primary bg-primary/5'
                           : 'border-border hover:border-primary/50'
-                      } ${isAnalyzerMode ? 'cursor-not-allowed' : 'cursor-pointer'}`}
+                      }`}
                     >
                       <div
                         className={`p-2 rounded-lg ${isSelected ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}

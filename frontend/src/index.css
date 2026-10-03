@@ -66,8 +66,32 @@
     --sell: 25 95% 63%;
   }
 
-  /* Analyzer Mode - Dark purple theme (like dracula) */
+  /* Analyzer Mode - Light Mode (Clean Purple Accent) */
   .analyzer {
+    --background: oklch(0.985 0.005 280);
+    --foreground: oklch(0.18 0.03 280);
+    --card: oklch(1 0 0);
+    --card-foreground: oklch(0.18 0.03 280);
+    --popover: oklch(1 0 0);
+    --popover-foreground: oklch(0.18 0.03 280);
+    --primary: oklch(0.55 0.22 285);
+    --primary-foreground: oklch(0.99 0 0);
+    --secondary: oklch(0.95 0.02 280);
+    --secondary-foreground: oklch(0.2 0.04 280);
+    --muted: oklch(0.95 0.015 280);
+    --muted-foreground: oklch(0.5 0.03 280);
+    --accent: oklch(0.95 0.02 280);
+    --accent-foreground: oklch(0.2 0.04 280);
+    --destructive: oklch(0.577 0.245 27.325);
+    --destructive-foreground: oklch(0.99 0 0);
+    --border: oklch(0.9 0.015 280);
+    --input: oklch(0.9 0.015 280);
+    --ring: oklch(0.55 0.22 285);
+  }
+
+  /* Analyzer Mode - Dark Mode (Dracula Deep Purple) */
+  .analyzer.dark,
+  .dark.analyzer {
     --background: oklch(0.16 0.02 280);
     --foreground: oklch(0.95 0.02 280);
     --card: oklch(0.2 0.025 280);
@@ -321,8 +345,45 @@
 
 /* Zinc is default - no override needed */
 
-/* Analyzer Mode - Dark purple theme (like dracula) - placed last for highest priority */
+/* Analyzer Mode - Light Mode (Clean Purple Accent) */
 .analyzer {
+  --background: oklch(0.985 0.005 280);
+  --foreground: oklch(0.18 0.03 280);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.18 0.03 280);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.18 0.03 280);
+  --primary: oklch(0.55 0.22 285);
+  --primary-foreground: oklch(0.99 0 0);
+  --secondary: oklch(0.95 0.02 280);
+  --secondary-foreground: oklch(0.2 0.04 280);
+  --muted: oklch(0.95 0.015 280);
+  --muted-foreground: oklch(0.5 0.03 280);
+  --accent: oklch(0.95 0.02 280);
+  --accent-foreground: oklch(0.2 0.04 280);
+  --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(0.99 0 0);
+  --border: oklch(0.9 0.015 280);
+  --input: oklch(0.9 0.015 280);
+  --ring: oklch(0.55 0.22 285);
+  --chart-1: oklch(0.55 0.22 285);
+  --chart-2: oklch(0.6 0.18 320);
+  --chart-3: oklch(0.55 0.15 260);
+  --chart-4: oklch(0.65 0.15 300);
+  --chart-5: oklch(0.5 0.2 240);
+  --sidebar: oklch(0.98 0.008 280);
+  --sidebar-foreground: oklch(0.18 0.03 280);
+  --sidebar-primary: oklch(0.55 0.22 285);
+  --sidebar-primary-foreground: oklch(0.99 0 0);
+  --sidebar-accent: oklch(0.95 0.02 280);
+  --sidebar-accent-foreground: oklch(0.2 0.04 280);
+  --sidebar-border: oklch(0.9 0.015 280);
+  --sidebar-ring: oklch(0.55 0.22 285);
+}
+
+/* Analyzer Mode - Dark Mode (Dracula Deep Purple) */
+.analyzer.dark,
+.dark.analyzer {
   --background: oklch(0.16 0.02 280);
   --foreground: oklch(0.95 0.02 280);
   --card: oklch(0.2 0.025 280);
@@ -776,16 +837,13 @@
    slate that reads on either theme, so it cannot be invalidated by whichever
    token system is in force. */
 :root,
-.sandbox {
+.sandbox,
+.analyzer:not(.dark) {
   color-scheme: light;
 }
 
-/* .analyzer is a dark palette (background oklch(0.16 ...)) applied INSTEAD of
-   .dark, not alongside it: the theme store removes 'dark' when it adds
-   'analyzer'. So it has to declare dark itself or every native control in
-   Analyze Mode renders light on a dark page. .sandbox is the light one. */
 .dark,
-.analyzer {
+.analyzer.dark {
   color-scheme: dark;
 }
 
