@@ -11,9 +11,16 @@ from utils import real_threading
 from utils.broker_backpressure import check_queue_wait
 from utils.constants import VALID_EXCHANGES
 from utils.logging import get_logger
+from utils.thread_safe_cache import LockedTTLCache
 
 # Initialize logger
 logger = get_logger(__name__)
+
+# Server-side 0-1ms history response cache:
+# Keeps recently requested candle histories in memory for 60 seconds (1000 items).
+# Repeated requests (e.g. watchlist switching, option chain switches, chart refreshes)
+# resolve instantaneously in 0-1ms without invoking broker network or rate limiter.
+_history_cache = LockedTTLCache(maxsize=1000, ttl=60)
 
 # Rate limiter: max 3 broker history API requests per second, evenly spaced.
 #
@@ -298,6 +305,19 @@ def get_history(
             end_date=end_date,
         )
 
+    # Fast-path 0-1ms in-memory cache lookup (before rate limiting or broker network calls)
+    cache_key = (
+        symbol.upper(),
+        exchange.upper(),
+        interval,
+        str(start_date),
+        str(end_date),
+    )
+    cached_result = _history_cache.get(cache_key)
+    if cached_result is not None:
+        logger.debug(f"0-1ms cache HIT for {exchange}:{symbol} {interval}")
+        return cached_result
+
     # Source: 'api' (default) - Fetch from broker API
     # Enforce 3 requests/second rate limit for broker history calls
     try:
@@ -315,15 +335,21 @@ def get_history(
         )
         if AUTH_TOKEN is None:
             return False, {"status": "error", "message": "Invalid openalgo apikey"}, 403
-        return get_history_with_auth(
+        res = get_history_with_auth(
             AUTH_TOKEN, FEED_TOKEN, broker_name, symbol, exchange, interval, start_date, end_date
         )
+        if res[0] and res[2] == 200:
+            _history_cache[cache_key] = res
+        return res
 
     # Case 2: Direct internal call with auth_token and broker
     elif auth_token and broker:
-        return get_history_with_auth(
+        res = get_history_with_auth(
             auth_token, feed_token, broker, symbol, exchange, interval, start_date, end_date
         )
+        if res[0] and res[2] == 200:
+            _history_cache[cache_key] = res
+        return res
 
     # Case 3: Invalid parameters
     else:

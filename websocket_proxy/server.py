@@ -1734,12 +1734,13 @@ class WebSocketProxy:
 
         Args:
             client_id: ID of the client
-            message: The message to send
+            message: The message to send (dict or pre-serialized json str)
         """
         if client_id in self.clients:
             websocket = self.clients[client_id]
             try:
-                await websocket.send(json.dumps(message))
+                payload = message if isinstance(message, str) else json.dumps(message)
+                await websocket.send(payload)
             except websockets.exceptions.ConnectionClosed:
                 logger.info(f"Connection closed while sending message to client {client_id}")
 
@@ -2119,6 +2120,7 @@ class WebSocketProxy:
                     "mode": mode,
                     "data": market_data,
                 }
+                serialized_cache: dict[tuple[int, str], str] = {}
 
                 for client_id, client_mode in all_client_modes.items():
                     # Verify client still exists
@@ -2141,12 +2143,16 @@ class WebSocketProxy:
                         continue
 
                     # Tag message with client's subscribed mode so frontend renders correctly
-                    message = base_message.copy()
-                    message["mode"] = client_mode
-                    message["broker"] = broker_name if broker_name != "unknown" else client_broker
+                    broker_tag = broker_name if broker_name != "unknown" else client_broker
+                    serialized_key = (client_mode, broker_tag)
+                    if serialized_key not in serialized_cache:
+                        msg = base_message.copy()
+                        msg["mode"] = client_mode
+                        msg["broker"] = broker_tag
+                        serialized_cache[serialized_key] = json.dumps(msg)
 
-                    # Add to batch
-                    send_tasks.append(self.send_message(client_id, message))
+                    # Add to batch with pre-serialized payload
+                    send_tasks.append(self.send_message(client_id, serialized_cache[serialized_key]))
 
                 # Send all messages in parallel (non-blocking)
                 if send_tasks:
