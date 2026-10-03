@@ -890,6 +890,13 @@ function TradingWorkspace({ account }: { account: string | null }) {
           void prefetchSymbolData(key, 'BANKNIFTY', 'NSE_INDEX', '1m')
           void prefetchSymbolData(key, 'SENSEX', 'BSE_INDEX', '5m')
           void prefetchSymbolData(key, 'SENSEX', 'BSE_INDEX', '1m')
+
+          // Instant 0-1ms option chain switching: prefetch option chains for major indices
+          void OptionChainPanelPromise.then((m) => {
+            if (m.prefetchIndicesOptionChains) {
+              void m.prefetchIndicesOptionChains(key)
+            }
+          })
         }
       } catch {
         if (alive) setNoApiKey(true)

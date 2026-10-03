@@ -223,9 +223,40 @@ function OrderPills({
 }
 
 // In-memory cache for instant 0-1ms retrieval across tab/panel clicks
-let cachedGlobalUnderlyings: Array<{ name: string; exchange: Exchange }> = []
-const cachedSegmentUnderlyings: Record<string, string[]> = {}
-const cachedExpiriesMap: Record<string, string[]> = {}
+export let cachedGlobalUnderlyings: Array<{ name: string; exchange: Exchange }> = []
+export const cachedSegmentUnderlyings: Record<string, string[]> = {}
+export const cachedExpiriesMap: Record<string, string[]> = {}
+
+import { prefetchOptionChain } from '@/hooks/useOptionChainPolling'
+
+/**
+ * Pre-warm option chain expiries and near-month chains for major indices
+ * so switching between NIFTY, BANKNIFTY, and SENSEX opens the option chain in 0-1ms.
+ */
+export async function prefetchIndicesOptionChains(apiKey: string): Promise<void> {
+  if (!apiKey) return
+
+  const targets: Array<{ underlying: string; exchange: Exchange }> = [
+    { underlying: 'NIFTY', exchange: 'NFO' },
+    { underlying: 'BANKNIFTY', exchange: 'NFO' },
+    { underlying: 'SENSEX', exchange: 'BFO' },
+  ]
+
+  for (const t of targets) {
+    const expKey = `${t.underlying}:${t.exchange}`
+    try {
+      const res = await scalpingApi.getExpiry(t.underlying, t.exchange, 'options')
+      const dates = res.data ?? []
+      if (dates.length > 0) {
+        cachedExpiriesMap[expKey] = dates
+        // Warm up nearest expiry option chain data into in-memory cache
+        void prefetchOptionChain(apiKey, t.underlying, t.exchange, dates[0], STRIKE_COUNT, t.exchange)
+      }
+    } catch {
+      /* ignore background prefetch error */
+    }
+  }
+}
 
 export function OptionChainPanel({ apiKey, onPick, activeSymbol }: Props) {
   const [prefs, setPrefs] = useState<Prefs>(readPrefs)
@@ -373,14 +404,18 @@ export function OptionChainPanel({ apiKey, onPick, activeSymbol }: Props) {
     }
 
     if (detectedExchange && detectedUnderlying) {
+      const expKey = `${detectedUnderlying}:${detectedExchange}`
+      const knownExpiries = cachedExpiriesMap[expKey]
+      const immediateExpiry = knownExpiries && knownExpiries.length > 0 ? knownExpiries[0] : ''
+
       setPrefs((p) => {
-        if (p.underlying === detectedUnderlying && p.exchange === detectedExchange) {
+        if (p.underlying === detectedUnderlying && p.exchange === detectedExchange && (p.expiry || !immediateExpiry)) {
           return p
         }
         return {
           exchange: detectedExchange!,
           underlying: detectedUnderlying!,
-          expiry: '', // Will auto-select nearest expiry upon expiries load
+          expiry: immediateExpiry, // Set immediately for 0-1ms instant load
         }
       })
     }

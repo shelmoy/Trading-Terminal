@@ -70,8 +70,15 @@ from services.option_symbol_service import (
 from services.quotes_service import get_multiquotes, get_quotes, import_broker_module
 from utils.constants import CRYPTO_EXCHANGES, INSTRUMENT_PERPFUT
 from utils.logging import get_logger
+from utils.thread_safe_cache import LockedTTLCache
 
 logger = get_logger(__name__)
+
+# Server-side 0-1ms fast-path option chain cache:
+# Stores recently fetched option chains for 10 seconds.
+# Ticks stream in real-time via WebSocket, while switching between tabs,
+# underlying symbols, or charts returns the chain in 0-1ms without delay.
+_option_chain_cache = LockedTTLCache(maxsize=200, ttl=10)
 
 
 def _reference_metadata(symbol: str, exchange: str) -> dict[str, str]:
@@ -359,6 +366,20 @@ def get_option_chain(
 
         if not final_expiry:
             return False, {"status": "error", "message": "Expiry date is required."}, 400
+
+        # Fast-path 0-1ms in-memory cache lookup
+        cache_key = (
+            base_symbol.upper(),
+            exchange.upper(),
+            final_expiry.upper(),
+            strike_count,
+            with_quotes,
+            with_greeks,
+        )
+        cached = _option_chain_cache.get(cache_key)
+        if cached is not None:
+            logger.debug(f"0-1ms option chain cache HIT for {base_symbol} {final_expiry}")
+            return cached
 
         # Step 2: Determine quote exchange for underlying LTP
         quote_exchange = exchange
@@ -723,7 +744,7 @@ def get_option_chain(
             forward_price = _forward_from_chain(chain, atm_strike, underlying_ltp)
             _attach_chain_greeks(chain, expiry_dt, forward_price, interest_rate)
 
-        return (
+        result = (
             True,
             {
                 "status": "success",
@@ -744,6 +765,8 @@ def get_option_chain(
             },
             200,
         )
+        _option_chain_cache[cache_key] = result
+        return result
 
     except BrokerBusyError as e:
         return broker_busy_result(e, "Option chain request")

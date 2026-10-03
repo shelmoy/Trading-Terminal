@@ -249,3 +249,42 @@ export function useOptionChainPolling(
     refetch,
   }
 }
+
+/**
+ * Background prefetch helper for 0-1ms instant option chain rendering.
+ */
+export async function prefetchOptionChain(
+  apiKey: string,
+  underlying: string,
+  exchange: string,
+  expiryDate: string,
+  strikeCount = 10,
+  derivativeExchange = exchange
+): Promise<void> {
+  if (!apiKey || !underlying || !exchange || !expiryDate) return
+  const key = getCacheKey(underlying, exchange, derivativeExchange, expiryDate, strikeCount)
+  const cached = optionChainCache.get(key)
+  if (cached && Date.now() - cached.timestamp < 60_000) return
+
+  try {
+    const res = await fetch('/api/v1/optionchain', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        apikey: apiKey,
+        underlying,
+        exchange,
+        expiry_date: expiryDate,
+        strike_count: strikeCount,
+        with_greeks: true,
+      }),
+    })
+    if (!res.ok) return
+    const data: OptionChainResponse = await res.json()
+    if (data.status === 'success') {
+      optionChainCache.set(key, { data, timestamp: Date.now() })
+    }
+  } catch {
+    /* ignore prefetch error */
+  }
+}
