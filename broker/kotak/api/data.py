@@ -2,7 +2,7 @@ import json
 import threading
 import time
 import urllib.parse
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import httpx
 import pandas as pd
