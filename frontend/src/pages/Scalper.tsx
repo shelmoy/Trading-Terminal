@@ -1387,117 +1387,134 @@ function ScalperWorkspace({ account }: { account: string | null }) {
   useEffect(() => {
     if (!apiKey) return
     let cancelled = false
-    const timer = setTimeout(() => {
-      void (async () => {
-        // First ensure active underlying's SPOT, CE, PE bars are persisted in fastCache
-        const activeSnap = readIndexSnapshot(activeUnderlying.id)
-        if (activeSnap && activeSnap.chain.length > 0) {
-          const ceR =
-            activeSnap.chain.find((r) => String(r.strike) === activeSnap.ceStrike) ??
-            activeSnap.chain[0]
-          const peR =
-            activeSnap.chain.find((r) => String(r.strike) === activeSnap.peStrike) ??
-            activeSnap.chain[0]
-          void prefetchSymbolData(
-            apiKey,
-            activeUnderlying.spotSymbol,
-            activeUnderlying.spotExchange,
-            '1m'
-          )
-          if (ceR?.ce?.symbol) {
-            void prefetchSymbolData(apiKey, ceR.ce.symbol, activeUnderlying.foExchange, '1m')
-          }
-          if (peR?.pe?.symbol) {
-            void prefetchSymbolData(apiKey, peR.pe.symbol, activeUnderlying.foExchange, '1m')
-          }
+    // Each pane remembers its own timeframe. Prefetching a hardcoded '1m'
+    // missed the cache entirely for a pane switched to 3m/5m/30s.
+    const ivOf = (paneId: ScalperPaneId): string => {
+      try {
+        return localStorage.getItem(`oa-trading-${paneId}-interval`) || '1m'
+      } catch {
+        return '1m'
+      }
+    }
+    const runWarm = async () => {
+      const spotIv = ivOf('scalper-p0')
+      const ceIv = ivOf('scalper-p1')
+      const peIv = ivOf('scalper-p2')
+      // First ensure active underlying's SPOT, CE, PE bars are persisted in fastCache
+      const activeSnap = readIndexSnapshot(activeUnderlying.id)
+      if (activeSnap && activeSnap.chain.length > 0) {
+        const ceR =
+          activeSnap.chain.find((r) => String(r.strike) === activeSnap.ceStrike) ??
+          activeSnap.chain[0]
+        const peR =
+          activeSnap.chain.find((r) => String(r.strike) === activeSnap.peStrike) ??
+          activeSnap.chain[0]
+        void prefetchSymbolData(
+          apiKey,
+          activeUnderlying.spotSymbol,
+          activeUnderlying.spotExchange,
+          spotIv
+        )
+        if (ceR?.ce?.symbol) {
+          void prefetchSymbolData(apiKey, ceR.ce.symbol, activeUnderlying.foExchange, ceIv)
         }
+        if (peR?.pe?.symbol) {
+          void prefetchSymbolData(apiKey, peR.pe.symbol, activeUnderlying.foExchange, peIv)
+        }
+      }
 
-        // Next, quietly pre-warm the other 4 indices in the background so switching
-        // from the top header dropdown is an instant 0-1ms memory hit
-        for (const preset of UNDERLYINGS) {
-          if (cancelled) return
-          if (preset.id === activeUnderlying.id) continue
-          await new Promise((r) => setTimeout(r, 900))
-          if (cancelled) return
-          try {
-            let snap = readIndexSnapshot(preset.id)
-            if (!snap || Date.now() - snap.updatedAt > 5 * 60_000 || snap.chain.length === 0) {
-              const expRes = await scalpingApi.getExpiry(preset.id, preset.foExchange, 'options')
-              if (cancelled) return
-              const list = expRes.data ?? []
-              if (list.length === 0) continue
-              const exp = list[0]
-              const strikesRes = await scalpingApi.getStrikes(
-                preset.id,
-                preset.foExchange,
-                exp,
-                25
-              )
-              if (cancelled) return
-              const rows = strikesRes.chain ?? []
-              if (rows.length === 0) continue
-              const atmVal =
-                strikesRes.atm_strike != null
-                  ? strikesRes.atm_strike
-                  : rows[Math.floor(rows.length / 2)].strike
-              const atmRow = rows.find((r) => r.strike === atmVal) ?? rows[0]
-              const strikeStr = String(atmRow.strike)
-              const foExch = strikesRes.fo_exchange || preset.foExchange
-              const foExchUpper = foExch.toUpperCase()
-              for (const r of rows) {
-                if (r.ce?.symbol) {
-                  symbolMetadataCache.set(`${r.ce.symbol.toUpperCase()}:${foExchUpper}`, {
-                    symbol: r.ce.symbol,
-                    exchange: foExch,
-                    lotsize: r.ce.lotsize ?? preset.defaultLotSize,
-                    tick_size: r.ce.tick_size ?? 0.05,
-                  })
-                }
-                if (r.pe?.symbol) {
-                  symbolMetadataCache.set(`${r.pe.symbol.toUpperCase()}:${foExchUpper}`, {
-                    symbol: r.pe.symbol,
-                    exchange: foExch,
-                    lotsize: r.pe.lotsize ?? preset.defaultLotSize,
-                    tick_size: r.pe.tick_size ?? 0.05,
-                  })
-                }
+      // Next, quietly pre-warm the other 4 indices in the background so switching
+      // from the top header dropdown is an instant 0-1ms memory hit
+      for (const preset of UNDERLYINGS) {
+        if (cancelled) return
+        if (preset.id === activeUnderlying.id) continue
+        await new Promise((r) => setTimeout(r, 900))
+        if (cancelled) return
+        try {
+          let snap = readIndexSnapshot(preset.id)
+          if (!snap || Date.now() - snap.updatedAt > 5 * 60_000 || snap.chain.length === 0) {
+            const expRes = await scalpingApi.getExpiry(preset.id, preset.foExchange, 'options')
+            if (cancelled) return
+            const list = expRes.data ?? []
+            if (list.length === 0) continue
+            const exp = list[0]
+            const strikesRes = await scalpingApi.getStrikes(
+              preset.id,
+              preset.foExchange,
+              exp,
+              25
+            )
+            if (cancelled) return
+            const rows = strikesRes.chain ?? []
+            if (rows.length === 0) continue
+            const atmVal =
+              strikesRes.atm_strike != null
+                ? strikesRes.atm_strike
+                : rows[Math.floor(rows.length / 2)].strike
+            const atmRow = rows.find((r) => r.strike === atmVal) ?? rows[0]
+            const strikeStr = String(atmRow.strike)
+            const foExch = strikesRes.fo_exchange || preset.foExchange
+            const foExchUpper = foExch.toUpperCase()
+            for (const r of rows) {
+              if (r.ce?.symbol) {
+                symbolMetadataCache.set(`${r.ce.symbol.toUpperCase()}:${foExchUpper}`, {
+                  symbol: r.ce.symbol,
+                  exchange: foExch,
+                  lotsize: r.ce.lotsize ?? preset.defaultLotSize,
+                  tick_size: r.ce.tick_size ?? 0.05,
+                })
               }
-              snap = {
-                expiries: list,
-                selectedExpiry: exp,
-                chain: rows,
-                atmStrike: atmVal,
-                ceStrike: strikeStr,
-                peStrike: strikeStr,
-                updatedAt: Date.now(),
+              if (r.pe?.symbol) {
+                symbolMetadataCache.set(`${r.pe.symbol.toUpperCase()}:${foExchUpper}`, {
+                  symbol: r.pe.symbol,
+                  exchange: foExch,
+                  lotsize: r.pe.lotsize ?? preset.defaultLotSize,
+                  tick_size: r.pe.tick_size ?? 0.05,
+                })
               }
-              writeIndexSnapshot(preset.id, snap)
-              persistFastCache()
             }
-
-            // Pre-warm 1m bars for this index's SPOT + ATM CE + ATM PE (burst of 3)
-            const ceRow =
-              snap.chain.find((r) => String(r.strike) === snap?.ceStrike) ?? snap.chain[0]
-            const peRow =
-              snap.chain.find((r) => String(r.strike) === snap?.peStrike) ?? snap.chain[0]
-            await Promise.all([
-              prefetchSymbolData(apiKey, preset.spotSymbol, preset.spotExchange, '1m'),
-              ceRow?.ce?.symbol
-                ? prefetchSymbolData(apiKey, ceRow.ce.symbol, preset.foExchange, '1m')
-                : Promise.resolve(),
-              peRow?.pe?.symbol
-                ? prefetchSymbolData(apiKey, peRow.pe.symbol, preset.foExchange, '1m')
-                : Promise.resolve(),
-            ])
-          } catch {
-            /* ignore background pre-warm errors */
+            snap = {
+              expiries: list,
+              selectedExpiry: exp,
+              chain: rows,
+              atmStrike: atmVal,
+              ceStrike: strikeStr,
+              peStrike: strikeStr,
+              updatedAt: Date.now(),
+            }
+            writeIndexSnapshot(preset.id, snap)
+            persistFastCache()
           }
+
+          // Pre-warm bars for this index's SPOT + ATM CE + ATM PE (burst of 3)
+          const ceRow =
+            snap.chain.find((r) => String(r.strike) === snap?.ceStrike) ?? snap.chain[0]
+          const peRow =
+            snap.chain.find((r) => String(r.strike) === snap?.peStrike) ?? snap.chain[0]
+          await Promise.all([
+            prefetchSymbolData(apiKey, preset.spotSymbol, preset.spotExchange, spotIv),
+            ceRow?.ce?.symbol
+              ? prefetchSymbolData(apiKey, ceRow.ce.symbol, preset.foExchange, ceIv)
+              : Promise.resolve(),
+            peRow?.pe?.symbol
+              ? prefetchSymbolData(apiKey, peRow.pe.symbol, preset.foExchange, peIv)
+              : Promise.resolve(),
+          ])
+        } catch {
+          /* ignore background pre-warm errors */
         }
-      })()
-    }, 1500)
+      }
+    }
+    const timer = setTimeout(() => void runWarm(), 1500)
+    // Keep every index warm all day. Each pass is a delta (tail-only) fetch,
+    // so it costs a few rows per symbol and is skipped while the tab is hidden.
+    const keepWarm = setInterval(() => {
+      if (!cancelled && document.visibilityState === 'visible') void runWarm()
+    }, 60_000)
     return () => {
       cancelled = true
       clearTimeout(timer)
+      clearInterval(keepWarm)
     }
   }, [apiKey, activeUnderlying.id, activeUnderlying.spotSymbol, activeUnderlying.spotExchange, activeUnderlying.foExchange])
 

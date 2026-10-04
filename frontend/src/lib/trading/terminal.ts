@@ -215,21 +215,59 @@ let fastCachePersistTimer: ReturnType<typeof setTimeout> | null = null
 export function persistFastCache(): void {
   if (typeof window === 'undefined') return
   if (fastCachePersistTimer !== null) return
+  // Serialising ~30 bar arrays is a few ms of main-thread work. Batch writes
+  // and run them when the browser is idle so a burst of ticks never janks.
   fastCachePersistTimer = setTimeout(() => {
-    fastCachePersistTimer = null
-    try {
-      const metaEntries = Array.from(symbolMetadataCache.entries()).slice(-300)
-      const barEntries = Array.from(globalBarMemoryCache.entries())
-        .sort((a, b) => b[1].time - a[1].time)
-        .slice(0, 20)
-        .map(([k, v]) => [k, { bars: v.bars.slice(-240), time: v.time }] as const)
-      const payload = JSON.stringify({ meta: metaEntries, bars: barEntries })
-      sessionStorage.setItem(FAST_CACHE_STORAGE_KEY, payload)
-      localStorage.setItem(FAST_CACHE_STORAGE_KEY, payload)
-    } catch {
-      /* ignore quota errors */
+    const write = () => {
+      fastCachePersistTimer = null
+      try {
+        const metaEntries = Array.from(symbolMetadataCache.entries()).slice(-400)
+        const barEntries = Array.from(globalBarMemoryCache.entries())
+          .sort((a, b) => b[1].time - a[1].time)
+          .slice(0, 30)
+          .map(([k, v]) => [k, { bars: v.bars.slice(-500), time: v.time }] as const)
+        const payload = JSON.stringify({ meta: metaEntries, bars: barEntries })
+        sessionStorage.setItem(FAST_CACHE_STORAGE_KEY, payload)
+        localStorage.setItem(FAST_CACHE_STORAGE_KEY, payload)
+      } catch {
+        /* ignore quota errors */
+      }
     }
-  }, 200)
+    const ric = (
+      window as unknown as {
+        requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number
+      }
+    ).requestIdleCallback
+    if (ric) ric(write, { timeout: 1500 })
+    else write()
+  }, 750)
+}
+
+/**
+ * Merge a fresh tail of bars into an existing cached series by time. The
+ * fresh bars win for any bucket they cover; older history is kept as-is.
+ */
+export function mergeBarsByTime(base: readonly Bar[], fresh: readonly Bar[]): Bar[] {
+  if (!fresh.length) return [...base]
+  if (!base.length) return [...fresh]
+  const firstFresh = fresh[0].time
+  const out: Bar[] = []
+  for (const b of base) {
+    if (b.time < firstFresh) out.push(b)
+    else break
+  }
+  for (const b of fresh) out.push(b)
+  return out
+}
+
+/** Bucket length for a cache key's interval, used to size tail refreshes. */
+function cacheIntervalSec(interval: string): number {
+  const m = /^(\d+)([smh])$/.exec(interval)
+  if (m) {
+    const n = Number(m[1])
+    return m[2] === 's' ? n : m[2] === 'm' ? n * 60 : n * 3600
+  }
+  return 86400
 }
 
 const inFlightPrefetches = new Set<string>()
@@ -265,7 +303,7 @@ export async function prefetchSymbolData(
       )
     }
     const existingBars = globalBarMemoryCache.get(memKey)
-    if (!existingBars || Date.now() - existingBars.time > 90_000) {
+    if (!existingBars || Date.now() - existingBars.time > 20_000) {
       tasks.push(
         (async () => {
           try {
@@ -275,16 +313,24 @@ export async function prefetchSymbolData(
               apiKey,
               hasOpenInterest: () => openInterestCapability(exchange),
             })
-            const bars = await feed.getBars({
-              symbol,
-              exchange,
-              interval,
-              from: to - lookbackDays(interval) * 86400,
-              to,
-            })
-            if (bars?.length) {
+            const base = existingBars?.bars ?? []
+            const lastTime = base.length ? base[base.length - 1].time : 0
+            // Warm entry: only ask for the tail since its last bar (plus a few
+            // buckets of overlap so a corrected bar replaces the cached one).
+            // A cold entry, or one older than a trading day, fetches the full
+            // window so day rollover never leaves a gap.
+            const delta = lastTime > 0 && to - lastTime < 20 * 3600
+            const from = delta
+              ? lastTime - 5 * cacheIntervalSec(interval)
+              : to - lookbackDays(interval) * 86400
+            const fresh = await feed.getBars({ symbol, exchange, interval, from, to, noCache: true })
+            if (fresh?.length) {
+              const bars = delta ? mergeBarsByTime(base, fresh) : fresh
               globalBarMemoryCache.set(memKey, { bars, time: Date.now() })
               persistFastCache()
+            } else if (existingBars) {
+              // Market closed / nothing new: the cache is still current.
+              globalBarMemoryCache.set(memKey, { bars: existingBars.bars, time: Date.now() })
             }
           } catch {
             /* ignore bar prefetch error */
@@ -1940,6 +1986,26 @@ export class TradingTerminal {
     return `${request.exchange}:${request.symbol}:${request.interval}`
   }
 
+  /** When this pane last wrote its bars back into the shared warm cache. */
+  private lastCacheWriteAt = 0
+
+  /**
+   * Keep the shared warm cache in step with what the chart actually shows.
+   * Without this the cache held whatever the very first load fetched, so
+   * every later open painted increasingly stale bars and then had to repair
+   * a growing gap. Throttled: the copy is cheap, but no more than every 3 s.
+   */
+  private writeBackBarCache(): void {
+    const sym = this.sym
+    if (!sym || sym.synthetic || this.rawBars.length === 0) return
+    const now = Date.now()
+    if (now - this.lastCacheWriteAt < 3000) return
+    this.lastCacheWriteAt = now
+    const memKey = `${sym.symbol.toUpperCase()}:${(sym.exchange || '').toUpperCase()}:${this.interval}`
+    globalBarMemoryCache.set(memKey, { bars: this.rawBars.slice(-2000), time: now })
+    persistFastCache()
+  }
+
   /** Apply a controller snapshot only to the symbol session that requested it. */
   private applyDataSnapshot(snapshot: DataLoadingSnapshot): void {
     const request = snapshot.request
@@ -1996,6 +2062,7 @@ export class TradingTerminal {
     }
 
     this.rawBars = next
+    if (snapshot.reason !== 'prepend') this.writeBackBarCache()
     if (snapshot.paused || this.replayOwnsDisplay()) return
 
     const key = this.dataKey(request)
@@ -7265,7 +7332,7 @@ export class TradingTerminal {
       }
       const memKey = `${this.sym.symbol.toUpperCase()}:${(this.sym.exchange || '').toUpperCase()}:${this.interval}`
       const warmEntry = globalBarMemoryCache.get(memKey)
-      const usedStaleWarm = Boolean(warmEntry && Date.now() - warmEntry.time > 15_000)
+      const usedStaleWarm = Boolean(warmEntry && Date.now() - warmEntry.time > 2_000)
       const loadFn = () => (this.data ? this.data.load(request) : feed.getBars(request))
       try {
         bars = await loadFn()
@@ -7285,7 +7352,7 @@ export class TradingTerminal {
           if (!this.destroyed && ticket === this.loadTicket) {
             this.reconcileNow()
           }
-        }, 120)
+        }, 0)
       }
     } catch (e) {
       if (this.destroyed || ticket !== this.loadTicket) return false
