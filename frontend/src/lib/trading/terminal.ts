@@ -145,6 +145,13 @@ import {
   renkoV2Options,
 } from './renkoV2Settings'
 import { calculateRenkoV2BoxSize } from './renkoV2Transform'
+import {
+  RENKO_V3_DEFAULTS,
+  renkoV3SettingsView,
+  renkoV3Values,
+  renkoV3Options,
+} from './renkoV3Settings'
+import { calculateRenkoV3BoxSize } from './renkoV3Transform'
 
 export { dedupeIndicators } from './indicatorTemplates'
 
@@ -1842,6 +1849,10 @@ export class TradingTerminal {
     if (this.ctype === 'renko-v2') {
       const opts = renkoV2Options(this.chartSettingsSaved as Record<string, string | number | boolean>, this.tick())
       return calculateRenkoV2BoxSize(this.rawBars, opts)
+    }
+    if (this.ctype === 'renko-v3') {
+      const opts = renkoV3Options(this.chartSettingsSaved as Record<string, string | number | boolean>, this.tick())
+      return calculateRenkoV3BoxSize(this.rawBars, opts)
     }
     const c = this.rawBars.length ? this.rawBars[this.rawBars.length - 1].close : 100
     const t = this.tick()
@@ -4925,20 +4936,24 @@ export class TradingTerminal {
             }
       ),
     }))
-    return renkoV2SettingsView(
-      priceAxisSettingsView(
-        volumeSettingsView(
-          profileSettingsView(
-            {
-              tabs,
-              values: { ...readChartSettings(chart) },
-              defaults: { ...this.chartDefaults },
-            },
-            this.ctype,
+    return renkoV3SettingsView(
+      renkoV2SettingsView(
+        priceAxisSettingsView(
+          volumeSettingsView(
+            profileSettingsView(
+              {
+                tabs,
+                values: { ...readChartSettings(chart) },
+                defaults: { ...this.chartDefaults },
+              },
+              this.ctype,
+              this.chartSettingsSaved
+            ),
             this.chartSettingsSaved
           ),
           this.chartSettingsSaved
         ),
+        this.ctype,
         this.chartSettingsSaved
       ),
       this.ctype,
@@ -5010,6 +5025,7 @@ export class TradingTerminal {
           !key.startsWith('profiles.') &&
           !key.startsWith('volume.') &&
           !key.startsWith('renkov2.') &&
+          !key.startsWith('renkov3.') &&
           !isPriceAxisSetting(key)
       )
     )
@@ -5040,6 +5056,7 @@ export class TradingTerminal {
       ...VOLUME_DEFAULTS,
       ...PRICE_AXIS_DEFAULTS,
       ...RENKO_V2_DEFAULTS,
+      ...RENKO_V3_DEFAULTS,
     }
     for (const kind of ['tpo', 'session-volume-profile'] as const) {
       const normalized = profileValues(kind, merged)
@@ -5051,6 +5068,9 @@ export class TradingTerminal {
       if (key in merged) merged[key] = value
     }
     for (const [key, value] of Object.entries(renkoV2Values(merged))) {
+      if (key in merged) merged[key] = value
+    }
+    for (const [key, value] of Object.entries(renkoV3Values(merged))) {
       if (key in merged) merged[key] = value
     }
     const kept: Record<string, string | number | boolean> = {}
@@ -5067,6 +5087,9 @@ export class TradingTerminal {
     this.refreshLegend(this.drawnBars())
     if (this.ctype === 'renko-v2') {
       this.setPriceData()
+    }
+    if (this.ctype === 'renko-v3') {
+      this.buildChart()
     }
     if (isProfileKind(this.ctype)) {
       const interval = this.compatibleProfileInterval(this.ctype)
@@ -5122,6 +5145,7 @@ export class TradingTerminal {
               !key.startsWith('profiles.') &&
               !key.startsWith('volume.') &&
               !key.startsWith('renkov2.') &&
+              !key.startsWith('renkov3.') &&
               !transformSetting(key) &&
               !isPriceAxisSetting(key) &&
               // Pinned once measured, below: pinned now it would hold no range.
