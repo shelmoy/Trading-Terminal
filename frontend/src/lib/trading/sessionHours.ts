@@ -238,3 +238,124 @@ export function applySessionHours(chart: Chart, exchange: string, apiKey: string
 export function resetSessionHours(): void {
   book = null
 }
+
+const INDIAN_REGULAR_EXCHANGES = new Set(['NSE', 'NFO', 'BSE', 'BFO'])
+const INTRADAY_SKIP_INTERVALS = new Set(['D', '1d', 'W', '1w', 'M', '1M'])
+const IST_0915_SEC = 9 * 3600 + 15 * 60 // 33,300s (09:15:00 IST)
+const IST_1530_SEC = 15 * 3600 + 30 * 60 // 55,800s (15:30:00 IST)
+
+/**
+ * Returns true if `timeSec` (Unix seconds) falls inside an active trading session
+ * where chart candles should form.
+ *
+ * For Indian exchanges (NSE, NSE_INDEX, NFO, BSE, BSE_INDEX, BFO):
+ *   - Pre-open / pre-market ticks before 09:15:00 IST (including the 09:00–09:14:59
+ *     index fluctuation window) return `false` so they NEVER form or mutate candles.
+ *   - Exactly at 09:15:00 IST (`secOfDay >= 33300`), returns `true` so the 09:15
+ *     candle forms instantaneously on the first live tick.
+ */
+export function isTradingSessionOpenForCandles(
+  exchange: string,
+  timeSec: number,
+  wallNowSec?: number
+): boolean {
+  const code = calendarExchange((exchange || '').toUpperCase().trim())
+  if (!code || ROUND_THE_CLOCK.has(code)) return true
+
+  const checkSec = typeof timeSec === 'number' && timeSec > 0 ? timeSec : (wallNowSec ?? Date.now() / 1000)
+  const ms = checkSec * 1000
+  const shifted = new Date(ms + IST_OFFSET_MS)
+  const secOfDay =
+    shifted.getUTCHours() * 3600 + shifted.getUTCMinutes() * 60 + shifted.getUTCSeconds()
+
+  // Check if today has a special holiday session (e.g. Muhurat trading) or full holiday
+  if (book?.holidays) {
+    const dateStr = shifted.toISOString().slice(0, 10)
+    const holiday = book.holidays.find(
+      (h) => h.date === dateStr && h.holiday_type !== 'SETTLEMENT_HOLIDAY'
+    )
+    if (holiday) {
+      const special = (holiday.open_exchanges ?? []).filter(
+        (o) =>
+          o.exchange === code &&
+          typeof o.start_time === 'number' &&
+          typeof o.end_time === 'number' &&
+          o.end_time > o.start_time
+      )
+      if (special.length > 0) {
+        return special.some((o) => ms >= o.start_time && ms <= o.end_time)
+      }
+      if (holiday.closed_exchanges?.includes(code) || holiday.holiday_type === 'SPECIAL_SESSION') {
+        return false
+      }
+    }
+  }
+
+  if (INDIAN_REGULAR_EXCHANGES.has(code)) {
+    // Also check wall-clock IST if provided so a stale yesterday timestamp sent during
+    // pre-open (09:00–09:14:59 IST) cannot spoof candle building before 09:15:00 IST.
+    if (typeof wallNowSec === 'number' && wallNowSec > 0) {
+      const wallShifted = new Date(wallNowSec * 1000 + IST_OFFSET_MS)
+      const wallSecOfDay =
+        wallShifted.getUTCHours() * 3600 +
+        wallShifted.getUTCMinutes() * 60 +
+        wallShifted.getUTCSeconds()
+      if (wallSecOfDay < IST_0915_SEC) return false
+    }
+    const row = book?.timings?.find((t) => t.exchange === code)
+    const startSec = row
+      ? Math.max(IST_0915_SEC, Math.floor(Number(row.start_offset) / 1000) || IST_0915_SEC)
+      : IST_0915_SEC
+    const endSec = row ? Math.floor(Number(row.end_offset) / 1000) || IST_1530_SEC : IST_1530_SEC
+    return secOfDay >= startSec && secOfDay <= endSec
+  }
+
+  const row = book?.timings?.find((t) => t.exchange === code)
+  if (row) {
+    const startSec = Math.floor(Number(row.start_offset) / 1000)
+    const endSec = Math.floor(Number(row.end_offset) / 1000)
+    if (Number.isFinite(startSec) && Number.isFinite(endSec) && endSec > startSec) {
+      return secOfDay >= startSec && secOfDay <= endSec
+    }
+  }
+
+  return true
+}
+
+/**
+ * Filters out stray pre-09:15:00 IST bars on intraday intervals for Indian exchanges
+ * (NSE, NSE_INDEX, NFO, BSE, BSE_INDEX, BFO) so pre-market fluctuations never render as candles.
+ */
+export function isValidIntradaySessionBar(
+  exchange: string,
+  interval: string,
+  timeSec: number
+): boolean {
+  if (!exchange || INTRADAY_SKIP_INTERVALS.has(interval)) return true
+  const code = calendarExchange(exchange.toUpperCase().trim())
+  if (!INDIAN_REGULAR_EXCHANGES.has(code)) return true
+  if (typeof timeSec !== 'number' || timeSec <= 0) return false
+
+  const ms = timeSec * 1000
+  const shifted = new Date(ms + IST_OFFSET_MS)
+  const secOfDay =
+    shifted.getUTCHours() * 3600 + shifted.getUTCMinutes() * 60 + shifted.getUTCSeconds()
+
+  // Allow special holiday sessions (e.g. evening Muhurat session) if present in book
+  if (book?.holidays) {
+    const dateStr = shifted.toISOString().slice(0, 10)
+    const holiday = book.holidays.find(
+      (h) => h.date === dateStr && h.holiday_type !== 'SETTLEMENT_HOLIDAY'
+    )
+    if (holiday) {
+      const special = (holiday.open_exchanges ?? []).filter((o) => o.exchange === code)
+      if (special.length > 0) {
+        return special.some((o) => ms >= o.start_time && ms <= o.end_time)
+      }
+    }
+  }
+
+  // Strictly reject pre-09:15:00 IST bars on intraday intervals
+  return secOfDay >= IST_0915_SEC && secOfDay <= IST_1530_SEC + 60
+}
+

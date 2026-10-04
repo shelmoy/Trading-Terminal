@@ -46,6 +46,7 @@ import type {
   ChartStore,
   ChartValues,
 } from 'openalgo-script/adapters/charts'
+import { normalizeIndicatorTableTheme } from './customIndicators'
 import { cachedFacts, type InstrumentFacts, subscribeFacts } from './instrumentFacts'
 import { idForScript } from './openscriptFiles'
 
@@ -492,6 +493,13 @@ export function hostedStudy(
 
   return {
     ...base,
+    ...(typeof base.table === 'function'
+      ? {
+          table(ctx) {
+            return normalizeIndicatorTableTheme(base.table?.(ctx) ?? null)
+          },
+        }
+      : {}),
     ...(base.alerts === undefined
       ? {}
       : {

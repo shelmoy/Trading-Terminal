@@ -246,26 +246,34 @@ export function useOptionChainLive(
     derivativeExchange: optionExchange,
   })
 
+  // Check if polledData belongs to the currently requested underlying (prevents cross-underlying WS subscriptions on index switch)
+  const isMatchingUnderlying = Boolean(
+    polledData &&
+      polledData.underlying_symbol?.toUpperCase() === underlying.toUpperCase() &&
+      (!expiryDate || !polledData.expiry_date || polledData.expiry_date === expiryDate)
+  )
+
   // Track merged data with WebSocket updates (initialized with polledData immediately for 0ms rendering)
-  const [mergedData, setMergedData] = useState<OptionChainResponse | null>(() => polledData)
+  const [mergedData, setMergedData] = useState<OptionChainResponse | null>(() =>
+    isMatchingUnderlying ? polledData : null
+  )
   const [lastLtpUpdate, setLastLtpUpdate] = useState<Date | null>(null)
 
   // Build symbol list from the latest option-chain response for subscription.
   const wsSymbols = useMemo(() => {
     const symbols: Array<{ symbol: string; exchange: string }> = []
+    if (!isMatchingUnderlying || !polledData) return symbols
 
     // Add the canonical underlying reference for real-time price updates.
     // The backend, rather than this hook, resolves a perpetual or near-month future when needed.
     // For CRYPTO: bare underlying (e.g. BTC) isn't tradeable — use perpetual (e.g. BTCUSDFUT)
-    if (polledData) {
-      symbols.push({
-        symbol: polledData.underlying_symbol,
-        exchange: polledData.underlying_exchange,
-      })
-    }
+    symbols.push({
+      symbol: polledData.underlying_symbol,
+      exchange: polledData.underlying_exchange,
+    })
 
     // Add all option symbols
-    if (polledData?.chain) {
+    if (polledData.chain) {
       for (const strike of polledData.chain) {
         if (strike.ce?.symbol) {
           symbols.push({ symbol: strike.ce.symbol, exchange: optionExchange })
@@ -277,7 +285,7 @@ export function useOptionChainLive(
     }
 
     return symbols
-  }, [polledData, optionExchange])
+  }, [polledData, optionExchange, isMatchingUnderlying])
 
   // WebSocket for real-time LTP + Depth (Bid/Ask) updates
   const {
@@ -337,7 +345,7 @@ export function useOptionChainLive(
 
   // Merge WebSocket LTP data into polled option chain data
   useEffect(() => {
-    if (!polledData) {
+    if (!polledData || !isMatchingUnderlying) {
       setMergedData(null)
       return
     }
@@ -367,6 +375,7 @@ export function useOptionChainLive(
     )
   }, [
     polledData,
+    isMatchingUnderlying,
     currentWsData,
     optionExchange,
     interestRate,

@@ -1,8 +1,13 @@
 import importlib
+import os
+import pickle
 import time
+from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
+import pytz
 
 from database.auth_db import get_auth_token_broker
 from database.token_db import get_token
@@ -17,45 +22,94 @@ from utils.thread_safe_cache import LockedTTLCache
 logger = get_logger(__name__)
 
 # Server-side 0-1ms history response cache:
-# Keeps recently requested candle histories in memory for 60 seconds (1000 items).
-# Repeated requests (e.g. watchlist switching, option chain switches, chart refreshes)
-# resolve instantaneously in 0-1ms without invoking broker network or rate limiter.
-_history_cache = LockedTTLCache(maxsize=1000, ttl=60)
+# Keeps recently requested candle histories in memory (3000 items, 15 min TTL)
+# and persists them to db/fast_history_cache.pkl so server restarts and index switches
+# resolve instantaneously in 0-1ms without hitting broker rate limits.
+_history_cache = LockedTTLCache(maxsize=3000, ttl=900)
+# Fast lookup by (SYMBOL, EXCHANGE, INTERVAL) -> (start_date_str, end_date_str, timestamp, result_tuple)
+_history_latest_by_sym_iv: dict[tuple[str, str, str], tuple[str, str, float, tuple[bool, dict[str, Any], int]]] = {}
+_history_latest_lock = real_threading.Lock()
+_inflight_locks: dict[tuple[str, str, str, str, str], real_threading.Event] = {}
+_inflight_guard = real_threading.Lock()
 
-# Rate limiter: max 3 broker history API requests per second, evenly spaced.
-#
-# Each caller books the next free start time under a lock and then sleeps until
-# it arrives, so concurrent callers are spaced one interval apart. The previous
-# version read the time of the last call, slept, and wrote it back, all
-# unlocked: callers arriving together computed their sleep from the same stale
-# value, woke together, and reached the broker as a burst it rejects.
-#
-# The lock is a real one because the agent's tools reach this from a real OS
-# thread. It guards two float operations; the sleep happens after it is released.
-_MIN_HISTORY_INTERVAL = 0.35  # 350ms between calls (~3 req/sec, evenly spaced)
+_DISK_CACHE_PATH = Path("db/fast_history_cache.pkl")
+_disk_persist_lock = real_threading.Lock()
+_last_disk_persist = 0.0
+
+
+def _load_disk_history_cache() -> None:
+    try:
+        if not _DISK_CACHE_PATH.exists():
+            return
+        with _DISK_CACHE_PATH.open("rb") as f:
+            payload = pickle.load(f)
+        if not isinstance(payload, dict):
+            return
+        now = time.time()
+        entries = payload.get("entries") or {}
+        for k, item in entries.items():
+            if not isinstance(item, tuple) or len(item) != 4:
+                continue
+            s_date, e_date, saved_at, res = item
+            if now - saved_at < 3600 * 12 and isinstance(res, tuple) and len(res) == 3 and res[0]:
+                with _history_latest_lock:
+                    _history_latest_by_sym_iv[k] = (s_date, e_date, saved_at, res)
+                _history_cache[(k[0], k[1], k[2], s_date, e_date)] = res
+        logger.info(f"Loaded {len(_history_latest_by_sym_iv)} warm history series from {_DISK_CACHE_PATH}")
+    except Exception as e:
+        logger.debug(f"Could not load fast history cache from disk: {e}")
+
+
+def _save_disk_history_cache(force: bool = False) -> None:
+    global _last_disk_persist
+    now = time.time()
+    if not force and now - _last_disk_persist < 5.0:
+        return
+    with _disk_persist_lock:
+        if not force and time.time() - _last_disk_persist < 5.0:
+            return
+        _last_disk_persist = time.time()
+        try:
+            _DISK_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+            with _history_latest_lock:
+                snapshot = dict(list(_history_latest_by_sym_iv.items())[-400:])
+            tmp_path = _DISK_CACHE_PATH.with_suffix(".pkl.tmp")
+            with tmp_path.open("wb") as f:
+                pickle.dump({"entries": snapshot}, f, protocol=pickle.HIGHEST_PROTOCOL)
+            os.replace(tmp_path, _DISK_CACHE_PATH)
+        except Exception as e:
+            logger.debug(f"Could not save fast history cache to disk: {e}")
+
+
+_load_disk_history_cache()
+
+# Rate limiter: allows a 3-request burst for multi-pane workspaces (SPOT + CE + PE)
+# and paces sustained history API requests evenly.
+_MIN_HISTORY_INTERVAL = 0.35  # 350ms between sustained calls (~3 req/sec)
 _next_history_slot: float = 0.0
+_history_burst_tokens: float = 3.0
+_history_last_book: float = 0.0
 _history_slot_lock = real_threading.Lock()
 
 
 def _enforce_rate_limit(*, background: bool = False):
-    """Wait for this request's turn (~3 per second).
-
-    Raises:
-        BrokerBusyError: Only under the gthread worker, when the turn would
-            come later than the market-data queue ceiling. The check runs
-            before the slot is booked, so a refused request delays nobody.
-    """
-    global _next_history_slot
+    """Wait for this request's turn (~3 per second, with 3-request burst after idle)."""
+    global _next_history_slot, _history_burst_tokens, _history_last_book
     with _history_slot_lock:
         now = time.monotonic()
+        elapsed = max(0.0, now - _history_last_book)
+        _history_last_book = now
+        _history_burst_tokens = min(3.0, _history_burst_tokens + elapsed * 2.0)
+        if not background and _history_burst_tokens >= 1.0:
+            _history_burst_tokens -= 1.0
+            step = 0.03
+        else:
+            step = _MIN_HISTORY_INTERVAL
         slot = max(now, _next_history_slot)
         wait = slot - now
-        # Historify workers are not Gunicorn request threads.  They must share
-        # the booking queue (and therefore the broker's 3 req/s limit), but a
-        # queued background download must be allowed to wait for its turn.
         if not background:
             check_queue_wait(wait, kind="data")
-        _next_history_slot = slot + _MIN_HISTORY_INTERVAL
+        _next_history_slot = slot + step
     if wait > 0:
         time.sleep(wait)
 
@@ -306,58 +360,243 @@ def get_history(
         )
 
     # Fast-path 0-1ms in-memory cache lookup (before rate limiting or broker network calls)
-    cache_key = (
-        symbol.upper(),
-        exchange.upper(),
-        interval,
-        str(start_date),
-        str(end_date),
-    )
-    cached_result = _history_cache.get(cache_key)
-    if cached_result is not None:
-        logger.debug(f"0-1ms cache HIT for {exchange}:{symbol} {interval}")
-        return cached_result
+    sym_u = symbol.upper()
+    exch_u = exchange.upper()
+    s_str = str(start_date)
+    e_str = str(end_date)
+    cache_key = (sym_u, exch_u, interval, s_str, e_str)
+    sym_iv_key = (sym_u, exch_u, interval)
 
-    # Source: 'api' (default) - Fetch from broker API
-    # Enforce 3 requests/second rate limit for broker history calls
-    try:
-        if background:
-            _enforce_rate_limit(background=True)
+    if not background:
+        is_single_day_tail = s_str == e_str
+        cached_result = _history_cache.get(cache_key)
+        if cached_result is not None and not is_single_day_tail:
+            return cached_result
+        with _history_latest_lock:
+            latest_entry = _history_latest_by_sym_iv.get(sym_iv_key)
+        if latest_entry is not None:
+            c_start, c_end, c_time, c_res = latest_entry
+            age_sec = time.time() - c_time
+            if is_single_day_tail:
+                # During live market, 1m bar-close tail repairs (start_date == end_date)
+                # only reuse cache if < 12s old so new minute closes always get fresh broker bars
+                if age_sec < 12 and cached_result is not None:
+                    return cached_result
+            elif age_sec < 900 and e_str >= c_end and s_str >= c_start and c_start < c_end:
+                return c_res
+
+    # Coalesce concurrent identical requests so simultaneous panes/tabs never double-hit the broker
+    wait_event: real_threading.Event | None = None
+    own_event: real_threading.Event | None = None
+    with _inflight_guard:
+        existing_ev = _inflight_locks.get(cache_key)
+        if existing_ev is not None:
+            wait_event = existing_ev
         else:
-            _enforce_rate_limit()
-    except BrokerBusyError as e:
-        return broker_busy_result(e, f"History request for {exchange}:{symbol}")
+            own_event = real_threading.Event()
+            _inflight_locks[cache_key] = own_event
 
-    # Case 1: API-based authentication
-    if api_key and not (auth_token and broker):
-        AUTH_TOKEN, FEED_TOKEN, broker_name = get_auth_token_broker(
-            api_key, include_feed_token=True
-        )
-        if AUTH_TOKEN is None:
-            return False, {"status": "error", "message": "Invalid openalgo apikey"}, 403
-        res = get_history_with_auth(
-            AUTH_TOKEN, FEED_TOKEN, broker_name, symbol, exchange, interval, start_date, end_date
-        )
+    if wait_event is not None:
+        wait_event.wait(timeout=12.0)
+        cached_after = _history_cache.get(cache_key)
+        if cached_after is not None:
+            return cached_after
+
+    try:
+        # Source: 'api' (default) - Fetch from broker API
+        try:
+            if background:
+                _enforce_rate_limit(background=True)
+            else:
+                _enforce_rate_limit()
+        except BrokerBusyError as e:
+            return broker_busy_result(e, f"History request for {exchange}:{symbol}")
+
+        # Case 1: API-based authentication
+        if api_key and not (auth_token and broker):
+            AUTH_TOKEN, FEED_TOKEN, broker_name = get_auth_token_broker(
+                api_key, include_feed_token=True
+            )
+            if AUTH_TOKEN is None:
+                return False, {"status": "error", "message": "Invalid openalgo apikey"}, 403
+            res = get_history_with_auth(
+                AUTH_TOKEN, FEED_TOKEN, broker_name, symbol, exchange, interval, start_date, end_date
+            )
+        # Case 2: Direct internal call with auth_token and broker
+        elif auth_token and broker:
+            res = get_history_with_auth(
+                auth_token, feed_token, broker, symbol, exchange, interval, start_date, end_date
+            )
+        # Case 3: Invalid parameters
+        else:
+            return (
+                False,
+                {
+                    "status": "error",
+                    "message": "Either api_key or both auth_token and broker must be provided",
+                },
+                400,
+            )
+
         if res[0] and res[2] == 200:
-            _history_cache[cache_key] = res
+            rows = (res[1] or {}).get("data") if isinstance(res[1], dict) else None
+            if rows:
+                now_ts = time.time()
+                _history_cache[cache_key] = res
+                with _history_latest_lock:
+                    prev_entry = _history_latest_by_sym_iv.get(sym_iv_key)
+                    if s_str == e_str and prev_entry is not None and prev_entry[0] < prev_entry[1]:
+                        # Single-day live tail repair: merge fresh today bars into multi-day history
+                        p_start, _p_end, _p_time, p_res = prev_entry
+                        p_rows = (p_res[1] or {}).get("data") if isinstance(p_res[1], dict) else None
+                        first_new_ts = rows[0].get("timestamp") if isinstance(rows[0], dict) else None
+                        if p_rows and first_new_ts is not None:
+                            kept = [
+                                r for r in p_rows
+                                if isinstance(r, dict) and (r.get("timestamp") or 0) < first_new_ts
+                            ]
+                            merged_res = (
+                                True,
+                                {"status": "success", "data": kept + list(rows)},
+                                200,
+                            )
+                            _history_latest_by_sym_iv[sym_iv_key] = (
+                                p_start,
+                                max(_p_end, e_str),
+                                now_ts,
+                                merged_res,
+                            )
+                            _history_cache[(sym_u, exch_u, interval, p_start, max(_p_end, e_str))] = merged_res
+                    else:
+                        _history_latest_by_sym_iv[sym_iv_key] = (s_str, e_str, now_ts, res)
+                _save_disk_history_cache()
         return res
+    finally:
+        if own_event is not None:
+            with _inflight_guard:
+                _inflight_locks.pop(cache_key, None)
+            own_event.set()
 
-    # Case 2: Direct internal call with auth_token and broker
-    elif auth_token and broker:
-        res = get_history_with_auth(
-            auth_token, feed_token, broker, symbol, exchange, interval, start_date, end_date
-        )
-        if res[0] and res[2] == 200:
-            _history_cache[cache_key] = res
-        return res
 
-    # Case 3: Invalid parameters
-    else:
-        return (
-            False,
-            {
-                "status": "error",
-                "message": "Either api_key or both auth_token and broker must be provided",
-            },
-            400,
+_SCALPER_PREWARM_UNDERLYINGS = (
+    ("NIFTY", "NSE_INDEX", "NFO"),
+    ("BANKNIFTY", "NSE_INDEX", "NFO"),
+    ("FINNIFTY", "NSE_INDEX", "NFO"),
+    ("MIDCPNIFTY", "NSE_INDEX", "NFO"),
+    ("SENSEX", "BSE_INDEX", "BFO"),
+)
+_prewarmer_started = False
+_prewarmer_lock = real_threading.Lock()
+
+
+def _scalper_prewarm_worker() -> None:
+    """Background daemon that keeps 1m history warm for all 5 Scalper indices (SPOT + ATM CE/PE)."""
+    time.sleep(3.0)
+    ist = pytz.timezone("Asia/Kolkata")
+    while True:
+        try:
+            from database.auth_db import Auth, get_api_key_for_tradingview
+            from services.expiry_service import get_expiry_dates
+            from services.option_chain_service import get_option_chain
+
+            auth_row = Auth.query.filter_by(is_revoked=False).first()
+            api_key = get_api_key_for_tradingview(auth_row.name) if auth_row and auth_row.name else None
+            if not api_key:
+                time.sleep(15.0)
+                continue
+
+            today = datetime.now(ist).date()
+            start_1m = (today - timedelta(days=5)).strftime("%Y-%m-%d")
+            end_1m = today.strftime("%Y-%m-%d")
+
+            for uid, spot_exch, fo_exch in _SCALPER_PREWARM_UNDERLYINGS:
+                # 1. Ensure SPOT 1m is warm
+                spot_key = (uid, spot_exch, "1m")
+                with _history_latest_lock:
+                    existing_spot = _history_latest_by_sym_iv.get(spot_key)
+                if not existing_spot or time.time() - existing_spot[2] > 240:
+                    get_history(
+                        symbol=uid,
+                        exchange=spot_exch,
+                        interval="1m",
+                        start_date=start_1m,
+                        end_date=end_1m,
+                        api_key=api_key,
+                        background=True,
+                    )
+                    time.sleep(0.9)
+
+                # 2. Resolve nearest expiry & ATM CE/PE symbols
+                ok_exp, exp_res, _ = get_expiry_dates(
+                    symbol=uid, exchange=fo_exch, instrumenttype="options", api_key=api_key
+                )
+                exp_list = (exp_res.get("data") if isinstance(exp_res, dict) else None) or []
+                if not ok_exp or not exp_list:
+                    continue
+                nearest_exp = str(exp_list[0]).replace("-", "").replace(" ", "").upper()
+                ok_chain, chain_res, _ = get_option_chain(
+                    underlying=uid,
+                    exchange=fo_exch,
+                    expiry_date=nearest_exp,
+                    strike_count=5,
+                    api_key=api_key,
+                    with_quotes=False,
+                )
+                if not ok_chain or not isinstance(chain_res, dict):
+                    continue
+                chain_rows = chain_res.get("chain") or []
+                atm_val = chain_res.get("atm_strike")
+                if not chain_rows:
+                    continue
+                atm_idx = next(
+                    (i for i, r in enumerate(chain_rows) if r.get("strike") == atm_val),
+                    len(chain_rows) // 2,
+                )
+                # Warm ATM first, then ATM-1 and ATM+1
+                indices_to_warm = [atm_idx]
+                if atm_idx - 1 >= 0:
+                    indices_to_warm.append(atm_idx - 1)
+                if atm_idx + 1 < len(chain_rows):
+                    indices_to_warm.append(atm_idx + 1)
+
+                for idx in indices_to_warm:
+                    row = chain_rows[idx]
+                    for leg_key in ("ce", "pe"):
+                        leg = row.get(leg_key) or {}
+                        sym = leg.get("symbol")
+                        if not sym:
+                            continue
+                        s_key = (sym.upper(), fo_exch, "1m")
+                        with _history_latest_lock:
+                            existing_leg = _history_latest_by_sym_iv.get(s_key)
+                        if not existing_leg or time.time() - existing_leg[2] > 240:
+                            get_history(
+                                symbol=sym,
+                                exchange=fo_exch,
+                                interval="1m",
+                                start_date=start_1m,
+                                end_date=end_1m,
+                                api_key=api_key,
+                                background=True,
+                            )
+                            time.sleep(0.9)
+
+            _save_disk_history_cache(force=True)
+        except Exception as e:
+            logger.debug(f"Scalper prewarm cycle skipped: {e}")
+        time.sleep(60.0)
+
+
+def start_scalper_prewarmer() -> None:
+    global _prewarmer_started
+    with _prewarmer_lock:
+        if _prewarmer_started:
+            return
+        _prewarmer_started = True
+        t = real_threading.Thread(
+            target=_scalper_prewarm_worker, name="scalper-history-prewarmer", daemon=True
         )
+        t.start()
+
+
+start_scalper_prewarmer()

@@ -137,10 +137,12 @@ export function Navbar({ fluid = false }: NavbarProps = {}) {
                       {item.label}
                     </>
                   )
-                  return item.external ? (
+                  return item.external || item.newTab ? (
                     <a
                       key={item.href}
                       href={item.href}
+                      target={item.newTab ? '_blank' : undefined}
+                      rel={item.newTab ? 'noopener noreferrer' : undefined}
                       onClick={() => setMobileOpen(false)}
                       className={cls}
                       aria-current={active ? 'page' : undefined}
@@ -208,29 +210,14 @@ export function Navbar({ fluid = false }: NavbarProps = {}) {
         </Link>
 
         {/* Desktop Navigation.
-            Icon-only between md and xl so all 9 items fit portrait monitors
+            Icon-only between md and xl so all items fit portrait monitors
             and small laptops (768-1280px wide) without squashing or pushing
-            the profile menu off-screen; full labels from xl up (issue #1384).
-
-            From xl the labels appear but the bar does not grow to match: inside
-            Layout it shares the page `container`, which Tailwind caps at 1280px
-            for every viewport from 1280px to 1535px. Nine labelled items are
-            986px and the logo plus the right-hand controls take 394px, so the
-            row needed 1412px and had 1248px (issue #1507). Below 2xl the items
-            therefore use px-1.5 with tighter gaps, and the right-hand controls
-            keep their tighter gap and the short mode wording already used below
-            lg (203px instead of 255px). The padding is deliberately tighter
-            than it needs to be on the fonts we develop against: this row is
-            laid out with fixed spacing but rendered in whatever the OS resolves
-            for `system-ui`, and the widest common face (DejaVu Sans, a Linux
-            default) runs ~7% wider than macOS. px-2 left only 2px of slack
-            there; px-1.5 leaves ~38px. At 2xl and above nothing changes, and
-            e2e/navbar-fit.spec.ts asserts the row never overflows. */}
+            the profile menu off-screen; full labels from xl up (issue #1384). */}
         <nav className="hidden md:flex items-center gap-0.5 2xl:gap-1">
           {navItems.map((item) => {
             const active = isActive(item.href)
             const className = cn(
-              'flex items-center gap-1.5 2xl:gap-2 rounded-md px-1.5 2xl:px-3 py-2 text-sm font-medium transition-colors',
+              'flex items-center gap-1.5 2xl:gap-2 rounded-md px-1.5 2xl:px-2.5 py-2 text-sm font-medium transition-colors',
               active
                 ? 'bg-primary text-primary-foreground'
                 : 'text-muted-foreground hover:bg-muted hover:text-foreground'
@@ -241,12 +228,13 @@ export function Navbar({ fluid = false }: NavbarProps = {}) {
                 <span className="hidden xl:inline">{item.label}</span>
               </>
             )
-            // Flask-served pages (e.g. /trading) need a full page load,
-            // not client-side routing.
-            return item.external ? (
+            // Flask-served pages or new-tab pages (e.g. /scalper) render as <a>
+            return item.external || item.newTab ? (
               <a
                 key={item.href}
                 href={item.href}
+                target={item.newTab ? '_blank' : undefined}
+                rel={item.newTab ? 'noopener noreferrer' : undefined}
                 title={item.label}
                 className={className}
                 aria-current={active ? 'page' : undefined}

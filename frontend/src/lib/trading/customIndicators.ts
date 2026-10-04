@@ -213,12 +213,134 @@ export function calcOutputError(
  * toast on every tick. `this` is forwarded because a descriptor may call
  * `this.calc` from `calcTail`.
  */
+interface TableCellLike {
+  text?: string
+  bgColor?: string
+  textColor?: string
+  bold?: boolean
+  align?: string
+  fontSize?: number
+  colSpan?: number
+}
+
+interface TableSpecLike {
+  rows?: TableCellLike[][]
+  options?: {
+    position?: string
+    cellWidth?: number | 'auto'
+    cellHeight?: number
+    margin?: number
+    borderColor?: string
+    borderWidth?: number
+    frameColor?: string
+    frameWidth?: number
+    background?: string
+  }
+}
+
+function isDarkChartTheme(): boolean {
+  if (typeof document === 'undefined') return true
+  return document.documentElement.classList.contains('dark')
+}
+
+function remapCellBgForTheme(bg: string | undefined, isDark: boolean, isHeader: boolean, colIdx: number): string | undefined {
+  if (!bg) return bg
+  const norm = bg.trim().toLowerCase()
+  const isHardcodedDarkSlate =
+    norm.startsWith('rgba(15, 23, 42') ||
+    norm.startsWith('rgba(30, 41, 59') ||
+    norm === '#0f172a' ||
+    norm === '#1e293b' ||
+    norm.startsWith('rgba(15,23,42') ||
+    norm.startsWith('rgba(30,41,59')
+
+  if (isHardcodedDarkSlate) {
+    if (isDark) {
+      if (isHeader) return colIdx === 0 ? 'rgba(28, 28, 34, 0.96)' : 'rgba(39, 39, 46, 0.96)'
+      return colIdx === 0 ? 'rgba(18, 18, 22, 0.94)' : 'rgba(22, 22, 27, 0.94)'
+    }
+    if (isHeader) return colIdx === 0 ? '#f1f5f9' : '#e2e8f0'
+    return colIdx === 0 ? 'rgba(255, 255, 255, 0.96)' : 'rgba(248, 250, 252, 0.96)'
+  }
+
+  if (!isDark && norm === 'rgba(255, 255, 255, 0.05)') {
+    return 'rgba(15, 23, 42, 0.06)'
+  }
+  return bg
+}
+
+function remapTextColorForTheme(color: string | undefined, isDark: boolean, isHeader: boolean, colIdx: number): string | undefined {
+  if (!color) return isDark ? '#ffffff' : '#09090b'
+  const norm = color.trim().toLowerCase()
+
+  // Neutral / label / value colors
+  if (norm === '#f8fafc' || norm === '#ffffff' || norm === '#ececec') {
+    return isDark ? '#ffffff' : '#09090b'
+  }
+  if (norm === '#94a3b8' || norm === '#64748b' || norm === '#cbd5e1') {
+    return isDark ? '#d4d4d8' : '#334155'
+  }
+
+  // Semantic accent colors: ensure high contrast on white in Light Mode
+  if (!isDark) {
+    if (norm === '#fbbf24' || norm === '#f59e0b' || norm === '#fde047') return '#b45309'
+    if (norm === '#10b981' || norm === '#34d399' || norm === '#4caf50' || norm === '#4ade80') return '#15803d'
+    if (norm === '#f43f5e' || norm === '#f44336' || norm === '#ef4444' || norm === '#f87171') return '#dc2626'
+    if (norm === '#38bdf8' || norm === '#0ea5e9' || norm === '#60a5fa') return '#0369a1'
+    if (norm === '#ec4899' || norm === '#f472b6') return '#be185d'
+  } else {
+    if (isHeader && colIdx === 0) return '#ffffff'
+  }
+
+  return color
+}
+
+/**
+ * Aligns any indicator's on-chart table with the active chart theme (Light or Dark)
+ * so external indicator templates blend seamlessly with the chart canvas while
+ * keeping text crisp and high-contrast in both modes.
+ */
+export function normalizeIndicatorTableTheme<T>(raw: T): T {
+  if (!raw || typeof raw !== 'object') return raw
+  const spec = raw as unknown as TableSpecLike
+  if (!Array.isArray(spec.rows)) return raw
+
+  const isDark = isDarkChartTheme()
+  const rows = spec.rows.map((row, rIdx) => {
+    if (!Array.isArray(row)) return row
+    const isHeader = rIdx === 0
+    return row.map((cell, cIdx) => {
+      if (!cell || typeof cell !== 'object') return cell
+      return {
+        ...cell,
+        bgColor: remapCellBgForTheme(cell.bgColor, isDark, isHeader, cIdx),
+        textColor: remapTextColorForTheme(cell.textColor, isDark, isHeader, cIdx),
+      }
+    })
+  })
+
+  const opts = spec.options ? { ...spec.options } : {}
+  opts.background = isDark ? 'rgba(15, 15, 18, 0.95)' : 'rgba(255, 255, 255, 0.96)'
+  opts.borderColor = isDark ? 'rgba(255, 255, 255, 0.10)' : 'rgba(0, 0, 0, 0.12)'
+  opts.frameColor = isDark ? 'rgba(255, 255, 255, 0.22)' : 'rgba(0, 0, 0, 0.20)'
+
+  return {
+    ...spec,
+    rows,
+    options: opts,
+  } as unknown as T
+}
+
 function guardCalc(
   descriptor: Record<string, unknown>,
   file: string,
   onProblem: ProblemReporter
 ): Record<string, unknown> {
   const original = descriptor.calc as (...args: unknown[]) => unknown
+  const originalTable =
+    typeof descriptor.table === 'function'
+      ? (descriptor.table as (...args: unknown[]) => unknown)
+      : null
   const plots = descriptor.plots as { key: string }[]
   const label = `${file}: ${String(descriptor.id)}`
   let checked = false
@@ -239,6 +361,14 @@ function guardCalc(
       }
       return values
     },
+    ...(originalTable
+      ? {
+          table(this: unknown, ...args: unknown[]) {
+            const rawTable = originalTable.apply(this, args)
+            return normalizeIndicatorTableTheme(rawTable)
+          },
+        }
+      : {}),
   }
 }
 

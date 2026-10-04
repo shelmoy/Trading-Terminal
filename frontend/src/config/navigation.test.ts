@@ -10,7 +10,7 @@ import {
 describe('Navigation Config', () => {
   describe('navItems', () => {
     it('contains the expected main navigation items', () => {
-      expect(navItems).toHaveLength(9)
+      expect(navItems).toHaveLength(10)
 
       const labels = navItems.map((item) => item.label)
       expect(labels).toContain('Dashboard')
@@ -19,11 +19,11 @@ describe('Navigation Config', () => {
       expect(labels).toContain('Positions')
       expect(labels).toContain('Platforms')
       expect(labels).toContain('Trading')
+      expect(labels).toContain('Scalper')
       expect(labels).toContain('Strategies')
 
-      // Strategies sits directly after Platforms. Asserting the position, not
-      // just its presence, is the point: it is where the user expects to find
-      // it, and a later insertion that pushed it elsewhere should fail here.
+      // Scalper sits directly after Trading, and Strategies sits directly after Platforms.
+      expect(labels.indexOf('Scalper')).toBe(labels.indexOf('Trading') + 1)
       expect(labels.indexOf('Strategies')).toBe(labels.indexOf('Platforms') + 1)
     })
 

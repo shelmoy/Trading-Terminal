@@ -297,6 +297,12 @@ def all_underlyings():
     return jsonify({"status": "success", "data": indices + rest})
 
 
+from utils.thread_safe_cache import LockedTTLCache
+
+_expiry_cache = LockedTTLCache(maxsize=256, ttl=300)
+_strikes_cache = LockedTTLCache(maxsize=512, ttl=60)
+
+
 @scalping_bp.route("/scalping/api/expiry", methods=["GET"])
 @check_session_validity
 def expiry():
@@ -308,6 +314,11 @@ def expiry():
         return jsonify({"status": "error", "message": "underlying is required"}), 400
     if exchange not in VALID_LEG_EXCHANGES:
         return jsonify({"status": "error", "message": f"Invalid exchange: {exchange}"}), 400
+
+    cache_key = (underlying, exchange, instrumenttype)
+    cached = _expiry_cache.get(cache_key)
+    if cached is not None:
+        return jsonify({"status": "success", "data": cached})
 
     api_key = _get_api_key()
     if not api_key:
@@ -323,6 +334,8 @@ def expiry():
 
     raw_dates = response.get("data", []) or []
     normalized = [_normalize_expiry(d) for d in raw_dates]
+    if normalized:
+        _expiry_cache[cache_key] = normalized
     return jsonify({"status": "success", "data": normalized})
 
 
@@ -461,6 +474,11 @@ def strikes():
     # prices over the WebSocket feed), so default to a structure-only build that skips
     # the slow per-strike broker multiquote. Pass ?quotes=true to include live quotes.
     with_quotes = (request.args.get("quotes", "false").strip().lower() == "true")
+    strikes_cache_key = (underlying, exchange, expiry_date, strike_count, with_quotes)
+    if not with_quotes:
+        cached_strikes = _strikes_cache.get(strikes_cache_key)
+        if cached_strikes is not None:
+            return jsonify(cached_strikes), 200
 
     if exchange in ("NFO", "BFO"):
         success, response, status_code = get_option_chain(
@@ -476,12 +494,16 @@ def strikes():
             u_sym, u_exch = _underlying_quote(underlying, exchange)
             response["underlying_symbol"] = u_sym
             response["underlying_exchange"] = u_exch
+            if success and status_code == 200 and not with_quotes:
+                _strikes_cache[strikes_cache_key] = response
         return jsonify(response), status_code
 
     # MCX / CDS — ATM from the current-month future.
     success, response, status_code = _mcx_cds_option_chain(
         underlying, exchange, expiry_date, strike_count, api_key
     )
+    if success and status_code == 200 and isinstance(response, dict) and not with_quotes:
+        _strikes_cache[strikes_cache_key] = response
     return jsonify(response), status_code
 
 

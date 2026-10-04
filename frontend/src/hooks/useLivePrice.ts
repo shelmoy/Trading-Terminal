@@ -18,6 +18,8 @@ export interface PriceableItem {
   average_price?: number
   today_realized_pnl?: number // Sandbox: today's realized P&L from closed partial trades
   lot_size?: number // Contract multiplier (e.g. 0.01 for Delta Exchange ETHUSD.P)
+  _dataSource?: 'websocket' | 'quote' | 'none'
+  _hasValidData?: boolean
 }
 
 /**
@@ -89,7 +91,7 @@ export function useLivePrice<T extends PriceableItem>(
   } = options
 
   const { apiKey } = useAuthStore()
-  const { isMarketOpen, isAnyMarketOpen } = useMarketStatus()
+  const { isMarketOpen, isAnyMarketOpen, getMarketStatus } = useMarketStatus()
   const { isVisible, wasHidden, timeSinceHidden } = usePageVisibility()
   const anyMarketOpen = isAnyMarketOpen()
 
@@ -121,8 +123,13 @@ export function useLivePrice<T extends PriceableItem>(
     enabled: enabled && items.length > 0 && (!pauseWhenHidden || isVisible),
   })
 
-  // Effective live status
-  const isLive = wsConnected && anyMarketOpen && !wsPaused
+  const anyPreMarket = useMemo(
+    () => items.some((item) => getMarketStatus(item.exchange) === 'pre-market'),
+    [items, getMarketStatus]
+  )
+
+  // Effective live status (active during both regular market hours and pre-open session)
+  const isLive = wsConnected && (anyMarketOpen || anyPreMarket) && !wsPaused
 
   /**
    * Fetch MultiQuotes data from API
@@ -203,7 +210,7 @@ export function useLivePrice<T extends PriceableItem>(
 
   /**
    * Enhance items with real-time LTP and recalculated P&L
-   * Priority: WebSocket (fresh + market open) → MultiQuotes → REST API
+   * Priority: WebSocket (fresh tick during open or pre-market) → MultiQuotes → REST API
    *
    * For open positions (qty != 0): P&L and P&L% are recalculated using live LTP
    * For closed positions (qty = 0): P&L and P&L% from REST API (realized values)
@@ -217,12 +224,14 @@ export function useLivePrice<T extends PriceableItem>(
       const qty = item.quantity || 0
       const avgPrice = item.average_price || 0
 
-      // Check if market is open for this exchange
-      const exchangeMarketOpen = isMarketOpen(item.exchange)
+      // Check if market is open or in pre-market (09:00-09:15 IST) for this exchange
+      const status = getMarketStatus(item.exchange)
+      const exchangeMarketActive =
+        isMarketOpen(item.exchange) || status === 'pre-market' || wsConnected
 
-      // Check if WebSocket LTP is fresh AND market is open
+      // Check if WebSocket LTP is fresh (accepts pre-market & live session ticks in 0-1ms)
       const hasWsData =
-        exchangeMarketOpen &&
+        exchangeMarketActive &&
         wsData?.data?.ltp &&
         wsData.lastUpdate &&
         Date.now() - wsData.lastUpdate < staleThreshold
@@ -301,7 +310,7 @@ export function useLivePrice<T extends PriceableItem>(
         _dataSource: dataSource,
       } as T & { _dataSource: string }
     })
-  }, [items, marketData, multiQuotes, isMarketOpen, staleThreshold])
+  }, [items, marketData, multiQuotes, isMarketOpen, getMarketStatus, wsConnected, staleThreshold])
 
   return {
     data: enhancedData,

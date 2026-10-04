@@ -55,7 +55,6 @@ import { DOCK_ID } from '@/components/trading/dock/DockShell'
 import {
   type DockTab,
   escapeTarget,
-  readDockTab,
   writeDockTab,
 } from '@/components/trading/dock/dockState'
 import { TradingDock } from '@/components/trading/dock/TradingDock'
@@ -301,7 +300,7 @@ function TradingWorkspace({ account }: { account: string | null }) {
    * collapsed strip. Page-level like the side panels, and for the same
    * reason: the books span every symbol, so they belong to no one pane.
    */
-  const [dock, setDock] = useState<DockTab | null>(readDockTab)
+  const [dock, setDock] = useState<DockTab | null>(null)
   /**
    * Which pane a panel click loads into, and whose instrument the watchlist
    * highlights. The first pane until the user touches another, so a click in

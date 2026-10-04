@@ -242,6 +242,12 @@ def react_trading():
     return serve_react_app()
 
 
+# Scalper 915 3-Pane Options Terminal (SPOT + CE + PE)
+@react_bp.route("/scalper", strict_slashes=False)
+def react_scalper():
+    return serve_react_app()
+
+
 # ============================================================
 # Phase 4 Routes - Charts, WebSocket & Sandbox
 # ============================================================

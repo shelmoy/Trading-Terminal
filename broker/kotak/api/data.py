@@ -102,18 +102,15 @@ HISTORY_BASE_BACKOFF = 1.0
 # reset away every call and throttles nothing across concurrent requests.
 _history_rate_lock = threading.Lock()
 _history_last_call = 0.0
+HISTORY_SAFE_STEP = 0.85
 
 
 def _history_pace():
-    """Reserve the next historical request slot.
-
-    Reserved inside the lock so concurrent callers cannot claim the same slot,
-    slept outside it so waiters do not block one another.
-    """
+    """Reserve the next historical request slot without triggering Neo HTTP 429s."""
     global _history_last_call
     with _history_rate_lock:
         now = time.time()
-        wait = max(0.0, _history_last_call + HISTORY_MIN_INTERVAL - now)
+        wait = max(0.0, _history_last_call + HISTORY_SAFE_STEP - now)
         _history_last_call = now + wait
     if wait > 0:
         time.sleep(wait)

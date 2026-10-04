@@ -34,6 +34,8 @@ export interface NavItem {
   icon: LucideIcon
   /** Served by Flask (not a React route): render as a full-page link. */
   external?: boolean
+  /** Open route in a new browser tab when clicked. */
+  newTab?: boolean
 }
 
 // Main navigation items shown in desktop navbar
@@ -43,6 +45,7 @@ export const navItems: NavItem[] = [
   { href: '/tradebook', label: 'Tradebook', icon: FileText },
   { href: '/positions', label: 'Positions', icon: TrendingUp },
   { href: '/trading', label: 'Trading', icon: CandlestickChart },
+  { href: '/scalper', label: 'Scalper', icon: Zap },
   { href: '/platforms', label: 'Platforms', icon: Layers },
   { href: '/strategy', label: 'Strategies', icon: Boxes },
   { href: '/logs', label: 'Logs', icon: FileBarChart },

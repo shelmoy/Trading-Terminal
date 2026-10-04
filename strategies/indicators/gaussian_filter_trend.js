@@ -635,25 +635,44 @@ export default function ({
       const eff = values.efficiency?.[lastIdx] ?? 0
       const preset = String(settings.preset || 'Default')
 
+      const isDark =
+        typeof document === 'undefined' ||
+        document.documentElement.classList.contains('dark')
+
+      const bullColor = isDark ? '#22c55e' : '#15803d'
+      const bearColor = isDark ? '#f87171' : '#dc2626'
+      const neutralColor = isDark ? '#d4d4d8' : '#475569'
       const trendText = trend === 1 ? '▲ BULLISH' : trend === -1 ? '▼ BEARISH' : '● NEUTRAL'
-      const trendColor = trend === 1 ? '#10b981' : trend === -1 ? '#f43f5e' : '#94a3b8'
-      const trendCellBg = trend === 1 ? 'rgba(16, 185, 129, 0.16)' : trend === -1 ? 'rgba(244, 63, 94, 0.16)' : 'rgba(255, 255, 255, 0.05)'
+      const trendColor = trend === 1 ? bullColor : trend === -1 ? bearColor : neutralColor
+      const trendCellBg =
+        trend === 1
+          ? isDark
+            ? 'rgba(34, 197, 94, 0.16)'
+            : 'rgba(22, 163, 74, 0.14)'
+          : trend === -1
+            ? isDark
+              ? 'rgba(248, 113, 113, 0.16)'
+              : 'rgba(220, 38, 38, 0.14)'
+            : isDark
+              ? 'rgba(255, 255, 255, 0.06)'
+              : 'rgba(15, 23, 42, 0.06)'
 
       let pos = 'top-right'
       if (settings.dashLoc === 'Bottom Left') pos = 'bottom-left'
       else if (settings.dashLoc === 'Bottom Right') pos = 'bottom-right'
 
-      const headerTitleBg = 'rgba(15, 23, 42, 0.94)'
-      const headerBadgeBg = 'rgba(30, 41, 59, 0.94)'
-      const rowLabelBg = 'rgba(15, 23, 42, 0.88)'
-      const rowValueBg = 'rgba(15, 23, 42, 0.82)'
-      const labelColor = '#94a3b8'
-      const valueColor = '#f8fafc'
+      const headerTitleBg = isDark ? 'rgba(28, 28, 34, 0.96)' : '#f1f5f9'
+      const headerBadgeBg = isDark ? 'rgba(39, 39, 46, 0.96)' : '#e2e8f0'
+      const rowLabelBg = isDark ? 'rgba(18, 18, 22, 0.94)' : 'rgba(255, 255, 255, 0.96)'
+      const rowValueBg = isDark ? 'rgba(22, 22, 27, 0.94)' : 'rgba(248, 250, 252, 0.96)'
+      const headerTitleColor = isDark ? '#ffffff' : '#09090b'
+      const labelColor = isDark ? '#d4d4d8' : '#334155'
+      const valueColor = isDark ? '#ffffff' : '#09090b'
 
       const rows = [
         [
-          { text: '  Gaussian Filter Trend', bgColor: headerTitleBg, textColor: '#f8fafc', bold: true, align: 'left', fontSize: 11 },
-          { text: `${preset} `, bgColor: headerBadgeBg, textColor: '#34d399', bold: true, align: 'right', fontSize: 11 },
+          { text: '  Gaussian Filter Trend', bgColor: headerTitleBg, textColor: headerTitleColor, bold: true, align: 'left', fontSize: 11 },
+          { text: `${preset} `, bgColor: headerBadgeBg, textColor: bullColor, bold: true, align: 'right', fontSize: 11 },
         ],
         [
           { text: '  Trend Direction', bgColor: rowLabelBg, textColor: labelColor, align: 'left', fontSize: 11 },
@@ -668,8 +687,15 @@ export default function ({
         ])
       }
 
-      const effColor = eff > 0.5 ? '#10b981' : '#f59e0b'
-      const effBg = eff > 0.5 ? 'rgba(16, 185, 129, 0.14)' : 'rgba(245, 158, 11, 0.14)'
+      const effColor = eff > 0.5 ? bullColor : isDark ? '#fbbf24' : '#b45309'
+      const effBg =
+        eff > 0.5
+          ? isDark
+            ? 'rgba(34, 197, 94, 0.14)'
+            : 'rgba(22, 163, 74, 0.12)'
+          : isDark
+            ? 'rgba(245, 158, 11, 0.14)'
+            : 'rgba(245, 158, 11, 0.12)'
 
       rows.push([
         { text: '  Efficiency Ratio', bgColor: rowLabelBg, textColor: labelColor, align: 'left', fontSize: 11 },
@@ -683,11 +709,11 @@ export default function ({
           cellWidth: 'auto',
           cellHeight: 22,
           margin: 12,
-          borderColor: 'rgba(255, 255, 255, 0.08)',
+          borderColor: isDark ? 'rgba(255, 255, 255, 0.10)' : 'rgba(0, 0, 0, 0.12)',
           borderWidth: 1,
-          frameColor: 'rgba(52, 211, 153, 0.35)',
+          frameColor: isDark ? 'rgba(255, 255, 255, 0.22)' : 'rgba(0, 0, 0, 0.20)',
           frameWidth: 1,
-          background: 'rgba(15, 23, 42, 0.90)',
+          background: isDark ? 'rgba(15, 15, 18, 0.95)' : 'rgba(255, 255, 255, 0.96)',
         },
       }
     },

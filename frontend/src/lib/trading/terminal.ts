@@ -118,7 +118,11 @@ import {
 } from './priceAxis'
 import { parseRangeChoice, type RangeChoice, serializeRangeChoice } from './rangeChoice'
 import { replayTiming } from './replayTiming'
-import { applySessionHours } from './sessionHours'
+import {
+  applySessionHours,
+  isTradingSessionOpenForCandles,
+  isValidIntradaySessionBar,
+} from './sessionHours'
 import { csvOptions, type DataExportOptions } from './chartDataExport'
 import { TerminalComparisons } from './terminalComparisons'
 import {
@@ -162,52 +166,128 @@ export const symbolMetadataCache = new Map<string, Record<string, unknown>>()
 export const searchCache = new Map<string, SearchRow[]>()
 export const globalBarMemoryCache = new Map<string, { bars: readonly Bar[]; time: number }>()
 
+const FAST_CACHE_STORAGE_KEY = 'openalgo.scalper.fastCache.v1'
+const INTERVALS_CACHE_KEY = 'openalgo.chart.intervals.v1'
+let fastCachePersistTimer: ReturnType<typeof setTimeout> | null = null
+
+;(function hydrateFastCache() {
+  if (typeof window === 'undefined') return
+  try {
+    const raw =
+      sessionStorage.getItem(FAST_CACHE_STORAGE_KEY) ||
+      localStorage.getItem(FAST_CACHE_STORAGE_KEY)
+    if (!raw) return
+    const parsed = JSON.parse(raw) as {
+      meta?: Array<[string, Record<string, unknown>]>
+      bars?: Array<[string, { bars: Bar[]; time: number }]>
+    }
+    const now = Date.now()
+    if (Array.isArray(parsed.meta)) {
+      for (const [k, v] of parsed.meta) {
+        if (k && v && typeof v === 'object') symbolMetadataCache.set(k, v)
+      }
+    }
+    if (Array.isArray(parsed.bars)) {
+      for (const [k, v] of parsed.bars) {
+        if (
+          k &&
+          v &&
+          Array.isArray(v.bars) &&
+          v.bars.length > 0 &&
+          now - (v.time || 0) < 6 * 3600_000
+        ) {
+          globalBarMemoryCache.set(k, v)
+        }
+      }
+    }
+  } catch {
+    /* ignore storage hydration errors */
+  }
+})()
+
+export function persistFastCache(): void {
+  if (typeof window === 'undefined') return
+  if (fastCachePersistTimer !== null) return
+  fastCachePersistTimer = setTimeout(() => {
+    fastCachePersistTimer = null
+    try {
+      const metaEntries = Array.from(symbolMetadataCache.entries()).slice(-300)
+      const barEntries = Array.from(globalBarMemoryCache.entries())
+        .sort((a, b) => b[1].time - a[1].time)
+        .slice(0, 20)
+        .map(([k, v]) => [k, { bars: v.bars.slice(-240), time: v.time }] as const)
+      const payload = JSON.stringify({ meta: metaEntries, bars: barEntries })
+      sessionStorage.setItem(FAST_CACHE_STORAGE_KEY, payload)
+      localStorage.setItem(FAST_CACHE_STORAGE_KEY, payload)
+    } catch {
+      /* ignore quota errors */
+    }
+  }, 200)
+}
+
+const inFlightPrefetches = new Set<string>()
+
 export async function prefetchSymbolData(
   apiKey: string,
   symbol: string,
   exchange: string,
-  interval = '5m'
+  interval = '1m'
 ): Promise<void> {
-  const symKey = `${symbol.toUpperCase()}:${(exchange || '').toUpperCase()}`
-  if (!symbolMetadataCache.has(symKey)) {
-    try {
-      const res = await fetch('/api/v1/symbol', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ apikey: apiKey, symbol, exchange }),
-      })
-      const j = await res.json()
-      if (j?.data) symbolMetadataCache.set(symKey, j.data)
-    } catch {
-      /* ignore prefetch error */
+  if (!apiKey || !symbol || !exchange) return
+  const symKey = `${symbol.toUpperCase()}:${exchange.toUpperCase()}`
+  const memKey = `${symKey}:${interval}`
+  if (inFlightPrefetches.has(memKey)) return
+  inFlightPrefetches.add(memKey)
+  try {
+    const tasks: Promise<unknown>[] = []
+    if (!symbolMetadataCache.has(symKey)) {
+      tasks.push(
+        fetch('/api/v1/symbol', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ apikey: apiKey, symbol, exchange }),
+        })
+          .then((r) => r.json())
+          .then((j) => {
+            if (j?.data) {
+              symbolMetadataCache.set(symKey, j.data)
+              persistFastCache()
+            }
+          })
+          .catch(() => {})
+      )
     }
-  }
-
-  const barKey = `${symKey}:${interval}`
-  const cached = globalBarMemoryCache.get(barKey)
-  if (!cached || Date.now() - cached.time > 120_000) {
-    try {
-      const to = Math.floor(Date.now() / 1000)
-      const from = to - lookbackDays(interval) * 86400
-      const res = await fetch('/api/v1/history', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          apikey: apiKey,
-          symbol,
-          exchange,
-          interval,
-          from_date: from,
-          to_date: to,
-        }),
-      })
-      const j = await res.json()
-      if (Array.isArray(j?.data)) {
-        globalBarMemoryCache.set(barKey, { bars: j.data, time: Date.now() })
-      }
-    } catch {
-      /* ignore prefetch error */
+    const existingBars = globalBarMemoryCache.get(memKey)
+    if (!existingBars || Date.now() - existingBars.time > 90_000) {
+      tasks.push(
+        (async () => {
+          try {
+            const to = Math.floor(Date.now() / 1000)
+            const feed = new OpenAlgoDataFeed({
+              baseUrl: '',
+              apiKey,
+              hasOpenInterest: () => openInterestCapability(exchange),
+            })
+            const bars = await feed.getBars({
+              symbol,
+              exchange,
+              interval,
+              from: to - lookbackDays(interval) * 86400,
+              to,
+            })
+            if (bars?.length) {
+              globalBarMemoryCache.set(memKey, { bars, time: Date.now() })
+              persistFastCache()
+            }
+          } catch {
+            /* ignore bar prefetch error */
+          }
+        })()
+      )
     }
+    if (tasks.length > 0) await Promise.all(tasks)
+  } finally {
+    inFlightPrefetches.delete(memKey)
   }
 }
 
@@ -564,6 +644,8 @@ export interface TerminalCallbacks {
    * nothing is placed until it confirms.
    */
   onOrderTicket?(req: OrderTicketRequest): void
+  /** The middle quantity chip between SELL and BUY on the chart was clicked. */
+  onTradeQtyClick?(): void
 }
 
 export interface TerminalComparisonItem {
@@ -1876,7 +1958,8 @@ export class TradingTerminal {
         b.close > 0 &&
         b.close < 10000000 &&
         Math.round(b.close * 100) / 100 !== 21474836.48 &&
-        b.open > 0
+        b.open > 0 &&
+        isValidIntradaySessionBar(sym.exchange, this.interval, b.time)
     )
     if (!next.length) return
     const chart = this.chart
@@ -2808,6 +2891,7 @@ export class TradingTerminal {
     this.chart.subscribeClick((id) => {
       if (id === 'trade:buy') return void this.placeFromMenu('BUY', 'MARKET')
       if (id === 'trade:sell') return void this.placeFromMenu('SELL', 'MARKET')
+      if (id === 'trade:qty') return void this.cb.onTradeQtyClick?.()
       if (id === 'position::close') return void this.exitPosition()
       if (id.startsWith('order:') && id.endsWith('::close')) {
         if (this.refuseWhileReplaying()) return
@@ -6548,8 +6632,12 @@ export class TradingTerminal {
     // follows that candle's direction rather than sitting amber forever.
     if (this.position && this.posLine) this.posLine.setLeftLabel(this.posLabel())
     if (this.tradeBtns && !this.depthActive) this.tradeBtns.setMark(e.ltp)
-    if (this.builder) {
-      const u = this.builder.onTick({ time: e.timeSec || nowSec(), price: e.ltp, ltq: e.ltq })
+    const tickTimeSec = e.timeSec || nowSec()
+    if (
+      this.builder &&
+      isTradingSessionOpenForCandles(this.sym.exchange, tickTimeSec, nowSec())
+    ) {
+      const u = this.builder.onTick({ time: tickTimeSec, price: e.ltp, ltq: e.ltq })
       if (u) {
         this.liveBucket = u.bar.time
         // Key the upsert on time rather than the builder's isNew flag, so a
@@ -6776,7 +6864,8 @@ export class TradingTerminal {
             b.close > 0 &&
             b.close < 10000000 &&
             Math.round(b.close * 100) / 100 !== 21474836.48 &&
-            b.open > 0
+            b.open > 0 &&
+            isValidIntradaySessionBar(sym.exchange, interval, b.time)
         )
         const byTime = new Map(validFresh.map((b) => [b.time, b]))
         let changed = false
@@ -7081,6 +7170,7 @@ export class TradingTerminal {
           throw new Error(`Workspace symbol metadata is unavailable: ${pick.exchange}:${pick.symbol}`)
         if (j.data) {
           symbolMetadataCache.set(symKey, j.data)
+          persistFastCache()
           info = { ...pick, ...j.data }
         }
       } catch (error) {
@@ -7100,9 +7190,12 @@ export class TradingTerminal {
     const lots = usesLots(exchange)
     const savedProduct = this.lsGet('product')
     const productOptions = productOptionsFor(exchange)
+    const isScalperPane = this.sk.startsWith('oa-trading-scalper')
+    const defaultProduct =
+      isScalperPane && productOptions.includes('NRML') ? 'NRML' : productOptions[0]
     this.product = productOptions.includes(savedProduct || '')
       ? (savedProduct as string)
-      : productOptions[0]
+      : defaultProduct
     this.sym = {
       symbol: String(info.symbol),
       exchange,
@@ -7116,7 +7209,16 @@ export class TradingTerminal {
       productOptions,
       product: this.product,
     }
-    this.qty = 1
+    if (!isScalperPane) {
+      this.qty = 1
+    } else {
+      const savedQty = Number(this.lsGet('qty'))
+      if (Number.isFinite(savedQty) && savedQty >= 1) {
+        this.qty = Math.floor(savedQty)
+      } else if (this.qty < 1) {
+        this.qty = 1
+      }
+    }
     this.lsSet('symbol', JSON.stringify({ symbol: this.sym.symbol, exchange: this.sym.exchange }))
     // Tell the group before the history fetch below, so a linked grid starts
     // loading together rather than one pane at a time. The group's own echo
@@ -7138,14 +7240,28 @@ export class TradingTerminal {
         to,
       }
       const memKey = `${this.sym.symbol.toUpperCase()}:${(this.sym.exchange || '').toUpperCase()}:${this.interval}`
-      const memCached = globalBarMemoryCache.get(memKey)
-      if (memCached && memCached.bars.length && Date.now() - memCached.time < 300_000) {
-        bars = memCached.bars
-      } else {
-        bars = this.data ? await this.data.load(request) : await feed.getBars(request)
-        if (bars?.length) {
-          globalBarMemoryCache.set(memKey, { bars, time: Date.now() })
-        }
+      const warmEntry = globalBarMemoryCache.get(memKey)
+      const usedStaleWarm = Boolean(warmEntry && Date.now() - warmEntry.time > 15_000)
+      const loadFn = () => (this.data ? this.data.load(request) : feed.getBars(request))
+      try {
+        bars = await loadFn()
+      } catch (firstErr) {
+        if (this.destroyed || ticket !== this.loadTicket) return false
+        await new Promise((r) => setTimeout(r, 350))
+        if (this.destroyed || ticket !== this.loadTicket) return false
+        bars = await loadFn().catch(() => {
+          throw firstErr
+        })
+      }
+      if (bars?.length && !warmEntry) {
+        globalBarMemoryCache.set(memKey, { bars, time: Date.now() })
+        persistFastCache()
+      } else if (usedStaleWarm) {
+        setTimeout(() => {
+          if (!this.destroyed && ticket === this.loadTicket) {
+            this.reconcileNow()
+          }
+        }, 120)
       }
     } catch (e) {
       if (this.destroyed || ticket !== this.loadTicket) return false
@@ -7174,7 +7290,9 @@ export class TradingTerminal {
     }
     // Validate before assigning: an older response must neither overwrite the
     // active session nor recreate a chart after its terminal was destroyed.
-    if (this.destroyed || ticket !== this.loadTicket) return false
+    if (this.destroyed || ticket !== this.loadTicket || !this.sym) return false
+    const symExchange = this.sym.exchange
+    const symInterval = this.interval
     this.rawBars = (bars || []).filter(
       (b) =>
         b &&
@@ -7182,14 +7300,15 @@ export class TradingTerminal {
         b.close > 0 &&
         b.close < 10000000 &&
         Math.round(b.close * 100) / 100 !== 21474836.48 &&
-        b.open > 0
+        b.open > 0 &&
+        isValidIntradaySessionBar(symExchange, symInterval, b.time)
     )
     if (!this.rawBars.length && this.interval.endsWith('s')) {
       // Fallback: try fetching 1m bars to seed the chart for seconds timeframe
       try {
         const fallbackReq = {
           symbol: this.sym.symbol,
-          exchange: this.sym.exchange,
+          exchange: symExchange,
           interval: '1m',
           from: to - 86400,
           to,
@@ -7202,7 +7321,8 @@ export class TradingTerminal {
             b.close > 0 &&
             b.close < 10000000 &&
             Math.round(b.close * 100) / 100 !== 21474836.48 &&
-            b.open > 0
+            b.open > 0 &&
+            isValidIntradaySessionBar(symExchange, '1m', b.time)
         )
       } catch {
         /* ignore fallback error */
@@ -7299,11 +7419,21 @@ export class TradingTerminal {
   }
   setProduct(p: string) {
     this.product = p
+    if (this.sym) this.sym.product = p
     this.lsSet('product', p)
+  }
+  currentProduct(): string {
+    return this.product
   }
   setQty(n: number) {
     this.qty = Math.max(1, Math.floor(n || 1))
+    if (this.sk.startsWith('oa-trading-scalper')) {
+      this.lsSet('qty', String(this.qty))
+    }
     if (this.tradeBtns) this.tradeBtns.setQty(this.qtyChip())
+  }
+  currentQty(): number {
+    return this.qty
   }
   /**
    * One-Click on or off. Nothing here gates a risk-reducing action: the
@@ -7931,8 +8061,29 @@ export class TradingTerminal {
           : openInterestCapability(request.exchange ?? '')
       },
     })
-    this.cachedBars = withBarCache(this.rest, { ttlMs: 10 * 60_000 })
-    this.exprFeed = new ExpressionFeed(this.cachedBars, () => this.exprLegExchange)
+    const baseCachedBars = withBarCache(this.rest, { ttlMs: 10 * 60_000 })
+    const origGetBars = baseCachedBars.getBars.bind(baseCachedBars)
+    baseCachedBars.getBars = async (request): Promise<Bar[]> => {
+      const reqFrom = request.from ?? 0
+      const reqTo = request.to ?? 0
+      const isInitialWindow =
+        !request.noCache && reqTo - reqFrom >= 3600 && reqTo >= nowSec() - 3600
+      const memKey = `${request.symbol.toUpperCase()}:${(request.exchange || '').toUpperCase()}:${request.interval}`
+      if (isInitialWindow) {
+        const hit = globalBarMemoryCache.get(memKey)
+        if (hit?.bars?.length && Date.now() - hit.time < 6 * 3600_000) {
+          return [...hit.bars]
+        }
+      }
+      const fetched = await origGetBars(request)
+      if (fetched?.length && isInitialWindow) {
+        globalBarMemoryCache.set(memKey, { bars: fetched, time: Date.now() })
+        persistFastCache()
+      }
+      return fetched
+    }
+    this.cachedBars = baseCachedBars
+    this.exprFeed = new ExpressionFeed(baseCachedBars, () => this.exprLegExchange)
     // Repair follows the stream: one small refresh a moment after each bar
     // closes, an immediate one when the stream skips a bucket, and each asks
     // history for the last few bars only. The 30-second poll stays, now as a
@@ -7955,48 +8106,12 @@ export class TradingTerminal {
     this.onVisibilityChange()
     this.trade = new OpenAlgoTradeFeed({ baseUrl: '', apiKey: this.apiKey, strategy: STRATEGY })
 
-    // broker-supported intervals → the timeframe dropdown
-    let groups: IntervalGroup[]
-    try {
-      const j = await this.api<{ data?: IntervalData }>('intervals')
-      groups = intervalGroups(j.data || {})
-    } catch (error) {
-      if (this.initialWorkspacePane) throw error
-      groups = intervalGroups({ minutes: ['1m', '5m', '15m'], hours: ['1h'], days: ['D'] })
+    // Pre-seed interval & WebSocket BEFORE any network await so external callers
+    // (like Scalper) that invoke loadSymbol() immediately use the right interval and WS!
+    const earlySavedInterval = this.initialWorkspacePane?.interval || this.lsGet('interval')
+    if (earlySavedInterval) {
+      this.interval = earlySavedInterval
     }
-    // The pane may have closed while intervals loaded. Do not reopen its resources.
-    if (this.destroyed) {
-      if (this.initialWorkspacePane) throw new Error('Workspace preparation was cancelled')
-      return
-    }
-    this.availableIntervals = groups.flatMap((group) => group.items)
-    if (this.initialWorkspacePane) {
-      const pane = this.initialWorkspacePane
-      // Only what this pane holds: the validation below reads the registry for
-      // the pane's own studies, and the rest of the catalogue follows once the
-      // chart is up.
-      await this.loadIndicatorsFor((pane.chart.indicators ?? []).map((study) => study.indicatorId))
-      this.assertWorkspacePreparation()
-      validateWorkspacePaneSupport(pane, {
-        chartTypes: new Set(Object.keys(CHART_TYPES)),
-        intervals: new Set(this.availableIntervals),
-        indicators: new Set(registeredIndicators().map((study) => study.id)),
-      })
-      if (
-        isProfileKind(this.ctype) &&
-        !profileIntervalSupported(this.ctype, pane.interval, this.profileBlockMinutes())
-      )
-        throw new Error(`Unsupported workspace profile interval: ${pane.interval}`)
-      this.interval = pane.interval
-    } else {
-      this.interval = pickInterval(groups, this.lsGet('interval'))
-    }
-    if (!this.initialWorkspacePane && isProfileKind(this.ctype)) {
-      const interval = this.compatibleProfileInterval(this.ctype)
-      if (interval) this.interval = interval
-      else this.ctype = 'candlestick'
-    }
-    this.cb.onReady({ intervalGroups: groups, interval: this.interval, chartType: this.ctype })
 
     // one WebSocket for ticks + the account-level order stream.
     this.ws = new OpenAlgoWsFeed({ url: this.wsUrl, apiKey: this.apiKey })
@@ -8004,11 +8119,6 @@ export class TradingTerminal {
       if (this.destroyed) return
       this.cb.onWsState(s)
       if (s === 'closed' || s === 'error' || s === 'reconnecting') this.startLtpFallback()
-      // Back on the wire after a break: whatever closed between the drop and
-      // now was never built from ticks, so reconcile at once instead of waiting
-      // for the next poll staring at the hole. The builder is reseeded from its
-      // own bar first, which marks the bucket it opens next as provisional: the
-      // first tick after a gap is not that bucket's open.
       if (s === 'open') {
         const current = this.builder?.current()
         if (current) this.builder?.seed(current)
@@ -8056,6 +8166,74 @@ export class TradingTerminal {
     if (this.bookTimer) clearInterval(this.bookTimer)
     this.bookTimer = setInterval(() => this.pollBook(), 8000)
 
+    // broker-supported intervals → the timeframe dropdown (0ms warm cache in localStorage)
+    let groups: IntervalGroup[] | null = null
+    if (!this.initialWorkspacePane && typeof window !== 'undefined') {
+      try {
+        const cachedIv = localStorage.getItem(INTERVALS_CACHE_KEY)
+        if (cachedIv) {
+          const parsedIv = JSON.parse(cachedIv) as IntervalData
+          if (parsedIv && typeof parsedIv === 'object') {
+            groups = intervalGroups(parsedIv)
+            // Refresh intervals silently in background
+            void this.api<{ data?: IntervalData }>('intervals')
+              .then((j) => {
+                if (j?.data) localStorage.setItem(INTERVALS_CACHE_KEY, JSON.stringify(j.data))
+              })
+              .catch(() => {})
+          }
+        }
+      } catch {
+        /* fall through to network fetch */
+      }
+    }
+    if (!groups) {
+      try {
+        const j = await this.api<{ data?: IntervalData }>('intervals')
+        if (j?.data && typeof window !== 'undefined') {
+          try {
+            localStorage.setItem(INTERVALS_CACHE_KEY, JSON.stringify(j.data))
+          } catch {
+            /* ignore */
+          }
+        }
+        groups = intervalGroups(j.data || {})
+      } catch (error) {
+        if (this.initialWorkspacePane) throw error
+        groups = intervalGroups({ minutes: ['1m', '5m', '15m'], hours: ['1h'], days: ['D'] })
+      }
+    }
+    // The pane may have closed while intervals loaded. Do not reopen its resources.
+    if (this.destroyed) {
+      if (this.initialWorkspacePane) throw new Error('Workspace preparation was cancelled')
+      return
+    }
+    this.availableIntervals = groups.flatMap((group) => group.items)
+    if (this.initialWorkspacePane) {
+      const pane = this.initialWorkspacePane
+      await this.loadIndicatorsFor((pane.chart.indicators ?? []).map((study) => study.indicatorId))
+      this.assertWorkspacePreparation()
+      validateWorkspacePaneSupport(pane, {
+        chartTypes: new Set(Object.keys(CHART_TYPES)),
+        intervals: new Set(this.availableIntervals),
+        indicators: new Set(registeredIndicators().map((study) => study.id)),
+      })
+      if (
+        isProfileKind(this.ctype) &&
+        !profileIntervalSupported(this.ctype, pane.interval, this.profileBlockMinutes())
+      )
+        throw new Error(`Unsupported workspace profile interval: ${pane.interval}`)
+      this.interval = pane.interval
+    } else {
+      this.interval = pickInterval(groups, this.lsGet('interval'))
+    }
+    if (!this.initialWorkspacePane && isProfileKind(this.ctype)) {
+      const interval = this.compatibleProfileInterval(this.ctype)
+      if (interval) this.interval = interval
+      else this.ctype = 'candlestick'
+    }
+    this.cb.onReady({ intervalGroups: groups, interval: this.interval, chartType: this.ctype })
+
     if (this.initialWorkspacePane) {
       const pane = this.initialWorkspacePane
       const rows = isChartExpression(pane.symbol)
@@ -8081,6 +8259,9 @@ export class TradingTerminal {
       return
     }
 
+    // If an external controller (e.g. Scalper) already triggered loadSymbol while intervals were loading, do not overwrite it.
+    if (this.loadTicket > 0 || this.destroyed) return
+
     // restore the last symbol; fall back to NIFTY/NSE_INDEX by default if it's gone or has no data.
     let loaded = false
     try {
@@ -8088,26 +8269,38 @@ export class TradingTerminal {
         symbol?: string
         exchange?: string
       } | null
-      if (saved?.symbol && saved.symbol !== 'BHEL') {
-        const rows = await this.search(saved.symbol, saved.exchange)
-        const row = rows.find((r) => r.symbol === saved.symbol && r.exchange === saved.exchange)
-        if (row) loaded = await this.loadSymbol(row, { silent: true })
+      if (saved?.symbol && saved.symbol !== 'BHEL' && this.loadTicket === 0) {
+        if (saved.exchange) {
+          // 0ms fast path: when both symbol and exchange are already known in localStorage,
+          // load directly without blocking on an extra /api/v1/search round-trip!
+          loaded = await this.loadSymbol(
+            { symbol: saved.symbol, exchange: saved.exchange },
+            { silent: true }
+          )
+        } else {
+          const rows = await this.search(saved.symbol, saved.exchange)
+          if (this.loadTicket > 0 || this.destroyed) return
+          const row = rows.find((r) => r.symbol === saved.symbol) || rows[0]
+          if (row) loaded = await this.loadSymbol(row, { silent: true })
+        }
       }
     } catch {
       /* fall through to the default */
     }
-    if (!loaded && !this.destroyed) {
+    if (!loaded && !this.destroyed && this.loadTicket === 0) {
       try {
         const rows = await this.search('NIFTY', 'NSE_INDEX')
+        if (this.loadTicket > 0 || this.destroyed) return
         const nifty = rows.find((r) => r.symbol === 'NIFTY' && r.exchange === 'NSE_INDEX') || rows[0]
         if (nifty) loaded = await this.loadSymbol(nifty, { silent: true })
       } catch {
         /* try SENSEX fallback */
       }
     }
-    if (!loaded && !this.destroyed) {
+    if (!loaded && !this.destroyed && this.loadTicket === 0) {
       try {
         const rows = await this.search('SENSEX', 'BSE_INDEX')
+        if (this.loadTicket > 0 || this.destroyed) return
         const sensex = rows.find((r) => r.symbol === 'SENSEX' && r.exchange === 'BSE_INDEX') || rows[0]
         if (sensex) await this.loadSymbol(sensex)
       } catch {

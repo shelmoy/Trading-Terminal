@@ -334,6 +334,14 @@ interface Props {
   railVisible?: boolean
   /** Workspace controls displayed beside the selected chart's controls. */
   layoutPicker?: React.ReactNode
+  /** Optional external quantity/lots synchronization (used by Scalper). */
+  externalQty?: number
+  onQtyChange?(paneId: string, qty: number): void
+  /** Optional default product override (e.g. 'NRML' for Scalper F&O panes). */
+  defaultProduct?: string
+  onProductChange?(paneId: string, product: string): void
+  /** Optional callback when the middle qty chip between SELL and BUY on the chart is clicked. */
+  onTradeQtyClick?(paneId: string): void
 }
 
 /**
@@ -376,6 +384,11 @@ export function ChartPane({
   onToggleRail,
   railVisible,
   layoutPicker,
+  externalQty,
+  onQtyChange,
+  defaultProduct,
+  onProductChange,
+  onTradeQtyClick,
 }: Props) {
   const chartRef = useRef<HTMLDivElement>(null)
   const legendRef = useRef<HTMLDivElement>(null)
@@ -412,6 +425,12 @@ export function ChartPane({
   scriptSourceCbRef.current = onOpenScriptSource
   const alertsCbRef = useRef({ onAlertsReady, onAlertFired, onAlertsChanged })
   alertsCbRef.current = { onAlertsReady, onAlertFired, onAlertsChanged }
+  const externalQtyRef = useRef(externalQty)
+  externalQtyRef.current = externalQty
+  const defaultProductRef = useRef(defaultProduct)
+  defaultProductRef.current = defaultProduct
+  const tradeQtyClickCbRef = useRef(onTradeQtyClick)
+  tradeQtyClickCbRef.current = onTradeQtyClick
   // The flag as it stands when the terminal boots; the effect below tracks it
   // from then on. Read through a ref so the boot effect does not re-run and
   // rebuild the terminal on every toggle.
@@ -451,7 +470,9 @@ export function ChartPane({
   const [chartType, setChartTypeState] = useState('candlestick')
   const [sym, setSym] = useState<SymbolView | null>(null)
   const [branding, setBranding] = useState<BrandingLink | null>(null)
-  const [qty, setQty] = useState(1)
+  const [qty, setQty] = useState(() =>
+    externalQty !== undefined ? Math.max(1, Math.floor(externalQty || 1)) : 1
+  )
   const [wsState, setWsState] = useState('connecting')
   /**
    * Just the two history flags, mirrored locally. The full DrawStats is pushed
@@ -601,8 +622,22 @@ export function ChartPane({
       onWsState: (s) => current && setWsState(s),
       onSymbolLoaded: (view) => {
         if (!current) return
-        setSym(view)
-        setQty(1)
+        const desiredProduct =
+          defaultProductRef.current && view.productOptions.includes(defaultProductRef.current)
+            ? defaultProductRef.current
+            : view.product
+        if (desiredProduct !== view.product) {
+          terminal?.setProduct?.(desiredProduct)
+        }
+        setSym({ ...view, product: desiredProduct })
+        const nextQty =
+          externalQtyRef.current !== undefined
+            ? Math.max(1, Math.floor(externalQtyRef.current || 1))
+            : 1
+        setQty(nextQty)
+        if (nextQty !== 1) {
+          terminal?.setQty?.(nextQty)
+        }
         symbolCbRef.current?.(paneId, `${view.exchange}:${view.symbol}`)
         if (preparedRef.current) workspaceCbRef.current?.()
       },
@@ -648,6 +683,7 @@ export function ChartPane({
         if (style) setTextReq({ id: r.id, tool: r.tool, style })
       },
       onOrderTicket: (req) => current && setTicket(req),
+      onTradeQtyClick: () => current && tradeQtyClickCbRef.current?.(paneId),
     }
 
     const release = () => {
@@ -740,6 +776,24 @@ export function ChartPane({
     terminalRef.current?.setArmed(armed && !transitionLocked)
   }, [armed, transitionLocked])
 
+  /* ── sync externalQty & defaultProduct when driven by parent workspace ── */
+  useEffect(() => {
+    if (externalQty === undefined) return
+    const v = Math.max(1, Math.floor(externalQty || 1))
+    setQty(v)
+    terminalRef.current?.setQty?.(v)
+  }, [externalQty])
+
+  useEffect(() => {
+    if (!defaultProduct) return
+    setSym((prev) =>
+      prev && prev.productOptions.includes(defaultProduct) && prev.product !== defaultProduct
+        ? { ...prev, product: defaultProduct }
+        : prev
+    )
+    terminalRef.current?.setProduct?.(defaultProduct)
+  }, [defaultProduct])
+
   /* ── keep the canvas theme in sync with the app theme ─────────────────── */
   // biome-ignore lint/correctness/useExhaustiveDependencies: mode/appMode are the trigger — the effect re-themes the canvas whenever the app theme changes
   useEffect(() => {
@@ -802,11 +856,13 @@ export function ChartPane({
     if (!sym) return
     setSym({ ...sym, product: p })
     terminalRef.current?.setProduct(p)
+    onProductChange?.(paneId, p)
   }
   const changeQty = (n: number) => {
     const v = Math.max(1, Math.floor(n || 1))
     setQty(v)
     terminalRef.current?.setQty(v)
+    onQtyChange?.(paneId, v)
   }
 
   /* ── right-click order menu ───────────────────────────────────────────── */

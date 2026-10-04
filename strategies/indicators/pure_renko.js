@@ -418,22 +418,36 @@ export default function ({ registerIndicator }) {
       const contStr = Number(contPrice || 0).toFixed(2)
       const revStr = Number(revPrice || 0).toFixed(2)
 
-      const headerTitleBg = 'rgba(15, 23, 42, 0.94)'
-      const headerBadgeBg = 'rgba(30, 41, 59, 0.94)'
-      const rowLabelBg = 'rgba(15, 23, 42, 0.88)'
-      const rowValueBg = 'rgba(15, 23, 42, 0.82)'
-      const labelColor = '#94a3b8'
-      const valueColor = '#f8fafc'
+      const isDark =
+        typeof document === 'undefined' ||
+        document.documentElement.classList.contains('dark')
+
+      const headerTitleBg = isDark ? 'rgba(28, 28, 34, 0.96)' : '#f1f5f9'
+      const headerBadgeBg = isDark ? 'rgba(39, 39, 46, 0.96)' : '#e2e8f0'
+      const rowLabelBg = isDark ? 'rgba(18, 18, 22, 0.94)' : 'rgba(255, 255, 255, 0.96)'
+      const rowValueBg = isDark ? 'rgba(22, 22, 27, 0.94)' : 'rgba(248, 250, 252, 0.96)'
+      const headerTitleColor = isDark ? '#ffffff' : '#09090b'
+      const labelColor = isDark ? '#d4d4d8' : '#334155'
+      const valueColor = isDark ? '#ffffff' : '#09090b'
+      const accentAmber = isDark ? '#fbbf24' : '#b45309'
+      const bullColor = isDark ? '#22c55e' : '#15803d'
+      const bearColor = isDark ? '#f87171' : '#dc2626'
 
       const renkoDirText = renkoDir === 1 ? `▲ BULLISH (${streakCount} bricks)` : `▼ BEARISH (${streakCount} bricks)`
-      const renkoDirColor = renkoDir === 1 ? '#10b981' : '#f43f5e'
-      const renkoCellBg = renkoDir === 1 ? 'rgba(16, 185, 129, 0.16)' : 'rgba(244, 63, 94, 0.16)'
+      const renkoDirColor = renkoDir === 1 ? bullColor : bearColor
+      const renkoCellBg = renkoDir === 1
+        ? isDark
+          ? 'rgba(34, 197, 94, 0.16)'
+          : 'rgba(22, 163, 74, 0.14)'
+        : isDark
+          ? 'rgba(248, 113, 113, 0.16)'
+          : 'rgba(220, 38, 38, 0.14)'
 
       return {
         rows: [
           [
-            { text: '  Pure Renko Engine', bgColor: headerTitleBg, textColor: '#f8fafc', bold: true, align: 'left', fontSize: 11 },
-            { text: `${modeText} `, bgColor: headerBadgeBg, textColor: '#fbbf24', bold: true, align: 'right', fontSize: 11 },
+            { text: '  Pure Renko Engine', bgColor: headerTitleBg, textColor: headerTitleColor, bold: true, align: 'left', fontSize: 11 },
+            { text: `${modeText} `, bgColor: headerBadgeBg, textColor: accentAmber, bold: true, align: 'right', fontSize: 11 },
           ],
           [
             { text: '  Renko State', bgColor: rowLabelBg, textColor: labelColor, align: 'left', fontSize: 11 },
@@ -449,11 +463,11 @@ export default function ({ registerIndicator }) {
           ],
           [
             { text: '  Continuation Target', bgColor: rowLabelBg, textColor: labelColor, align: 'left', fontSize: 11 },
-            { text: `${contStr} `, bgColor: 'rgba(16, 185, 129, 0.14)', textColor: '#10b981', bold: true, align: 'right', fontSize: 11 },
+            { text: `${contStr} `, bgColor: isDark ? 'rgba(34, 197, 94, 0.14)' : 'rgba(22, 163, 74, 0.12)', textColor: bullColor, bold: true, align: 'right', fontSize: 11 },
           ],
           [
             { text: '  Reversal Flip Price', bgColor: rowLabelBg, textColor: labelColor, align: 'left', fontSize: 11 },
-            { text: `${revStr} `, bgColor: 'rgba(244, 63, 94, 0.14)', textColor: '#f43f5e', bold: true, align: 'right', fontSize: 11 },
+            { text: `${revStr} `, bgColor: isDark ? 'rgba(248, 113, 113, 0.14)' : 'rgba(220, 38, 38, 0.12)', textColor: bearColor, bold: true, align: 'right', fontSize: 11 },
           ],
         ],
         options: {
@@ -461,11 +475,11 @@ export default function ({ registerIndicator }) {
           cellWidth: 'auto',
           cellHeight: 22,
           margin: 12,
-          borderColor: 'rgba(255, 255, 255, 0.08)',
+          borderColor: isDark ? 'rgba(255, 255, 255, 0.10)' : 'rgba(0, 0, 0, 0.12)',
           borderWidth: 1,
-          frameColor: 'rgba(56, 189, 248, 0.35)',
+          frameColor: isDark ? 'rgba(255, 255, 255, 0.22)' : 'rgba(0, 0, 0, 0.20)',
           frameWidth: 1,
-          background: 'rgba(15, 23, 42, 0.90)',
+          background: isDark ? 'rgba(15, 15, 18, 0.95)' : 'rgba(255, 255, 255, 0.96)',
         },
       }
     },
