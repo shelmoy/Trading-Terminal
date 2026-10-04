@@ -2812,7 +2812,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
                 {activeIndexQuote.ltp > 0 && (
                   <span
                     className={cn(
-                      'font-mono text-xs font-bold tabular-nums px-1 py-0.2 rounded transition-colors duration-150',
+                      'font-mono text-xs font-bold tabular-nums px-1 py-0.5 rounded transition-colors duration-150',
                       flashes[activeUnderlying.id] === 'up'
                         ? 'bg-[#16a34a]/20 text-[#15803d] dark:bg-[#16a34a]/25 dark:text-[#4ade80]'
                         : flashes[activeUnderlying.id] === 'down'
@@ -2841,7 +2841,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
                     {activeIndexQuote.changePct.toFixed(2)}%)
                   </span>
                 )}
-                <span className="rounded bg-[#f1f3f5] border border-black/[0.09] px-1.5 py-0.2 text-[10px] text-[#15803d] font-mono dark:bg-[#2f2f2f] dark:border-white/[0.10] dark:text-[#34d399]">
+                <span className="rounded bg-[#f1f3f5] border border-black/[0.09] px-1.5 py-0.5 text-[10px] text-[#15803d] font-mono dark:bg-[#2f2f2f] dark:border-white/[0.10] dark:text-[#34d399]">
                   {spotActiveSym?.exchange ?? activeUnderlying.spotExchange}
                 </span>
                 <span className="text-[#52525b] dark:text-[#a1a1aa] text-[10px]">▾</span>
@@ -2877,14 +2877,14 @@ function ScalperWorkspace({ account }: { account: string | null }) {
                       <span className="truncate font-semibold text-[#09090b] dark:text-[#ececec]">
                         {u.label}
                       </span>
-                      <span className="rounded bg-[#f4f4f5] border border-black/[0.09] px-1.5 py-0.2 text-[9.5px] font-mono text-[#52525b] dark:bg-[#262626] dark:border-white/[0.10] dark:text-[#a1a1aa] shrink-0">
+                      <span className="rounded bg-[#f4f4f5] border border-black/[0.09] px-1.5 py-0.5 text-[9.5px] font-mono text-[#52525b] dark:bg-[#262626] dark:border-white/[0.10] dark:text-[#a1a1aa] shrink-0">
                         {u.foExchange}
                       </span>
                     </div>
                     <div className="flex items-center gap-2 font-mono tabular-nums shrink-0">
                       <span
                         className={cn(
-                          'text-xs font-bold px-1 py-0.2 rounded transition-colors duration-150',
+                          'text-xs font-bold px-1 py-0.5 rounded transition-colors duration-150',
                           flash === 'up'
                             ? 'bg-[#16a34a]/20 text-[#15803d] dark:bg-[#16a34a]/25 dark:text-[#4ade80]'
                             : flash === 'down'
@@ -3210,11 +3210,11 @@ function ScalperWorkspace({ account }: { account: string | null }) {
                               <span className="font-bold tracking-wide text-indigo-600 dark:text-indigo-400">
                                 SPOT: {spotActiveSym?.symbol ?? activeUnderlying.label}
                               </span>
-                              <span className="rounded bg-muted px-1.5 py-0.2 text-[10px] font-mono text-muted-foreground">
+                              <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">
                                 {spotActiveSym?.exchange ?? activeUnderlying.spotExchange}
                               </span>
                               {focusedPane === 'scalper-p0' && (
-                                <span className="rounded bg-indigo-500/15 px-1.5 py-0.2 text-[9px] font-bold uppercase tracking-wider text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300">
+                                <span className="rounded bg-indigo-500/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300">
                                   ACTIVE
                                 </span>
                               )}
@@ -3306,11 +3306,11 @@ function ScalperWorkspace({ account }: { account: string | null }) {
                               <span className="font-bold tracking-wide text-foreground">
                                 CALL: {ceActiveSym?.symbol ?? 'Select CE'}
                               </span>
-                              <span className="rounded bg-muted px-1.5 py-0.2 text-[10px] font-mono text-muted-foreground">
+                              <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">
                                 {ceActiveSym?.exchange ?? activeUnderlying.foExchange}
                               </span>
                               {focusedPane === 'scalper-p1' && (
-                                <span className="rounded bg-indigo-500/15 px-1.5 py-0.2 text-[9px] font-bold uppercase tracking-wider text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300">
+                                <span className="rounded bg-indigo-500/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300">
                                   ACTIVE
                                 </span>
                               )}
@@ -3576,11 +3576,11 @@ function ScalperWorkspace({ account }: { account: string | null }) {
                               <span className="font-bold tracking-wide text-foreground">
                                 PUT: {peActiveSym?.symbol ?? 'Select PE'}
                               </span>
-                              <span className="rounded bg-muted px-1.5 py-0.2 text-[10px] font-mono text-muted-foreground">
+                              <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">
                                 {peActiveSym?.exchange ?? activeUnderlying.foExchange}
                               </span>
                               {focusedPane === 'scalper-p2' && (
-                                <span className="rounded bg-indigo-500/15 px-1.5 py-0.2 text-[9px] font-bold uppercase tracking-wider text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300">
+                                <span className="rounded bg-indigo-500/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300">
                                   ACTIVE
                                 </span>
                               )}
@@ -4048,7 +4048,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
                   {ceRow?.ce?.moneyness && (
                     <span
                       className={cn(
-                        'rounded border px-1.5 py-0.2 text-[9px] font-semibold',
+                        'rounded border px-1.5 py-0.5 text-[9px] font-semibold',
                         ceRow.ce.moneyness === 'ATM'
                           ? 'border-black/[0.18] bg-[#e2e6ec] text-[#09090b] dark:border-white/[0.18] dark:bg-[#303030] dark:text-[#ececec]'
                           : ceRow.ce.moneyness === 'ITM'
@@ -4085,13 +4085,13 @@ function ScalperWorkspace({ account }: { account: string | null }) {
                 side="top"
                 sideOffset={8}
                 className={cn(
-                  'w-[476px] p-0 overflow-hidden rounded-xl',
+                  'w-[548px] p-0 overflow-hidden rounded-2xl',
                   'border border-black/[0.11] bg-white text-[#09090b] shadow-[0_20px_50px_-12px_rgba(0,0,0,0.22)]',
                   'dark:border-white/[0.12] dark:bg-[#171717] dark:text-[#ececec] dark:shadow-[0_24px_60px_-12px_rgba(0,0,0,0.85)]'
                 )}
               >
                 {/* OpenAI UI Header Bar: CALLS Badge + Index Selector + Expiry Selector + ATM + Refresh */}
-                <div className="flex items-center justify-between gap-2 border-b border-black/[0.08] bg-[#f4f5f7] px-3 py-2 dark:border-white/[0.08] dark:bg-[#1e1e1e]">
+                <div className="flex items-center justify-between gap-3 border-b border-black/[0.08] bg-[#f4f5f7] px-4 py-3 dark:border-white/[0.08] dark:bg-[#1e1e1e]">
                   <div className="flex items-center gap-1.5 min-w-0">
                     <span className="inline-flex items-center gap-1.5 rounded-md border border-[#16a34a]/35 bg-[#16a34a]/12 px-2 py-0.5 font-mono text-[10px] font-semibold tracking-wide text-[#15803d] dark:bg-[#16a34a]/15 dark:text-[#4ade80] shrink-0">
                       <span className="h-1.5 w-1.5 rounded-full bg-[#16a34a]" />
@@ -4176,7 +4176,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
                                   <span className="font-semibold text-[#09090b] dark:text-[#ececec]">
                                     {u.label}
                                   </span>
-                                  <span className="rounded bg-[#f4f4f5] border border-black/[0.09] px-1 py-0.2 text-[9px] text-[#52525b] dark:bg-[#262626] dark:border-white/[0.10] dark:text-[#a1a1aa]">
+                                  <span className="rounded bg-[#f4f4f5] border border-black/[0.09] px-1.5 py-px text-[9px] leading-4 text-[#52525b] dark:bg-[#262626] dark:border-white/[0.10] dark:text-[#a1a1aa]">
                                     {u.foExchange}
                                   </span>
                                 </div>
@@ -4286,7 +4286,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
                 </div>
 
                 {/* OpenAI UI Telemetry Strip: SPOT | ATM | MAX PAIN | PCR | S | R */}
-                <div className="flex flex-wrap items-center justify-between gap-1.5 border-b border-black/[0.07] bg-[#eef0f3] px-3 py-1.5 text-[10px] font-mono tabular-nums dark:border-white/[0.07] dark:bg-[#1a1a1a]">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-black/[0.07] bg-[#eef0f3] px-4 py-2.5 text-[11px] font-mono tabular-nums dark:border-white/[0.07] dark:bg-[#1a1a1a]">
                   <div className="flex items-center gap-2">
                     <span className="inline-flex items-center gap-1.5 text-[#52525b] dark:text-[#a1a1aa]">
                       SPOT{' '}
@@ -4315,7 +4315,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
                       )}
                     </span>
                     {effectiveAtmStrike != null && (
-                      <span className="rounded border border-black/[0.10] bg-white px-1.5 py-0.2 text-[#52525b] dark:border-white/[0.10] dark:bg-[#262626] dark:text-[#b4b4b4]">
+                      <span className="rounded border border-black/[0.10] bg-white px-1.5 py-0.5 text-[#52525b] dark:border-white/[0.10] dark:bg-[#262626] dark:text-[#b4b4b4]">
                         ATM{' '}
                         <strong className="font-semibold text-[#09090b] dark:text-[#ececec]">
                           {effectiveAtmStrike}
@@ -4324,7 +4324,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
                     )}
                     {maxPainStrike != null && (
                       <span
-                        className="rounded border border-black/[0.10] bg-white px-1.5 py-0.2 text-[#3f3f46] font-medium dark:border-white/[0.10] dark:bg-[#262626] dark:text-[#d4d4d4]"
+                        className="rounded border border-black/[0.10] bg-white px-1.5 py-0.5 text-[#3f3f46] font-medium dark:border-white/[0.10] dark:bg-[#262626] dark:text-[#d4d4d4]"
                         title="Option Chain Max Pain Strike"
                       >
                         MP {maxPainStrike}
@@ -4335,7 +4335,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
                     {pcr > 0 && (
                       <span
                         className={cn(
-                          'rounded border px-1.5 py-0.2 font-medium',
+                          'rounded border px-1.5 py-0.5 font-medium',
                           pcr >= 1
                             ? 'border-[#16a34a]/30 bg-[#16a34a]/12 text-[#15803d] dark:text-[#4ade80]'
                             : pcr <= 0.7
@@ -4349,7 +4349,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
                     )}
                     {maxPeOiStrike != null && (
                       <span
-                        className="rounded border border-[#16a34a]/35 bg-[#16a34a]/12 px-1.5 py-0.2 text-[#15803d] dark:text-[#4ade80] font-semibold"
+                        className="rounded border border-[#16a34a]/35 bg-[#16a34a]/12 px-1.5 py-0.5 text-[#15803d] dark:text-[#4ade80] font-semibold"
                         title="Support (S) — Highest Put OI Strike"
                       >
                         S {maxPeOiStrike}
@@ -4357,7 +4357,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
                     )}
                     {maxCeOiStrike != null && (
                       <span
-                        className="rounded border border-[#dc2626]/35 bg-[#dc2626]/12 px-1.5 py-0.2 text-[#dc2626] dark:text-[#f87171] font-semibold"
+                        className="rounded border border-[#dc2626]/35 bg-[#dc2626]/12 px-1.5 py-0.5 text-[#dc2626] dark:text-[#f87171] font-semibold"
                         title="Resistance (R) — Highest Call OI Strike"
                       >
                         R {maxCeOiStrike}
@@ -4367,7 +4367,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
                 </div>
 
                 {/* 4-Column OpenAI UI Table Header */}
-                <div className="grid grid-cols-[148px_1fr_92px_76px] items-center border-b border-black/[0.08] bg-[#e6e9ef] px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-[#52525b] font-mono dark:border-white/[0.08] dark:bg-[#1c1c1c] dark:text-[#a1a1aa]">
+                <div className="sticky top-0 z-20 grid grid-cols-[176px_1fr_100px_84px] items-center gap-2 border-b border-black/[0.08] bg-[#e6e9ef] px-4 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-[#52525b] font-mono dark:border-white/[0.08] dark:bg-[#1c1c1c] dark:text-[#a1a1aa]">
                   <span>Strike · Level</span>
                   <span className="text-right pr-2">OI / Build</span>
                   <span className="text-right">LTP</span>
@@ -4377,7 +4377,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
                 {/* Scrollable Full Strike Range (51 Strikes — Never jumps on WebSocket tick) */}
                 <div
                   ref={ceListRef}
-                  className="max-h-[348px] overflow-y-auto overscroll-contain divide-y divide-black/[0.05] bg-white dark:divide-white/[0.04] dark:bg-[#171717]"
+                  className="max-h-[440px] overflow-y-auto overscroll-contain [scrollbar-width:thin] divide-y divide-black/[0.05] bg-white dark:divide-white/[0.04] dark:bg-[#171717]"
                 >
                   {enrichedChain.length === 0 ? (
                     <div className="py-10 text-center font-mono text-xs text-[#52525b] dark:text-[#a1a1aa]">
@@ -4419,19 +4419,19 @@ function ScalperWorkspace({ account }: { account: string | null }) {
                             setCeChainOpen(false)
                           }}
                           className={cn(
-                            'group relative grid h-8 w-full cursor-pointer grid-cols-[148px_1fr_92px_76px] items-center px-3 font-mono text-[11px] tabular-nums transition-colors',
+                            'group relative grid h-10 w-full cursor-pointer grid-cols-[176px_1fr_100px_84px] items-center gap-2 px-4 font-mono text-[12px] tabular-nums transition-colors duration-150',
                             'hover:bg-[#e8ecf2] dark:hover:bg-[#262930]',
                             leg.moneyness === 'ITM' && 'bg-black/[0.02] dark:bg-white/[0.015]',
                             isAtm &&
                               'bg-[#e2e6ec] border-y border-black/[0.15] font-semibold dark:bg-[#262626] dark:border-white/[0.15]',
                             isSelected &&
-                              'bg-[#16a34a]/[0.14] ring-1 ring-inset ring-[#16a34a]/50 dark:bg-[#16a34a]/[0.16]',
+                              'bg-[#16a34a]/[0.14] ring-1 ring-inset ring-[#16a34a]/50 shadow-[inset_3px_0_0_#16a34a] dark:bg-[#16a34a]/[0.16]',
                             flash === 'up' && 'bg-[#16a34a]/25',
                             flash === 'down' && 'bg-[#dc2626]/25'
                           )}
                         >
                           {/* Strike + ATM / ITM / OTM Tag + Support (S) / Resistance (R) / MaxPain Badge */}
-                          <div className="flex items-center gap-1 min-w-0">
+                          <div className="flex items-center gap-1.5 min-w-0">
                             <span
                               className={cn(
                                 'font-semibold tracking-tight',
@@ -4445,13 +4445,13 @@ function ScalperWorkspace({ account }: { account: string | null }) {
                               {s}
                             </span>
                             {isAtm ? (
-                              <span className="rounded border border-black/[0.18] bg-[#d4d8df] px-1 py-0.2 text-[9px] font-bold text-[#09090b] dark:border-white/[0.18] dark:bg-[#333333] dark:text-white">
+                              <span className="rounded border border-black/[0.18] bg-[#d4d8df] px-1.5 py-px text-[9px] leading-4 font-bold text-[#09090b] dark:border-white/[0.18] dark:bg-[#333333] dark:text-white">
                                 ATM
                               </span>
                             ) : (
                               <span
                                 className={cn(
-                                  'rounded border px-1 py-0.2 text-[9px] font-medium',
+                                  'rounded border px-1.5 py-px text-[9px] leading-4 font-medium',
                                   leg.moneyness === 'ITM'
                                     ? 'border-[#16a34a]/30 bg-[#16a34a]/12 text-[#15803d] dark:text-[#4ade80]'
                                     : 'border-black/[0.09] bg-[#f1f3f5] text-[#52525b] dark:border-white/[0.09] dark:bg-[#222222] dark:text-[#a1a1aa]'
@@ -4462,7 +4462,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
                             )}
                             {isMaxCeOi && (
                               <span
-                                className="rounded border border-[#dc2626]/40 bg-[#dc2626]/15 px-1.5 py-0.2 text-[8px] font-bold text-[#dc2626] dark:text-[#f87171]"
+                                className="rounded border border-[#dc2626]/40 bg-[#dc2626]/15 px-1.5 py-px text-[9px] leading-4 font-bold text-[#dc2626] dark:text-[#f87171]"
                                 title="Resistance (R) — Highest Call OI"
                               >
                                 R
@@ -4470,7 +4470,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
                             )}
                             {isMaxPeOi && !isMaxCeOi && (
                               <span
-                                className="rounded border border-[#16a34a]/40 bg-[#16a34a]/15 px-1.5 py-0.2 text-[8px] font-bold text-[#15803d] dark:text-[#4ade80]"
+                                className="rounded border border-[#16a34a]/40 bg-[#16a34a]/15 px-1.5 py-px text-[9px] leading-4 font-bold text-[#15803d] dark:text-[#4ade80]"
                                 title="Support (S) — Highest Put OI"
                               >
                                 S
@@ -4478,7 +4478,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
                             )}
                             {isMaxPain && !isAtm && (
                               <span
-                                className="rounded border border-black/[0.14] bg-[#e4e7ec] px-1 py-0.2 text-[8px] font-bold text-[#3f3f46] dark:border-white/[0.14] dark:bg-[#2a2a2a] dark:text-[#d4d4d4]"
+                                className="rounded border border-black/[0.14] bg-[#e4e7ec] px-1.5 py-px text-[9px] leading-4 font-bold text-[#3f3f46] dark:border-white/[0.14] dark:bg-[#2a2a2a] dark:text-[#d4d4d4]"
                                 title="Max Pain Strike"
                               >
                                 MP
@@ -4491,7 +4491,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
                             {oiPct > 0 && (
                               <div
                                 className={cn(
-                                  'pointer-events-none absolute inset-y-1.5 right-1 rounded-xs transition-all duration-300',
+                                  'pointer-events-none absolute inset-y-2.5 right-1 rounded-sm transition-all duration-300',
                                   isMaxCeOi
                                     ? 'bg-[#16a34a]/30 border-r-2 border-[#16a34a] dark:bg-[#16a34a]/35'
                                     : 'bg-[#16a34a]/15 dark:bg-[#16a34a]/18'
@@ -4938,7 +4938,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
                   {peRow?.pe?.moneyness && (
                     <span
                       className={cn(
-                        'rounded border px-1.5 py-0.2 text-[9px] font-semibold',
+                        'rounded border px-1.5 py-0.5 text-[9px] font-semibold',
                         peRow.pe.moneyness === 'ATM'
                           ? 'border-black/[0.18] bg-[#e2e6ec] text-[#09090b] dark:border-white/[0.18] dark:bg-[#303030] dark:text-[#ececec]'
                           : peRow.pe.moneyness === 'ITM'
@@ -4975,13 +4975,13 @@ function ScalperWorkspace({ account }: { account: string | null }) {
                 side="top"
                 sideOffset={8}
                 className={cn(
-                  'w-[476px] p-0 overflow-hidden rounded-xl',
+                  'w-[548px] p-0 overflow-hidden rounded-2xl',
                   'border border-black/[0.11] bg-white text-[#09090b] shadow-[0_20px_50px_-12px_rgba(0,0,0,0.22)]',
                   'dark:border-white/[0.12] dark:bg-[#171717] dark:text-[#ececec] dark:shadow-[0_24px_60px_-12px_rgba(0,0,0,0.85)]'
                 )}
               >
                 {/* OpenAI UI Header Bar: PUTS Badge + Index Selector + Expiry Selector + ATM + Refresh */}
-                <div className="flex items-center justify-between gap-2 border-b border-black/[0.08] bg-[#f4f5f7] px-3 py-2 dark:border-white/[0.08] dark:bg-[#1e1e1e]">
+                <div className="flex items-center justify-between gap-3 border-b border-black/[0.08] bg-[#f4f5f7] px-4 py-3 dark:border-white/[0.08] dark:bg-[#1e1e1e]">
                   <div className="flex items-center gap-1.5 min-w-0">
                     <span className="inline-flex items-center gap-1.5 rounded-md border border-[#dc2626]/35 bg-[#dc2626]/12 px-2 py-0.5 font-mono text-[10px] font-semibold tracking-wide text-[#dc2626] dark:bg-[#dc2626]/15 dark:text-[#f87171] shrink-0">
                       <span className="h-1.5 w-1.5 rounded-full bg-[#dc2626]" />
@@ -5066,7 +5066,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
                                   <span className="font-semibold text-[#09090b] dark:text-[#ececec]">
                                     {u.label}
                                   </span>
-                                  <span className="rounded bg-[#f4f4f5] border border-black/[0.09] px-1 py-0.2 text-[9px] text-[#52525b] dark:bg-[#262626] dark:border-white/[0.10] dark:text-[#a1a1aa]">
+                                  <span className="rounded bg-[#f4f4f5] border border-black/[0.09] px-1.5 py-px text-[9px] leading-4 text-[#52525b] dark:bg-[#262626] dark:border-white/[0.10] dark:text-[#a1a1aa]">
                                     {u.foExchange}
                                   </span>
                                 </div>
@@ -5176,7 +5176,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
                 </div>
 
                 {/* OpenAI UI Telemetry Strip: SPOT | ATM | MAX PAIN | PCR | S | R */}
-                <div className="flex flex-wrap items-center justify-between gap-1.5 border-b border-black/[0.07] bg-[#eef0f3] px-3 py-1.5 text-[10px] font-mono tabular-nums dark:border-white/[0.07] dark:bg-[#1a1a1a]">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-black/[0.07] bg-[#eef0f3] px-4 py-2.5 text-[11px] font-mono tabular-nums dark:border-white/[0.07] dark:bg-[#1a1a1a]">
                   <div className="flex items-center gap-2">
                     <span className="inline-flex items-center gap-1.5 text-[#52525b] dark:text-[#a1a1aa]">
                       SPOT{' '}
@@ -5205,7 +5205,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
                       )}
                     </span>
                     {effectiveAtmStrike != null && (
-                      <span className="rounded border border-black/[0.10] bg-white px-1.5 py-0.2 text-[#52525b] dark:border-white/[0.10] dark:bg-[#262626] dark:text-[#b4b4b4]">
+                      <span className="rounded border border-black/[0.10] bg-white px-1.5 py-0.5 text-[#52525b] dark:border-white/[0.10] dark:bg-[#262626] dark:text-[#b4b4b4]">
                         ATM{' '}
                         <strong className="font-semibold text-[#09090b] dark:text-[#ececec]">
                           {effectiveAtmStrike}
@@ -5214,7 +5214,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
                     )}
                     {maxPainStrike != null && (
                       <span
-                        className="rounded border border-black/[0.10] bg-white px-1.5 py-0.2 text-[#3f3f46] font-medium dark:border-white/[0.10] dark:bg-[#262626] dark:text-[#d4d4d4]"
+                        className="rounded border border-black/[0.10] bg-white px-1.5 py-0.5 text-[#3f3f46] font-medium dark:border-white/[0.10] dark:bg-[#262626] dark:text-[#d4d4d4]"
                         title="Option Chain Max Pain Strike"
                       >
                         MP {maxPainStrike}
@@ -5225,7 +5225,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
                     {pcr > 0 && (
                       <span
                         className={cn(
-                          'rounded border px-1.5 py-0.2 font-medium',
+                          'rounded border px-1.5 py-0.5 font-medium',
                           pcr >= 1
                             ? 'border-[#16a34a]/30 bg-[#16a34a]/12 text-[#15803d] dark:text-[#4ade80]'
                             : pcr <= 0.7
@@ -5239,7 +5239,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
                     )}
                     {maxPeOiStrike != null && (
                       <span
-                        className="rounded border border-[#16a34a]/35 bg-[#16a34a]/12 px-1.5 py-0.2 text-[#15803d] dark:text-[#4ade80] font-semibold"
+                        className="rounded border border-[#16a34a]/35 bg-[#16a34a]/12 px-1.5 py-0.5 text-[#15803d] dark:text-[#4ade80] font-semibold"
                         title="Support (S) — Highest Put OI Strike"
                       >
                         S {maxPeOiStrike}
@@ -5247,7 +5247,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
                     )}
                     {maxCeOiStrike != null && (
                       <span
-                        className="rounded border border-[#dc2626]/35 bg-[#dc2626]/12 px-1.5 py-0.2 text-[#dc2626] dark:text-[#f87171] font-semibold"
+                        className="rounded border border-[#dc2626]/35 bg-[#dc2626]/12 px-1.5 py-0.5 text-[#dc2626] dark:text-[#f87171] font-semibold"
                         title="Resistance (R) — Highest Call OI Strike"
                       >
                         R {maxCeOiStrike}
@@ -5257,7 +5257,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
                 </div>
 
                 {/* 4-Column OpenAI UI Table Header */}
-                <div className="grid grid-cols-[148px_1fr_92px_76px] items-center border-b border-black/[0.08] bg-[#e6e9ef] px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-[#52525b] font-mono dark:border-white/[0.08] dark:bg-[#1c1c1c] dark:text-[#a1a1aa]">
+                <div className="sticky top-0 z-20 grid grid-cols-[176px_1fr_100px_84px] items-center gap-2 border-b border-black/[0.08] bg-[#e6e9ef] px-4 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-[#52525b] font-mono dark:border-white/[0.08] dark:bg-[#1c1c1c] dark:text-[#a1a1aa]">
                   <span>Strike · Level</span>
                   <span className="text-right pr-2">OI / Build</span>
                   <span className="text-right">LTP</span>
@@ -5267,7 +5267,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
                 {/* Scrollable Full Strike Range (51 Strikes — Never jumps on WebSocket tick) */}
                 <div
                   ref={peListRef}
-                  className="max-h-[348px] overflow-y-auto overscroll-contain divide-y divide-black/[0.05] bg-white dark:divide-white/[0.04] dark:bg-[#171717]"
+                  className="max-h-[440px] overflow-y-auto overscroll-contain [scrollbar-width:thin] divide-y divide-black/[0.05] bg-white dark:divide-white/[0.04] dark:bg-[#171717]"
                 >
                   {enrichedChain.length === 0 ? (
                     <div className="py-10 text-center font-mono text-xs text-[#52525b] dark:text-[#a1a1aa]">
@@ -5309,19 +5309,19 @@ function ScalperWorkspace({ account }: { account: string | null }) {
                             setPeChainOpen(false)
                           }}
                           className={cn(
-                            'group relative grid h-8 w-full cursor-pointer grid-cols-[148px_1fr_92px_76px] items-center px-3 font-mono text-[11px] tabular-nums transition-colors',
+                            'group relative grid h-10 w-full cursor-pointer grid-cols-[176px_1fr_100px_84px] items-center gap-2 px-4 font-mono text-[12px] tabular-nums transition-colors duration-150',
                             'hover:bg-[#e8ecf2] dark:hover:bg-[#262930]',
                             leg.moneyness === 'ITM' && 'bg-black/[0.02] dark:bg-white/[0.015]',
                             isAtm &&
                               'bg-[#e2e6ec] border-y border-black/[0.15] font-semibold dark:bg-[#262626] dark:border-white/[0.15]',
                             isSelected &&
-                              'bg-[#dc2626]/[0.14] ring-1 ring-inset ring-[#dc2626]/50 dark:bg-[#dc2626]/[0.16]',
+                              'bg-[#dc2626]/[0.14] ring-1 ring-inset ring-[#dc2626]/50 shadow-[inset_3px_0_0_#dc2626] dark:bg-[#dc2626]/[0.16]',
                             flash === 'up' && 'bg-[#16a34a]/25',
                             flash === 'down' && 'bg-[#dc2626]/25'
                           )}
                         >
                           {/* Strike + ATM / ITM / OTM Tag + Support (S) / Resistance (R) / MaxPain Badge */}
-                          <div className="flex items-center gap-1 min-w-0">
+                          <div className="flex items-center gap-1.5 min-w-0">
                             <span
                               className={cn(
                                 'font-semibold tracking-tight',
@@ -5335,13 +5335,13 @@ function ScalperWorkspace({ account }: { account: string | null }) {
                               {s}
                             </span>
                             {isAtm ? (
-                              <span className="rounded border border-black/[0.18] bg-[#d4d8df] px-1 py-0.2 text-[9px] font-bold text-[#09090b] dark:border-white/[0.18] dark:bg-[#333333] dark:text-white">
+                              <span className="rounded border border-black/[0.18] bg-[#d4d8df] px-1.5 py-px text-[9px] leading-4 font-bold text-[#09090b] dark:border-white/[0.18] dark:bg-[#333333] dark:text-white">
                                 ATM
                               </span>
                             ) : (
                               <span
                                 className={cn(
-                                  'rounded border px-1 py-0.2 text-[9px] font-medium',
+                                  'rounded border px-1.5 py-px text-[9px] leading-4 font-medium',
                                   leg.moneyness === 'ITM'
                                     ? 'border-[#16a34a]/30 bg-[#16a34a]/12 text-[#15803d] dark:text-[#4ade80]'
                                     : 'border-black/[0.09] bg-[#f1f3f5] text-[#52525b] dark:border-white/[0.09] dark:bg-[#222222] dark:text-[#a1a1aa]'
@@ -5352,7 +5352,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
                             )}
                             {isMaxPeOi && (
                               <span
-                                className="rounded border border-[#16a34a]/40 bg-[#16a34a]/15 px-1.5 py-0.2 text-[8px] font-bold text-[#15803d] dark:text-[#4ade80]"
+                                className="rounded border border-[#16a34a]/40 bg-[#16a34a]/15 px-1.5 py-px text-[9px] leading-4 font-bold text-[#15803d] dark:text-[#4ade80]"
                                 title="Support (S) — Highest Put OI"
                               >
                                 S
@@ -5360,7 +5360,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
                             )}
                             {isMaxCeOi && !isMaxPeOi && (
                               <span
-                                className="rounded border border-[#dc2626]/40 bg-[#dc2626]/15 px-1.5 py-0.2 text-[8px] font-bold text-[#dc2626] dark:text-[#f87171]"
+                                className="rounded border border-[#dc2626]/40 bg-[#dc2626]/15 px-1.5 py-px text-[9px] leading-4 font-bold text-[#dc2626] dark:text-[#f87171]"
                                 title="Resistance (R) — Highest Call OI"
                               >
                                 R
@@ -5368,7 +5368,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
                             )}
                             {isMaxPain && !isAtm && (
                               <span
-                                className="rounded border border-black/[0.14] bg-[#e4e7ec] px-1 py-0.2 text-[8px] font-bold text-[#3f3f46] dark:border-white/[0.14] dark:bg-[#2a2a2a] dark:text-[#d4d4d4]"
+                                className="rounded border border-black/[0.14] bg-[#e4e7ec] px-1.5 py-px text-[9px] leading-4 font-bold text-[#3f3f46] dark:border-white/[0.14] dark:bg-[#2a2a2a] dark:text-[#d4d4d4]"
                                 title="Max Pain Strike"
                               >
                                 MP
@@ -5381,7 +5381,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
                             {oiPct > 0 && (
                               <div
                                 className={cn(
-                                  'pointer-events-none absolute inset-y-1.5 right-1 rounded-xs transition-all duration-300',
+                                  'pointer-events-none absolute inset-y-2.5 right-1 rounded-sm transition-all duration-300',
                                   isMaxPeOi
                                     ? 'bg-[#dc2626]/30 border-r-2 border-[#dc2626] dark:bg-[#dc2626]/35'
                                     : 'bg-[#dc2626]/15 dark:bg-[#dc2626]/18'
