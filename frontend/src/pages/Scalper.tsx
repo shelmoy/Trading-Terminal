@@ -2901,10 +2901,13 @@ function ScalperWorkspace({ account }: { account: string | null }) {
                           <div
                             style={{
                               position: 'absolute',
-                              left: '68.28px',
-                              top: '44px',
-                              width: '28.8px',
-                              height: '30.24px',
+                              // BuySellButtons uses margin 16/52 and scale .8:
+                              // SELL=59.2px, qty starts at 76.2px and is 32px wide.
+                              // Keep the editor exactly over that canvas chip.
+                              left: '76px',
+                              top: '52px',
+                              width: '32px',
+                              height: '34px',
                               zIndex: 12,
                             }}
                             onClick={(e) => e.stopPropagation()}
@@ -2980,12 +2983,12 @@ function ScalperWorkspace({ account }: { account: string | null }) {
                           </div>
 
                           {/* Quick Lot & Qty Editor Bar right underneath [SELL] [Lots] [BUY] when focused */}
-                          {ceChartQtyFocused && (
+                          {false && ceChartQtyFocused && (
                             <div
                               style={{
                                 position: 'absolute',
-                                left: '14px',
-                                top: '77px',
+                              left: '114px',
+                              top: '52px',
                                 zIndex: 20,
                               }}
                               onMouseDown={(e) => {
@@ -3169,10 +3172,12 @@ function ScalperWorkspace({ account }: { account: string | null }) {
                           <div
                             style={{
                               position: 'absolute',
-                              left: '68.28px',
-                              top: '44px',
-                              width: '28.8px',
-                              height: '30.24px',
+                              // Keep the PE editor aligned with the same
+                              // on-chart SELL / quantity / BUY geometry.
+                              left: '76px',
+                              top: '52px',
+                              width: '32px',
+                              height: '34px',
                               zIndex: 12,
                             }}
                             onClick={(e) => e.stopPropagation()}
@@ -3248,12 +3253,12 @@ function ScalperWorkspace({ account }: { account: string | null }) {
                           </div>
 
                           {/* Quick Lot & Qty Editor Bar right underneath [SELL] [Lots] [BUY] when focused */}
-                          {peChartQtyFocused && (
+                          {false && peChartQtyFocused && (
                             <div
                               style={{
                                 position: 'absolute',
-                                left: '14px',
-                                top: '77px',
+                              left: '114px',
+                              top: '52px',
                                 zIndex: 20,
                               }}
                               onMouseDown={(e) => {
