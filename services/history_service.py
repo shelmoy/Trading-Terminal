@@ -422,6 +422,45 @@ def get_history(
             res = get_history_with_auth(
                 AUTH_TOKEN, FEED_TOKEN, broker_name, symbol, exchange, interval, start_date, end_date
             )
+            # Kotak Neo exposes MCX quotes and live ticks but currently refuses
+            # candle history for its mcx_fo segment. If the user has imported
+            # that contract into Historify, use the local candles instead of
+            # failing the chart. Never synthesize history from a single LTP.
+            if (
+                not res[0]
+                and str(broker_name or "").lower() == "kotak"
+                and str(exchange).upper() == "MCX"
+            ):
+                local_res = get_history_from_db(
+                    symbol=symbol,
+                    exchange=exchange,
+                    interval=interval,
+                    start_date=start_date,
+                    end_date=end_date,
+                )
+                if local_res[0]:
+                    logger.info(
+                        "Using Historify candles for Kotak MCX %s:%s after broker history refusal",
+                        exchange,
+                        symbol,
+                    )
+                    res = local_res
+                else:
+                    broker_message = (res[1] or {}).get("message") if isinstance(res[1], dict) else None
+                    local_message = (local_res[1] or {}).get("message") if isinstance(local_res[1], dict) else None
+                    res = (
+                        False,
+                        {
+                            "status": "error",
+                            "message": (
+                                f"Kotak Neo does not provide MCX candle history for {symbol}. "
+                                "Download this MCX contract through Historify to chart it locally. "
+                                f"Broker response: {broker_message or 'history unavailable'}. "
+                                f"Local lookup: {local_message or 'no local candles'}"
+                            ),
+                        },
+                        res[2],
+                    )
         # Case 2: Direct internal call with auth_token and broker
         elif auth_token and broker:
             res = get_history_with_auth(
