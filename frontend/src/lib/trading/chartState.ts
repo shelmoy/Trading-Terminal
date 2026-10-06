@@ -11,7 +11,7 @@
  * without a chart.
  */
 
-export type ChartStateKind = 'ready' | 'loading' | 'empty' | 'error'
+export type ChartStateKind = 'ready' | 'loading' | 'waiting' | 'empty' | 'error'
 
 export interface ChartStateView {
   kind: ChartStateKind
@@ -85,6 +85,15 @@ export function chartStateCopy(view: ChartStateView): ChartStateCopy {
   if (view.kind === 'loading') {
     const what = [symbol, interval].filter(Boolean).join(' ')
     return { title: what ? `Loading ${what}` : 'Loading chart', text: '', role: 'status' }
+  }
+  if (view.kind === 'waiting') {
+    return {
+      title: view.message
+        ? `Seconds history unavailable${interval ? ` · ${interval}` : ''}`
+        : `Waiting for live ticks${interval ? ` · ${interval}` : ''}`,
+      text: view.message ?? 'Seconds candles build from incoming market ticks and are saved for later historical viewing.',
+      role: 'status',
+    }
   }
   if (view.kind === 'empty') {
     return {

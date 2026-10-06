@@ -1794,6 +1794,7 @@ export function ChartPane({
           }
           onRetry={() => terminalRef.current?.retryLoad()}
           onDismiss={() => chartStateGate.current?.dismiss()}
+          onMinuteHistory={() => terminalRef.current?.setInterval('1m')}
         />
 
         {/*

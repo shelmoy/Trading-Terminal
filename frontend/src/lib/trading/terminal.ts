@@ -118,8 +118,10 @@ import {
 } from './priceAxis'
 import { parseRangeChoice, type RangeChoice, serializeRangeChoice } from './rangeChoice'
 import { replayTiming } from './replayTiming'
+import { loadSecondsHistory, rememberSecondsBar, rememberSecondsTick } from './secondsHistory'
 import {
   applySessionHours,
+  candleSessionAnchor,
   isTradingSessionOpenForCandles,
   isValidIntradaySessionBar,
 } from './sessionHours'
@@ -137,7 +139,7 @@ import {
   parseTerminalWorkspacePane,
   validateWorkspacePaneSupport,
 } from './workspaceState'
-import { normalizeCustomInterval } from './intervals'
+import { normalizeCustomInterval, STANDARD_SECOND_INTERVALS } from './intervals'
 import {
   RENKO_V2_DEFAULTS,
   renkoV2SettingsView,
@@ -303,7 +305,7 @@ export async function prefetchSymbolData(
       )
     }
     const existingBars = globalBarMemoryCache.get(memKey)
-    if (!existingBars || Date.now() - existingBars.time > 20_000) {
+    if (!interval.endsWith('s') && (!existingBars || Date.now() - existingBars.time > 20_000)) {
       tasks.push(
         (async () => {
           try {
@@ -1433,7 +1435,13 @@ export class TradingTerminal {
   /** The refusal last said for each study, so a rebuild does not say it again. */
   private readonly reportedRefusals = new Map<string, string>()
   private profileLayer: ProfileLayer | null = null
-  private availableIntervals: string[] = ['1m', '5m', '15m', '1h', 'D']
+  private availableIntervals: string[] = [...STANDARD_SECOND_INTERVALS, '1m', '5m', '15m', '1h', 'D']
+  private nativeSecondIntervals = new Set<string>()
+  private waitingForSecondsTicks = false
+
+  private secondsKey(symbol: string, exchange: string, interval: string): string {
+    return `${this.apiKey}:${symbol.toUpperCase()}:${exchange.toUpperCase()}:${interval}`
+  }
   /** The bottom bar's preset range for this pane, kept while its interval holds. */
   private rangeChoice: RangeChoice | null = null
   /** The load in flight, or the last one: what `showInterval` waits on. */
@@ -1971,7 +1979,7 @@ export class TradingTerminal {
     // History can finish during replay. Keep its live snapshot up to date,
     // but leave both displayed series and their timeline to the playhead.
     if (this.replayOwnsDisplay()) return
-    if (!this.price || !this.volume || !this.rawBars.length) return
+    if (!this.price || !this.volume) return
     // Always the raw bars. On a transformed chart type the chart forms the
     // elements from them, so a tick, history paging and replay all speak bars.
     this.price.setData(this.rawBars)
@@ -2039,6 +2047,10 @@ export class TradingTerminal {
         isValidIntradaySessionBar(sym.exchange, this.interval, b.time)
     )
     if (!next.length) return
+    if (this.waitingForSecondsTicks) {
+      this.waitingForSecondsTicks = false
+      this.cb.onChartState?.(CHART_READY)
+    }
     const chart = this.chart
     const before = snapshot.reason === 'prepend' ? chart?.getVisibleLogicalRange() : null
     const countBefore = this.shownCount
@@ -5873,6 +5885,10 @@ export class TradingTerminal {
     const found = tryResolveInterval(this.interval)
     const step = found?.bucketing.mode === 'interval' ? found.bucketing.seconds : 0
     const now = nowSec()
+    if (step > 0 && this.interval.endsWith('s')) {
+      const anchor = candleSessionAnchor(this.sym?.exchange || '', now)
+      return anchor + Math.floor((now - anchor) / step) * step
+    }
     return step > 0 ? Math.floor(now / step) * step : now
   }
 
@@ -6724,13 +6740,21 @@ export class TradingTerminal {
     if (this.position && this.posLine) this.posLine.setLeftLabel(this.posLabel())
     if (this.tradeBtns && !this.depthActive) this.tradeBtns.setMark(e.ltp)
     const tickTimeSec = e.timeSec || nowSec()
-    if (
-      this.builder &&
-      isTradingSessionOpenForCandles(this.sym.exchange, tickTimeSec, nowSec())
-    ) {
+    const sessionOpen = isTradingSessionOpenForCandles(this.sym.exchange, tickTimeSec, nowSec())
+    if (sessionOpen && !this.sym.synthetic) {
+      rememberSecondsTick(this.secondsKey(this.sym.symbol, this.sym.exchange, '1s'), tickTimeSec, e.ltp)
+    }
+    if (this.builder && sessionOpen) {
       const u = this.builder.onTick({ time: tickTimeSec, price: e.ltp, ltq: e.ltq })
       if (u) {
         this.liveBucket = u.bar.time
+        if (this.waitingForSecondsTicks) {
+          this.waitingForSecondsTicks = false
+          this.cb.onChartState?.(CHART_READY)
+        }
+        if (this.interval.endsWith('s')) {
+          rememberSecondsBar(this.secondsKey(this.sym.symbol, this.sym.exchange, this.interval), u.bar)
+        }
         // Key the upsert on time rather than the builder's isNew flag, so a
         // builder that ever disagrees with rawBars about the current bucket
         // overwrites that bar instead of appending a duplicate of it.
@@ -6772,7 +6796,9 @@ export class TradingTerminal {
     // Broker history is already aligned to the instrument's actual session.
     // Using one known bar as the congruent anchor preserves openings such as
     // 09:15 for hourly candles instead of snapping them to the Unix epoch.
-    const sessionAnchorSec = this.rawBars[this.rawBars.length - 1]?.time ?? 0
+    const sessionAnchorSec = this.interval.endsWith('s')
+      ? candleSessionAnchor(this.sym?.exchange || '', nowSec())
+      : (this.rawBars[this.rawBars.length - 1]?.time ?? 0)
     this.builder = sec
       ? new CandleBuilder({ intervalSec: sec, volumeMode: 'ltq-sum', sessionAnchorSec })
       : null
@@ -7145,6 +7171,7 @@ export class TradingTerminal {
     const ticket = ++this.loadTicket
     this.lastPick = pick
     this.loadOutcome = null
+    this.waitingForSecondsTicks = false
     const symKey = `${pick.symbol.toUpperCase()}:${(pick.exchange || '').toUpperCase()}`
     const memKey = `${symKey}:${this.interval}`
     const isCached = globalBarMemoryCache.has(memKey) && symbolMetadataCache.has(symKey)
@@ -7159,7 +7186,10 @@ export class TradingTerminal {
     let loaded = false
     try {
       const result = await this.loadSymbolRequest(pick, opts, ticket)
-      if (result && !this.destroyed && ticket === this.loadTicket) await this.chartToolsReady
+      // Workspace restoration must settle its tools before committing. Normal
+      // loads can expose the painted candles while studies restore separately.
+      if (result && this.preparingWorkspace && !this.destroyed && ticket === this.loadTicket)
+        await this.chartToolsReady
       loaded = result
       return loaded && !this.destroyed && ticket === this.loadTicket
     } finally {
@@ -7169,8 +7199,26 @@ export class TradingTerminal {
         this.syncAlertPause()
         this.showTradeButtons(loaded)
         // A silent load that fails says nothing: its caller falls back.
-        this.cb.onChartState?.(loaded ? CHART_READY : (this.loadOutcome ?? CHART_READY))
-        if (loaded && !this.preparingWorkspace) this.cb.onWorkspaceChange?.()
+        this.waitingForSecondsTicks = loaded && this.interval.endsWith('s') && this.rawBars.length === 0
+        this.cb.onChartState?.(
+          this.waitingForSecondsTicks
+            ? {
+                kind: 'waiting', symbol: pick.symbol, interval: this.interval,
+                message: !isTradingSessionOpenForCandles(pick.exchange || '', nowSec(), nowSec())
+                  ? 'The broker provides minute history, and no saved seconds candles exist for this range. Recorded ticks will be available here after future sessions. You can view the available 1-minute history now.'
+                  : undefined,
+              }
+            : loaded ? CHART_READY : (this.loadOutcome ?? CHART_READY)
+        )
+        if (loaded && !this.preparingWorkspace) {
+          // Autosave needs restored drawings and studies, even though candles
+          // and order controls can be ready before those modules finish.
+          void this.chartToolsReady.then(() => {
+            if (!this.destroyed && ticket === this.loadTicket) this.cb.onWorkspaceChange?.()
+          }).catch((error) => {
+            if (!this.destroyed && ticket === this.loadTicket) this.toast(this.cleanError(error), 'err')
+          })
+        }
       }
     }
   }
@@ -7244,6 +7292,22 @@ export class TradingTerminal {
     if (pick.expression === true || (!pick.exchange && isChartExpression(pick.symbol))) {
       return await this.loadExpression(pick.symbol, ticket, opts)
     }
+    // History and symbol metadata are independent. Start the slower broker
+    // request immediately instead of adding a metadata round-trip in front.
+    this.builder = null
+    const historyStep = intervalSeconds(this.interval)
+    const anchor = this.interval.endsWith('s') ? candleSessionAnchor(pick.exchange || '', nowSec()) : 0
+    const historyTo = this.interval.endsWith('s') && historyStep
+      ? anchor + Math.floor((nowSec() - anchor) / historyStep) * historyStep
+      : this.gridNow()
+    const initialRequest = {
+      symbol: pick.symbol, exchange: pick.exchange, interval: this.interval,
+      from: historyTo - lookbackDays(this.interval) * 86400, to: historyTo,
+    }
+    // Capture rejection immediately; a strict metadata failure may abandon
+    // this load before it consumes the history result.
+    const earlyHistory = (this.data ? this.data.load(initialRequest) : feed.getBars(initialRequest))
+      .then((rows) => ({ ok: true as const, rows }), (error: unknown) => ({ ok: false as const, error }))
     // authoritative metadata (lotsize / tick_size / freeze_qty)
     const symKey = `${pick.symbol.toUpperCase()}:${(pick.exchange || '').toUpperCase()}`
     const cachedMeta = symbolMetadataCache.get(symKey)
@@ -7317,7 +7381,7 @@ export class TradingTerminal {
     if (this.link && this.chart) this.link.setSymbol(this.chart, `${exchange}:${this.sym.symbol}`)
 
     // history
-    const to = this.gridNow()
+    const to = historyTo
     this.lastLtp = null
     this.liveBucket = null
     this.noMoreHistory = false
@@ -7331,13 +7395,24 @@ export class TradingTerminal {
         to,
       }
       const memKey = `${this.sym.symbol.toUpperCase()}:${(this.sym.exchange || '').toUpperCase()}:${this.interval}`
-      const warmEntry = globalBarMemoryCache.get(memKey)
+      const warmEntry = this.interval.endsWith('s') ? undefined : globalBarMemoryCache.get(memKey)
       const usedStaleWarm = Boolean(warmEntry && Date.now() - warmEntry.time > 2_000)
-      const loadFn = () => (this.data ? this.data.load(request) : feed.getBars(request))
+      let consumedEarlyHistory = false
+      const loadFn = async (): Promise<readonly Bar[]> => {
+        if (!consumedEarlyHistory && request.symbol === initialRequest.symbol &&
+            request.exchange === initialRequest.exchange && request.interval === initialRequest.interval) {
+          consumedEarlyHistory = true
+          const result = await earlyHistory
+          if (!result.ok) throw result.error
+          return result.rows
+        }
+        return this.data ? this.data.load(request) : feed.getBars(request)
+      }
       try {
         bars = await loadFn()
       } catch (firstErr) {
         if (this.destroyed || ticket !== this.loadTicket) return false
+        if (this.interval.endsWith('s')) throw firstErr
         await new Promise((r) => setTimeout(r, 350))
         if (this.destroyed || ticket !== this.loadTicket) return false
         bars = await loadFn().catch(() => {
@@ -7357,21 +7432,6 @@ export class TradingTerminal {
     } catch (e) {
       if (this.destroyed || ticket !== this.loadTicket) return false
       bars = []
-      // If a seconds interval failed at broker, attempt a silent fallback to 1m bars
-      if (this.interval.endsWith('s')) {
-        try {
-          const fallbackReq = {
-            symbol: this.sym.symbol,
-            exchange: this.sym.exchange,
-            interval: '1m',
-            from: to - 86400,
-            to,
-          }
-          bars = this.data ? await this.data.load(fallbackReq) : await feed.getBars(fallbackReq)
-        } catch {
-          bars = []
-        }
-      }
       if (!bars?.length && !this.interval.endsWith('s')) {
         this.rawBars = []
         if (!opts.silent)
@@ -7394,32 +7454,9 @@ export class TradingTerminal {
         b.open > 0 &&
         isValidIntradaySessionBar(symExchange, symInterval, b.time)
     )
-    if (!this.rawBars.length && this.interval.endsWith('s')) {
-      // Fallback: try fetching 1m bars to seed the chart for seconds timeframe
-      try {
-        const fallbackReq = {
-          symbol: this.sym.symbol,
-          exchange: symExchange,
-          interval: '1m',
-          from: to - 86400,
-          to,
-        }
-        const m1Bars = this.data ? await this.data.load(fallbackReq) : await feed.getBars(fallbackReq)
-        this.rawBars = (m1Bars || []).filter(
-          (b) =>
-            b &&
-            typeof b.close === 'number' &&
-            b.close > 0 &&
-            b.close < 10000000 &&
-            Math.round(b.close * 100) / 100 !== 21474836.48 &&
-            b.open > 0 &&
-            isValidIntradaySessionBar(symExchange, '1m', b.time)
-        )
-      } catch {
-        /* ignore fallback error */
-      }
-    }
-    if (!this.rawBars.length) {
+    // An empty seconds history is expected on brokers with minute-only history.
+    // Keep the controller on the selected interval and start its live builder.
+    if (!this.rawBars.length && !this.interval.endsWith('s')) {
       if (!opts.silent) {
         const error = this.data?.getState().error
         this.loadOutcome = error
@@ -7428,7 +7465,7 @@ export class TradingTerminal {
       }
       return false
     }
-    this.lastLtp = this.rawBars[this.rawBars.length - 1].close
+    this.lastLtp = this.rawBars[this.rawBars.length - 1]?.close ?? null
     const key = this.dataKey({
       symbol: this.sym.symbol,
       exchange: this.sym.exchange,
@@ -7441,7 +7478,7 @@ export class TradingTerminal {
       this.setPriceData()
       this.installComparisons()
     }
-    this.cb.onLtp(this.lastLtp)
+    if (this.lastLtp != null) this.cb.onLtp(this.lastLtp)
     this.cb.onSymbolLoaded(this.sym)
 
     // live subscription (swap the previous symbol's stream)
@@ -7455,8 +7492,12 @@ export class TradingTerminal {
     const norm = normalizeCustomInterval(iv) || iv
     if (norm === this.interval) return norm
     if (!this.availableIntervals.includes(norm)) {
-      this.toast(`The connected feed does not support ${iv}`, 'err')
-      return this.interval
+      if (normalizeCustomInterval(norm)) {
+        this.availableIntervals.push(norm)
+      } else {
+        this.toast(`The connected feed does not support ${iv}`, 'err')
+        return this.interval
+      }
     }
     iv = norm
     if (
@@ -8157,6 +8198,20 @@ export class TradingTerminal {
     baseCachedBars.getBars = async (request): Promise<Bar[]> => {
       const reqFrom = request.from ?? 0
       const reqTo = request.to ?? 0
+      if (request.interval.endsWith('s')) {
+        const key = this.secondsKey(request.symbol, request.exchange || '', request.interval)
+        const supportsNative = this.nativeSecondIntervals.has(request.interval)
+        const [observed, native] = await Promise.all([
+          loadSecondsHistory(key, request.exchange || '', intervalSeconds(request.interval)!, reqFrom, reqTo),
+          supportsNative ? origGetBars(request) : Promise.resolve([] as Bar[]),
+        ])
+        // Standard seconds are offered by the UI even when broker history has
+        // none. Do not send unsupported REST requests or use old minute seeds.
+        if (!supportsNative) return observed
+        const merged = new Map(native.map((bar) => [bar.time, bar]))
+        for (const bar of observed) merged.set(bar.time, bar)
+        return [...merged.values()].sort((a, b) => a.time - b.time)
+      }
       const isInitialWindow =
         !request.noCache && reqTo - reqFrom >= 3600 && reqTo >= nowSec() - 3600
       const memKey = `${request.symbol.toUpperCase()}:${(request.exchange || '').toUpperCase()}:${request.interval}`
@@ -8265,11 +8320,15 @@ export class TradingTerminal {
         if (cachedIv) {
           const parsedIv = JSON.parse(cachedIv) as IntervalData
           if (parsedIv && typeof parsedIv === 'object') {
+            this.nativeSecondIntervals = new Set(parsedIv.seconds || [])
             groups = intervalGroups(parsedIv)
             // Refresh intervals silently in background
             void this.api<{ data?: IntervalData }>('intervals')
               .then((j) => {
-                if (j?.data) localStorage.setItem(INTERVALS_CACHE_KEY, JSON.stringify(j.data))
+                if (j?.data) {
+                  this.nativeSecondIntervals = new Set(j.data.seconds || [])
+                  localStorage.setItem(INTERVALS_CACHE_KEY, JSON.stringify(j.data))
+                }
               })
               .catch(() => {})
           }
@@ -8279,8 +8338,26 @@ export class TradingTerminal {
       }
     }
     if (!groups) {
+      if (!this.initialWorkspacePane) {
+        groups = intervalGroups({ minutes: ['1m', '5m', '15m'], hours: ['1h'], days: ['D'] })
+        // The interval catalogue must not block the first candle request.
+        void this.api<{ data?: IntervalData }>('intervals').then((j) => {
+          if (this.destroyed || !j.data) return
+          this.nativeSecondIntervals = new Set(j.data.seconds || [])
+          const freshGroups = intervalGroups(j.data)
+          this.availableIntervals = freshGroups.flatMap((group) => group.items)
+          this.cb.onReady({ intervalGroups: freshGroups, interval: this.interval, chartType: this.ctype })
+          if (this.nativeSecondIntervals.has(this.interval)) this.reconcileNow()
+          try {
+            localStorage.setItem(INTERVALS_CACHE_KEY, JSON.stringify(j.data))
+          } catch { /* storage can be disabled */ }
+        }).catch(() => {})
+      }
+    }
+    if (!groups) {
       try {
         const j = await this.api<{ data?: IntervalData }>('intervals')
+        this.nativeSecondIntervals = new Set(j.data?.seconds || [])
         if (j?.data && typeof window !== 'undefined') {
           try {
             localStorage.setItem(INTERVALS_CACHE_KEY, JSON.stringify(j.data))

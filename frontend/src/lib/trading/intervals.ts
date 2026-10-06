@@ -95,7 +95,7 @@ export interface IntervalGroup {
   items: string[]
 }
 
-export const STANDARD_SECOND_INTERVALS = ['5s', '15s', '30s', '40s', '50s']
+export const STANDARD_SECOND_INTERVALS = ['5s', '10s', '15s', '20s', '30s', '40s', '50s']
 
 /** Broker interval payload → ordered, non-empty groups for the timeframe menu. */
 export function intervalGroups(data: IntervalData): IntervalGroup[] {

@@ -15,12 +15,13 @@ interface Props {
   view: ChartStateView | null
   onRetry(): void
   onDismiss(): void
+  onMinuteHistory?(): void
 }
 
 const BUTTON =
   'rounded border border-border px-2 py-1 text-xs hover:bg-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring'
 
-export function ChartStateOverlay({ view, onRetry, onDismiss }: Props) {
+export function ChartStateOverlay({ view, onRetry, onDismiss, onMinuteHistory }: Props) {
   if (!view || view.kind === 'ready') return null
   const copy = chartStateCopy(view)
   const loading = view.kind === 'loading'
@@ -57,6 +58,11 @@ export function ChartStateOverlay({ view, onRetry, onDismiss }: Props) {
               {copy.text}
             </p>
             <div className="mt-3 flex justify-center gap-2">
+              {view.kind === 'waiting' && onMinuteHistory && (
+                <button type="button" className={BUTTON} onClick={onMinuteHistory}>
+                  View 1-minute history
+                </button>
+              )}
               <button type="button" className={BUTTON} onClick={onRetry}>
                 Try again
               </button>

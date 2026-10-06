@@ -52,6 +52,7 @@ import { cn } from '@/lib/utils'
 import type { OptionData } from '@/types/option-chain'
 import { PlaceOrderDialog } from './PlaceOrderDialog'
 import { PANEL_HEADER, PanelShell } from './panelShell'
+import './scalper-surfaces.css'
 
 /** Survives a reload so the panel reopens on the contract the user was watching. */
 const PREFS_KEY = 'oa-trading-optionchain'
@@ -641,7 +642,7 @@ export function OptionChainPanel({ apiKey, onPick, activeSymbol }: Props) {
       defaultWidth={340}
     >
       {/* Header: the contract. Global Search across segments & Segment selector */}
-      <div className={PANEL_HEADER}>
+      <div className={`${PANEL_HEADER} option-chain-header`}>
         <Select
           value={prefs.exchange}
           onValueChange={(value) =>
@@ -759,7 +760,7 @@ export function OptionChainPanel({ apiKey, onPick, activeSymbol }: Props) {
       </div>
 
       {/* Second band: expiry and what the side columns are showing */}
-      <div className="flex shrink-0 items-center gap-1.5 border-b px-2 py-1.5">
+      <div className="option-chain-controls flex shrink-0 items-center gap-1.5 border-b px-2 py-1.5">
         <Select
           value={prefs.expiry}
           onValueChange={(value) => setPrefs((p) => ({ ...p, expiry: value }))}
@@ -811,7 +812,7 @@ export function OptionChainPanel({ apiKey, onPick, activeSymbol }: Props) {
 
       {/* Spot, ATM, PCR, Support & Resistance Summary */}
       {chain && (
-        <div className="flex flex-col border-b bg-muted/10 text-[11px]">
+        <div className="option-chain-summary flex flex-col border-b bg-muted/10 text-[11px]">
           <div className="flex shrink-0 items-center justify-between px-2 py-1">
             <span className="flex items-center gap-1">
               <span className="text-muted-foreground font-medium">Spot</span>
@@ -920,7 +921,7 @@ export function OptionChainPanel({ apiKey, onPick, activeSymbol }: Props) {
             return (
               <div
                 key={row.strike}
-                className={cn(ROW_GRID, 'items-stretch border-b border-border/40 text-[12px]')}
+                className={cn(ROW_GRID, 'option-chain-row items-stretch border-b border-border/40 text-[12px]')}
               >
                 {/* Calls cell: Right aligned against the strike */}
                 <div

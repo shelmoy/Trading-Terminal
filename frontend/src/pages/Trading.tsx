@@ -99,7 +99,6 @@ import {
   type AlertFire,
   type AlertsView,
   type DrawStats,
-  prefetchSymbolData,
   type SearchRow,
   type TradingTerminal,
 } from '@/lib/trading/terminal'
@@ -880,23 +879,7 @@ function TradingWorkspace({ account }: { account: string | null }) {
         }
         setApiKey(keyRes.api_key)
         setWsUrl(cfgRes.websocket_url || 'ws://127.0.0.1:8765')
-        // Instant 0-1ms chart switching: prefetch major indices immediately
-        const key = keyRes.api_key
-        if (key) {
-          void prefetchSymbolData(key, 'NIFTY', 'NSE_INDEX', '5m')
-          void prefetchSymbolData(key, 'NIFTY', 'NSE_INDEX', '1m')
-          void prefetchSymbolData(key, 'BANKNIFTY', 'NSE_INDEX', '5m')
-          void prefetchSymbolData(key, 'BANKNIFTY', 'NSE_INDEX', '1m')
-          void prefetchSymbolData(key, 'SENSEX', 'BSE_INDEX', '5m')
-          void prefetchSymbolData(key, 'SENSEX', 'BSE_INDEX', '1m')
-
-          // Instant 0-1ms option chain switching: prefetch option chains for major indices
-          void OptionChainPanelPromise.then((m) => {
-            if (m.prefetchIndicesOptionChains) {
-              void m.prefetchIndicesOptionChains(key)
-            }
-          })
-        }
+        // Visible panes own history requests; speculative index loads compete for broker capacity.
       } catch {
         if (alive) setNoApiKey(true)
       }

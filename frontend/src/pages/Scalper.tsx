@@ -8,26 +8,13 @@
  * WorkspaceReplayBar, TradingDock, GridDividers) without modifying a single
  * line of the core SDK or /trading page.
  *
- * Zero-latency architecture:
- *   • Direct WebSocket streaming via TradingTerminal (0-1 ms tick-to-canvas)
- *   • Parallel candle + option-chain prefetching via prefetchSymbolData
+ * Live data architecture:
+ *   • Direct WebSocket streaming via TradingTerminal
+ *   • Shared compact strike selectors with persistent chart settings
  *   • Dedicated per-pane storage namespace (oa-trading-scalper-p0/p1/p2)
  */
 
-import {
-  Activity,
-  Columns3,
-  Eye,
-  FileSpreadsheet,
-  FolderOpen,
-  LayoutGrid,
-  Link2 as LinkIcon,
-  Maximize2,
-  Minimize2,
-  RefreshCw,
-  TrendingUp,
-  Zap,
-} from 'lucide-react'
+import { Activity, Eye, Link2 as LinkIcon, Maximize2, Minimize2 } from 'lucide-react'
 import { type ChartObjects, createLinkGroup, type LinkGroup } from 'openalgo-charts'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { apiClient } from '@/api/client'
@@ -41,17 +28,16 @@ import {
   ChartBottomBar,
 } from '@/components/trading/ChartBottomBar'
 import { ChartPane } from '@/components/trading/ChartPane'
+import { ScalperHeader } from '@/components/trading/ScalperHeader'
+import { ScalperStrikePicker } from '@/components/trading/ScalperStrikePicker'
+import '@/components/trading/scalper-surfaces.css'
 import { DrawingRail } from '@/components/trading/DrawingRail'
 import {
   type ChartOrderBridgeRef,
   ChartOrderBridgeContext,
 } from '@/components/trading/dock/chartOrderBridge'
 import { DOCK_ID } from '@/components/trading/dock/DockShell'
-import {
-  type DockTab,
-  escapeTarget,
-  writeDockTab,
-} from '@/components/trading/dock/dockState'
+import { type DockTab, escapeTarget, writeDockTab } from '@/components/trading/dock/dockState'
 import { TradingDock } from '@/components/trading/dock/TradingDock'
 import { GridDividers } from '@/components/trading/GridDividers'
 import { IndicatorTemplates } from '@/components/trading/IndicatorTemplates'
@@ -92,7 +78,6 @@ import {
   type AlertsView,
   type DrawStats,
   persistFastCache,
-  prefetchSymbolData,
   type SearchRow,
   symbolMetadataCache,
   type TradingTerminal,
@@ -107,15 +92,6 @@ import { useThemeStore } from '@/stores/themeStore'
 import type { OptionChainRow, ScalpingProduct } from '@/types/scalping'
 import { showToast } from '@/utils/toast'
 import type { MagnetMode } from 'openalgo-charts/draw'
-
-/** Compact OI / Volume formatting in Indian Lakhs / Crores (matches OptionChainPanel.tsx) */
-function formatCompactOi(value: number | undefined | null): string {
-  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return '-'
-  if (value >= 1e7) return `${(value / 1e7).toFixed(2)}Cr`
-  if (value >= 1e5) return `${(value / 1e5).toFixed(2)}L`
-  if (value >= 1e3) return `${(value / 1e3).toFixed(1)}K`
-  return String(Math.round(value))
-}
 
 // Lazy-loaded side panels (identical to Trading.tsx)
 const AgentPanel = lazy(() =>
@@ -507,7 +483,6 @@ function writeIndexSnapshot(underlyingId: string, snap: IndexSnapshot): void {
     /* ignore quota errors */
   }
 }
-
 // Pre-seed default underlying and ATM CE/PE before terminals boot so refresh is 0ms
 ;(function preseedInitialPanes() {
   if (typeof window === 'undefined') return
@@ -569,10 +544,10 @@ function ScalperWorkspace({ account }: { account: string | null }) {
   const [armed, setArmed] = useState<boolean>(readArmed)
   const chartTradeColors = useMemo(
     () => ({
-      buy: '#16a34a',
-      buyHover: '#15803d',
-      sell: '#dc2626',
-      sellHover: '#b91c1c',
+      buy: '#0f766e',
+      buyHover: '#115e59',
+      sell: '#9f5967',
+      sellHover: '#854957',
       text: '#ffffff',
       border: themeMode === 'light' ? 'rgba(0,0,0,0.14)' : 'rgba(255,255,255,0.14)',
     }),
@@ -609,12 +584,6 @@ function ScalperWorkspace({ account }: { account: string | null }) {
   const [peStrike, setPeStrike] = useState<string>(() => initialSnap?.peStrike ?? '')
   const [ceChainOpen, setCeChainOpen] = useState(false)
   const [peChainOpen, setPeChainOpen] = useState(false)
-  const [ceIndexOpen, setCeIndexOpen] = useState(false)
-  const [peIndexOpen, setPeIndexOpen] = useState(false)
-  const ceListRef = useRef<HTMLDivElement | null>(null)
-  const peListRef = useRef<HTMLDivElement | null>(null)
-  const ceDidScrollRef = useRef(false)
-  const peDidScrollRef = useRef(false)
   const [resolvedCloses, setResolvedCloses] = useState<Record<string, number>>({})
   const [indexHistorySnapshots, setIndexHistorySnapshots] = useState<
     Record<string, { ltp: number; prevClose: number }>
@@ -658,7 +627,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
   })
 
   // Margin & Live P&L summary in Scalper header
-  const [marginText, setMarginText] = useState<string>('₹1.00Cr')
+  const [marginText, setMarginText] = useState<string>('—')
   const [pnlValue, setPnlValue] = useState<number>(0)
   const [orderBusy, setOrderBusy] = useState<Record<string, boolean>>({})
   const [lastOrderMs, setLastOrderMs] = useState<number | null>(null)
@@ -803,7 +772,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
           applyTradeColors?: () => void
         }
         const syncScalperTradeBtns = () => {
-          termInternal.tradeBtns?.setColors('#16a34a', '#dc2626')
+          termInternal.tradeBtns?.setColors('#0f766e', '#9f5967')
         }
         termInternal.applyTradeColors = syncScalperTradeBtns
         syncScalperTradeBtns()
@@ -1270,10 +1239,8 @@ function ScalperWorkspace({ account }: { account: string | null }) {
       if (snap.peStrike) setPeStrike(snap.peStrike)
 
       // Immediately trigger 0ms load on SPOT, CE, PE from warm snapshot
-      const ceRowSnap =
-        snap.chain.find((r) => String(r.strike) === snap.ceStrike) ?? snap.chain[0]
-      const peRowSnap =
-        snap.chain.find((r) => String(r.strike) === snap.peStrike) ?? snap.chain[0]
+      const ceRowSnap = snap.chain.find((r) => String(r.strike) === snap.ceStrike) ?? snap.chain[0]
+      const peRowSnap = snap.chain.find((r) => String(r.strike) === snap.peStrike) ?? snap.chain[0]
       if (ceRowSnap?.ce?.symbol) {
         seedPaneDefaultStorage('scalper-p1', ceRowSnap.ce.symbol, preset.foExchange, true)
         void terminalsRef.current['scalper-p1']?.loadSymbol({
@@ -1318,12 +1285,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
         loadedUnderlyingKeyRef.current = `${preset.id}:${targetExp}`
 
         // Chain getStrikes immediately in the same async pass (zero React render waterfall)
-        const strikesRes = await scalpingApi.getStrikes(
-          preset.id,
-          preset.foExchange,
-          targetExp,
-          25
-        )
+        const strikesRes = await scalpingApi.getStrikes(preset.id, preset.foExchange, targetExp, 25)
         if (!alive) return
         const rows = strikesRes.chain ?? []
         // Only auto-switch strikes if we didn't already load from a warm snapshot for this underlying
@@ -1383,140 +1345,8 @@ function ScalperWorkspace({ account }: { account: string | null }) {
     }
   }, [activeUnderlying, selectedExpiry, expiries, applyStrikesToPanes])
 
-  /* ── Background Pre-Warmer for All 5 Indices (0-1ms Index Switch) ──────── */
-  useEffect(() => {
-    if (!apiKey) return
-    let cancelled = false
-    // Each pane remembers its own timeframe. Prefetching a hardcoded '1m'
-    // missed the cache entirely for a pane switched to 3m/5m/30s.
-    const ivOf = (paneId: ScalperPaneId): string => {
-      try {
-        return localStorage.getItem(`oa-trading-${paneId}-interval`) || '1m'
-      } catch {
-        return '1m'
-      }
-    }
-    const runWarm = async () => {
-      const spotIv = ivOf('scalper-p0')
-      const ceIv = ivOf('scalper-p1')
-      const peIv = ivOf('scalper-p2')
-      // First ensure active underlying's SPOT, CE, PE bars are persisted in fastCache
-      const activeSnap = readIndexSnapshot(activeUnderlying.id)
-      if (activeSnap && activeSnap.chain.length > 0) {
-        const ceR =
-          activeSnap.chain.find((r) => String(r.strike) === activeSnap.ceStrike) ??
-          activeSnap.chain[0]
-        const peR =
-          activeSnap.chain.find((r) => String(r.strike) === activeSnap.peStrike) ??
-          activeSnap.chain[0]
-        void prefetchSymbolData(
-          apiKey,
-          activeUnderlying.spotSymbol,
-          activeUnderlying.spotExchange,
-          spotIv
-        )
-        if (ceR?.ce?.symbol) {
-          void prefetchSymbolData(apiKey, ceR.ce.symbol, activeUnderlying.foExchange, ceIv)
-        }
-        if (peR?.pe?.symbol) {
-          void prefetchSymbolData(apiKey, peR.pe.symbol, activeUnderlying.foExchange, peIv)
-        }
-      }
-
-      // Next, quietly pre-warm the other 4 indices in the background so switching
-      // from the top header dropdown is an instant 0-1ms memory hit
-      for (const preset of UNDERLYINGS) {
-        if (cancelled) return
-        if (preset.id === activeUnderlying.id) continue
-        await new Promise((r) => setTimeout(r, 900))
-        if (cancelled) return
-        try {
-          let snap = readIndexSnapshot(preset.id)
-          if (!snap || Date.now() - snap.updatedAt > 5 * 60_000 || snap.chain.length === 0) {
-            const expRes = await scalpingApi.getExpiry(preset.id, preset.foExchange, 'options')
-            if (cancelled) return
-            const list = expRes.data ?? []
-            if (list.length === 0) continue
-            const exp = list[0]
-            const strikesRes = await scalpingApi.getStrikes(
-              preset.id,
-              preset.foExchange,
-              exp,
-              25
-            )
-            if (cancelled) return
-            const rows = strikesRes.chain ?? []
-            if (rows.length === 0) continue
-            const atmVal =
-              strikesRes.atm_strike != null
-                ? strikesRes.atm_strike
-                : rows[Math.floor(rows.length / 2)].strike
-            const atmRow = rows.find((r) => r.strike === atmVal) ?? rows[0]
-            const strikeStr = String(atmRow.strike)
-            const foExch = strikesRes.fo_exchange || preset.foExchange
-            const foExchUpper = foExch.toUpperCase()
-            for (const r of rows) {
-              if (r.ce?.symbol) {
-                symbolMetadataCache.set(`${r.ce.symbol.toUpperCase()}:${foExchUpper}`, {
-                  symbol: r.ce.symbol,
-                  exchange: foExch,
-                  lotsize: r.ce.lotsize ?? preset.defaultLotSize,
-                  tick_size: r.ce.tick_size ?? 0.05,
-                })
-              }
-              if (r.pe?.symbol) {
-                symbolMetadataCache.set(`${r.pe.symbol.toUpperCase()}:${foExchUpper}`, {
-                  symbol: r.pe.symbol,
-                  exchange: foExch,
-                  lotsize: r.pe.lotsize ?? preset.defaultLotSize,
-                  tick_size: r.pe.tick_size ?? 0.05,
-                })
-              }
-            }
-            snap = {
-              expiries: list,
-              selectedExpiry: exp,
-              chain: rows,
-              atmStrike: atmVal,
-              ceStrike: strikeStr,
-              peStrike: strikeStr,
-              updatedAt: Date.now(),
-            }
-            writeIndexSnapshot(preset.id, snap)
-            persistFastCache()
-          }
-
-          // Pre-warm bars for this index's SPOT + ATM CE + ATM PE (burst of 3)
-          const ceRow =
-            snap.chain.find((r) => String(r.strike) === snap?.ceStrike) ?? snap.chain[0]
-          const peRow =
-            snap.chain.find((r) => String(r.strike) === snap?.peStrike) ?? snap.chain[0]
-          await Promise.all([
-            prefetchSymbolData(apiKey, preset.spotSymbol, preset.spotExchange, spotIv),
-            ceRow?.ce?.symbol
-              ? prefetchSymbolData(apiKey, ceRow.ce.symbol, preset.foExchange, ceIv)
-              : Promise.resolve(),
-            peRow?.pe?.symbol
-              ? prefetchSymbolData(apiKey, peRow.pe.symbol, preset.foExchange, peIv)
-              : Promise.resolve(),
-          ])
-        } catch {
-          /* ignore background pre-warm errors */
-        }
-      }
-    }
-    const timer = setTimeout(() => void runWarm(), 1500)
-    // Keep every index warm all day. Each pass is a delta (tail-only) fetch,
-    // so it costs a few rows per symbol and is skipped while the tab is hidden.
-    const keepWarm = setInterval(() => {
-      if (!cancelled && document.visibilityState === 'visible') void runWarm()
-    }, 60_000)
-    return () => {
-      cancelled = true
-      clearTimeout(timer)
-      clearInterval(keepWarm)
-    }
-  }, [apiKey, activeUnderlying.id, activeUnderlying.spotSymbol, activeUnderlying.spotExchange, activeUnderlying.foExchange])
+  // Fetch history for visible panes and explicit selections. Warming every index
+  // consumed broker history slots needed by the active SPOT, CE and PE charts.
 
   /* ── Live Option Chain Hook (LTP + OI + Volume + Greeks via WebSocket) ── */
   const {
@@ -1565,8 +1395,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
     if (!apiKey) return
     let alive = true
     const pad = (n: number) => String(n).padStart(2, '0')
-    const fmtDate = (d: Date) =>
-      `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+    const fmtDate = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
     const startDate = fmtDate(new Date(Date.now() - 20 * 86400_000))
     const endDate = fmtDate(new Date())
 
@@ -1679,7 +1508,9 @@ function ScalperWorkspace({ account }: { account: string | null }) {
 
       // Priority: 0-1ms WebSocket liveItem -> OptionChain live underlying_ltp -> MultiQuotes -> History fallback
       const wsLtp =
-        liveItem?._dataSource === 'websocket' && typeof liveItem.ltp === 'number' && liveItem.ltp > 0
+        liveItem?._dataSource === 'websocket' &&
+        typeof liveItem.ltp === 'number' &&
+        liveItem.ltp > 0
           ? liveItem.ltp
           : 0
       const ltp =
@@ -1694,18 +1525,17 @@ function ScalperWorkspace({ account }: { account: string | null }) {
       const histPrev = hist?.prevClose ?? 0
       const mqOpen = typeof mq?.open === 'number' ? mq.open : 0
 
-      const prevClose =
-        !needsPreviousClose(mqPrev, ltp)
-          ? mqPrev
-          : !needsPreviousClose(chainSpotPrev, ltp)
-            ? chainSpotPrev
-            : resolvedPrev > 0 && resolvedPrev !== ltp
-              ? resolvedPrev
-              : histPrev > 0 && histPrev !== ltp
-                ? histPrev
-                : mqOpen > 0 && mqOpen !== ltp
-                  ? mqOpen
-                  : resolvedPrev || histPrev || mqPrev || chainSpotPrev || 0
+      const prevClose = !needsPreviousClose(mqPrev, ltp)
+        ? mqPrev
+        : !needsPreviousClose(chainSpotPrev, ltp)
+          ? chainSpotPrev
+          : resolvedPrev > 0 && resolvedPrev !== ltp
+            ? resolvedPrev
+            : histPrev > 0 && histPrev !== ltp
+              ? histPrev
+              : mqOpen > 0 && mqOpen !== ltp
+                ? mqOpen
+                : resolvedPrev || histPrev || mqPrev || chainSpotPrev || 0
 
       const hasChange = ltp > 0 && prevClose > 0
       const change = hasChange ? ltp - prevClose : null
@@ -1752,7 +1582,13 @@ function ScalperWorkspace({ account }: { account: string | null }) {
       )
     }
     return strikes[Math.floor(strikes.length / 2)] ?? null
-  }, [liveOptionChain?.atm_strike, liveOptionChain?.underlying_ltp, liveOptionChain?.chain, atmStrike, chain])
+  }, [
+    liveOptionChain?.atm_strike,
+    liveOptionChain?.underlying_ltp,
+    liveOptionChain?.chain,
+    atmStrike,
+    chain,
+  ])
 
   const enrichedChain = useMemo(() => {
     const byStrike = new Map<
@@ -1923,9 +1759,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
 
     const sorted = Array.from(byStrike.values()).sort((a, b) => a.strike - b.strike)
     const atmIdx =
-      effectiveAtmStrike != null
-        ? sorted.findIndex((r) => r.strike === effectiveAtmStrike)
-        : -1
+      effectiveAtmStrike != null ? sorted.findIndex((r) => r.strike === effectiveAtmStrike) : -1
 
     return sorted.map((r, idx) => {
       const dist = atmIdx >= 0 ? idx - atmIdx : 0
@@ -2026,7 +1860,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
     }
   }, [enrichedChain, indexQuotesById])
 
-  const { peakCeOi, peakPeOi, maxCeOiStrike, maxPeOiStrike, maxPainStrike, pcr } = useMemo(() => {
+  const { maxPainStrike } = useMemo(() => {
     let maxCe = 1
     let maxPe = 1
     let sumCe = 0
@@ -2080,47 +1914,6 @@ function ScalperWorkspace({ account }: { account: string | null }) {
     }
   }, [enrichedChain, effectiveAtmStrike])
 
-  // One-shot ATM scroll helper: centers ATM strike ONLY when opening the dropdown or clicking ATM
-  const scrollCeToAtm = useCallback(() => {
-    requestAnimationFrame(() => {
-      const el = ceListRef.current?.querySelector('[data-atm="true"]')
-      if (el instanceof HTMLElement) {
-        el.scrollIntoView({ block: 'center', behavior: 'instant' })
-      }
-    })
-  }, [])
-
-  const scrollPeToAtm = useCallback(() => {
-    requestAnimationFrame(() => {
-      const el = peListRef.current?.querySelector('[data-atm="true"]')
-      if (el instanceof HTMLElement) {
-        el.scrollIntoView({ block: 'center', behavior: 'instant' })
-      }
-    })
-  }, [])
-
-  useEffect(() => {
-    if (!ceChainOpen) {
-      ceDidScrollRef.current = false
-      return
-    }
-    if (!ceDidScrollRef.current && enrichedChain.length > 0) {
-      ceDidScrollRef.current = true
-      scrollCeToAtm()
-    }
-  }, [ceChainOpen, enrichedChain.length, scrollCeToAtm])
-
-  useEffect(() => {
-    if (!peChainOpen) {
-      peDidScrollRef.current = false
-      return
-    }
-    if (!peDidScrollRef.current && enrichedChain.length > 0) {
-      peDidScrollRef.current = true
-      scrollPeToAtm()
-    }
-  }, [peChainOpen, enrichedChain.length, scrollPeToAtm])
-
   // If liveOptionChain resolved before scalpingApi.getStrikes, seed default ATM CE/PE strikes
   useEffect(() => {
     if (!ceStrike && !peStrike && enrichedChain.length > 0 && effectiveAtmStrike != null) {
@@ -2131,61 +1924,56 @@ function ScalperWorkspace({ account }: { account: string | null }) {
   }, [ceStrike, peStrike, enrichedChain.length, effectiveAtmStrike])
 
   // Switch SPOT, CALL (CE), and PUT (PE) charts in 0ms when user switches underlying from Scalper header
-  const handleSelectUnderlying = useCallback(
-    (preset: UnderlyingPreset) => {
-      setUnderlyingId(preset.id)
-      try {
-        localStorage.setItem(SCALPER_UNDERLYING_KEY, preset.id)
-      } catch {
-        /* noop */
-      }
-      seedPaneDefaultStorage('scalper-p0', preset.spotSymbol, preset.spotExchange, true)
-      const t0 = terminalsRef.current['scalper-p0']
-      if (t0) {
-        void t0.loadSymbol({
-          symbol: preset.spotSymbol,
-          exchange: preset.spotExchange,
+  const handleSelectUnderlying = useCallback((preset: UnderlyingPreset) => {
+    setUnderlyingId(preset.id)
+    try {
+      localStorage.setItem(SCALPER_UNDERLYING_KEY, preset.id)
+    } catch {
+      /* noop */
+    }
+    seedPaneDefaultStorage('scalper-p0', preset.spotSymbol, preset.spotExchange, true)
+    const t0 = terminalsRef.current['scalper-p0']
+    if (t0) {
+      void t0.loadSymbol({
+        symbol: preset.spotSymbol,
+        exchange: preset.spotExchange,
+      })
+    }
+
+    // 0ms instant CE + PE switch if IndexSnapshot is already in memory
+    const snap = readIndexSnapshot(preset.id)
+    if (snap && snap.expiries.length > 0 && snap.chain.length > 0) {
+      const exp = snap.selectedExpiry || snap.expiries[0]
+      loadedUnderlyingKeyRef.current = `${preset.id}:${exp}`
+      setExpiries(snap.expiries)
+      setSelectedExpiry(exp)
+      setChain(snap.chain)
+      if (snap.atmStrike != null) setAtmStrike(snap.atmStrike)
+      setCeStrike(snap.ceStrike)
+      setPeStrike(snap.peStrike)
+
+      const ceR = snap.chain.find((r) => String(r.strike) === snap.ceStrike) ?? snap.chain[0]
+      const peR = snap.chain.find((r) => String(r.strike) === snap.peStrike) ?? snap.chain[0]
+      if (ceR?.ce?.symbol) {
+        seedPaneDefaultStorage('scalper-p1', ceR.ce.symbol, preset.foExchange, true)
+        void terminalsRef.current['scalper-p1']?.loadSymbol({
+          symbol: ceR.ce.symbol,
+          exchange: preset.foExchange,
+          lotsize: ceR.ce.lotsize ?? preset.defaultLotSize,
+          tick_size: ceR.ce.tick_size ?? 0.05,
         })
       }
-
-      // 0ms instant CE + PE switch if IndexSnapshot is already in memory
-      const snap = readIndexSnapshot(preset.id)
-      if (snap && snap.expiries.length > 0 && snap.chain.length > 0) {
-        const exp = snap.selectedExpiry || snap.expiries[0]
-        loadedUnderlyingKeyRef.current = `${preset.id}:${exp}`
-        setExpiries(snap.expiries)
-        setSelectedExpiry(exp)
-        setChain(snap.chain)
-        if (snap.atmStrike != null) setAtmStrike(snap.atmStrike)
-        setCeStrike(snap.ceStrike)
-        setPeStrike(snap.peStrike)
-
-        const ceR =
-          snap.chain.find((r) => String(r.strike) === snap.ceStrike) ?? snap.chain[0]
-        const peR =
-          snap.chain.find((r) => String(r.strike) === snap.peStrike) ?? snap.chain[0]
-        if (ceR?.ce?.symbol) {
-          seedPaneDefaultStorage('scalper-p1', ceR.ce.symbol, preset.foExchange, true)
-          void terminalsRef.current['scalper-p1']?.loadSymbol({
-            symbol: ceR.ce.symbol,
-            exchange: preset.foExchange,
-            lotsize: ceR.ce.lotsize ?? preset.defaultLotSize,
-            tick_size: ceR.ce.tick_size ?? 0.05,
-          })
-        }
-        if (peR?.pe?.symbol) {
-          seedPaneDefaultStorage('scalper-p2', peR.pe.symbol, preset.foExchange, true)
-          void terminalsRef.current['scalper-p2']?.loadSymbol({
-            symbol: peR.pe.symbol,
-            exchange: preset.foExchange,
-            lotsize: peR.pe.lotsize ?? preset.defaultLotSize,
-            tick_size: peR.pe.tick_size ?? 0.05,
-          })
-        }
+      if (peR?.pe?.symbol) {
+        seedPaneDefaultStorage('scalper-p2', peR.pe.symbol, preset.foExchange, true)
+        void terminalsRef.current['scalper-p2']?.loadSymbol({
+          symbol: peR.pe.symbol,
+          exchange: preset.foExchange,
+          lotsize: peR.pe.lotsize ?? preset.defaultLotSize,
+          tick_size: peR.pe.tick_size ?? 0.05,
+        })
       }
-    },
-    []
-  )
+    }
+  }, [])
 
   // Resolved CE and PE option row details from enriched live option chain
   const ceRow = useMemo(
@@ -2251,30 +2039,15 @@ function ScalperWorkspace({ account }: { account: string | null }) {
   )
 
   const spotActiveSym = useMemo(
-    () =>
-      parsePaneSymbol(
-        'scalper-p0',
-        activeUnderlying.spotSymbol,
-        activeUnderlying.spotExchange
-      ),
+    () => parsePaneSymbol('scalper-p0', activeUnderlying.spotSymbol, activeUnderlying.spotExchange),
     [parsePaneSymbol, activeUnderlying]
   )
   const ceActiveSym = useMemo(
-    () =>
-      parsePaneSymbol(
-        'scalper-p1',
-        ceRow?.ce?.symbol,
-        activeUnderlying.foExchange
-      ),
+    () => parsePaneSymbol('scalper-p1', ceRow?.ce?.symbol, activeUnderlying.foExchange),
     [parsePaneSymbol, ceRow, activeUnderlying]
   )
   const peActiveSym = useMemo(
-    () =>
-      parsePaneSymbol(
-        'scalper-p2',
-        peRow?.pe?.symbol,
-        activeUnderlying.foExchange
-      ),
+    () => parsePaneSymbol('scalper-p2', peRow?.pe?.symbol, activeUnderlying.foExchange),
     [parsePaneSymbol, peRow, activeUnderlying]
   )
 
@@ -2437,10 +2210,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
     if (!apiKey) return
     setOrderBusy((prev) => ({ ...prev, exitAll: true }))
     try {
-      await Promise.allSettled([
-        tradingApi.closeAllPositions(),
-        tradingApi.cancelAllOrders(),
-      ])
+      await Promise.allSettled([tradingApi.closeAllPositions(), tradingApi.cancelAllOrders()])
       showToast.success('EXIT ALL executed — all positions & open orders flattened')
       void refreshFundsAndPnl()
     } catch (err) {
@@ -2697,436 +2467,57 @@ function ScalperWorkspace({ account }: { account: string | null }) {
       {/* Optional full OpenAlgo Navbar (can be toggled with 1 click) */}
       {showMainNavbar && <Navbar fluid />}
 
-      {/* ═══ SCALPER 915 TOP HEADER BAR (Matches Reference UI) ═══════════ */}
-      <header className="flex h-11 shrink-0 items-center justify-between gap-2 border-b border-black/[0.09] bg-[#f8f9fa] px-3 backdrop-blur select-none dark:border-white/[0.09] dark:bg-[#141414]">
-        {/* Left: Brand + Quick Tabs + Underlying & Expiry Selector */}
-        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
-          {/* Brand Title — Click to toggle main OpenAlgo navigation bar */}
-          <button
-            type="button"
-            onClick={() => setShowMainNavbar((v) => !v)}
-            title={
-              showMainNavbar
-                ? 'Hide top OpenAlgo navigation bar'
-                : 'Show top OpenAlgo navigation bar'
-            }
-            className={cn(
-              'flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-sm font-bold tracking-tight whitespace-nowrap transition-all duration-150 cursor-pointer select-none',
-              showMainNavbar
-                ? 'border-black/[0.24] bg-[#dfe3e8] text-[#09090b] shadow-2xs dark:border-white/[0.26] dark:bg-[#2e3036] dark:text-white'
-                : 'border-black/[0.11] bg-white text-[#09090b] shadow-2xs hover:border-black/[0.24] hover:bg-[#e8ecf1] dark:border-white/[0.12] dark:bg-[#212121] dark:text-[#ececec] dark:shadow-none dark:hover:border-white/[0.26] dark:hover:bg-[#2d3036] dark:hover:text-white'
-            )}
-          >
-            <span>Scalper 915</span>
-          </button>
-
-          {/* Quick view pills: Scalper | Positions | Orders | OI */}
-          <div className="flex items-center gap-1 rounded-lg bg-[#eef0f3] p-0.5 border border-black/[0.09] dark:bg-[#1e1e1e] dark:border-white/[0.09]">
-            <button
-              type="button"
-              onClick={() => {
-                setShowDockBar(false)
-                setDock(null)
-              }}
-              className={cn(
-                'flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold transition-all',
-                !showDockBar
-                  ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs'
-                  : 'text-[#52525b] hover:bg-[#dfe3e8] hover:text-[#09090b] dark:text-[#a1a1aa] dark:hover:bg-[#2c2e33] dark:hover:text-white'
-              )}
-            >
-              <Zap className="h-3.5 w-3.5" />
-              Scalper
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setDock('positions')
-                setShowDockBar((v) => (dock === 'positions' ? !v : true))
-              }}
-              className={cn(
-                'flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-all',
-                showDockBar && dock === 'positions'
-                  ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs'
-                  : 'text-[#52525b] hover:bg-[#dfe3e8] hover:text-[#09090b] dark:text-[#a1a1aa] dark:hover:bg-[#2c2e33] dark:hover:text-white'
-              )}
-            >
-              <TrendingUp className="h-3.5 w-3.5" />
-              Positions
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setDock('orders')
-                setShowDockBar((v) => (dock === 'orders' ? !v : true))
-              }}
-              className={cn(
-                'flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-all',
-                showDockBar && dock === 'orders'
-                  ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs'
-                  : 'text-[#52525b] hover:bg-[#dfe3e8] hover:text-[#09090b] dark:text-[#a1a1aa] dark:hover:bg-[#2c2e33] dark:hover:text-white'
-              )}
-            >
-              <FolderOpen className="h-3.5 w-3.5" />
-              Orders
-            </button>
-            <button
-              type="button"
-              onClick={() => setPanel((p) => (p === 'options' ? null : 'options'))}
-              className={cn(
-                'flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-all',
-                panel === 'options'
-                  ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs'
-                  : 'text-[#52525b] hover:bg-[#dfe3e8] hover:text-[#09090b] dark:text-[#a1a1aa] dark:hover:bg-[#2c2e33] dark:hover:text-white'
-              )}
-            >
-              <FileSpreadsheet className="h-3.5 w-3.5" />
-              OI
-            </button>
-          </div>
-
-          <div className="h-4 w-px bg-black/[0.10] dark:bg-white/[0.10]" />
-
-          {/* Underlying Index Dropdown (OpenAI Light & Dark UI Style with 0-1ms Live Price, ±Pts & ±%) */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                type="button"
-                className={cn(
-                  'flex items-center gap-2 rounded-lg border px-2.5 py-1 text-xs font-medium transition-all duration-150',
-                  'border-black/[0.11] bg-white text-[#09090b] shadow-2xs hover:border-black/[0.24] hover:bg-[#e8ecf1]',
-                  'dark:border-white/[0.12] dark:bg-[#212121] dark:text-[#ececec] dark:shadow-none dark:hover:border-white/[0.26] dark:hover:bg-[#2d3036] dark:hover:text-white'
-                )}
-              >
-                <span
-                  className={cn(
-                    'h-1.5 w-1.5 rounded-full shrink-0',
-                    activeIndexQuote.change !== null && activeIndexQuote.change < 0
-                      ? 'bg-[#dc2626]'
-                      : 'bg-[#16a34a]'
-                  )}
-                />
-                <span className="text-[#09090b] dark:text-[#ececec] font-semibold tracking-tight">
-                  {activeUnderlying.label}
-                </span>
-                {activeIndexQuote.ltp > 0 && (
-                  <span
-                    className={cn(
-                      'font-mono text-xs font-bold tabular-nums px-1 py-0.5 rounded transition-colors duration-150',
-                      flashes[activeUnderlying.id] === 'up'
-                        ? 'bg-[#16a34a]/20 text-[#15803d] dark:bg-[#16a34a]/25 dark:text-[#4ade80]'
-                        : flashes[activeUnderlying.id] === 'down'
-                          ? 'bg-[#dc2626]/20 text-[#dc2626] dark:bg-[#dc2626]/25 dark:text-[#f87171]'
-                          : 'text-[#09090b] dark:text-[#ececec]'
-                    )}
-                  >
-                    {activeIndexQuote.ltp.toLocaleString('en-IN', {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2,
-                    })}
-                  </span>
-                )}
-                {activeIndexQuote.change !== null && activeIndexQuote.changePct !== null && (
-                  <span
-                    className={cn(
-                      'font-mono text-[11px] font-semibold tabular-nums',
-                      activeIndexQuote.change >= 0
-                        ? 'text-[#15803d] dark:text-[#4ade80]'
-                        : 'text-[#dc2626] dark:text-[#f87171]'
-                    )}
-                  >
-                    {activeIndexQuote.change >= 0 ? '+' : ''}
-                    {activeIndexQuote.change.toFixed(2)} (
-                    {activeIndexQuote.changePct >= 0 ? '+' : ''}
-                    {activeIndexQuote.changePct.toFixed(2)}%)
-                  </span>
-                )}
-                <span className="rounded bg-[#f1f3f5] border border-black/[0.09] px-1.5 py-0.5 text-[10px] text-[#15803d] font-mono dark:bg-[#2f2f2f] dark:border-white/[0.10] dark:text-[#34d399]">
-                  {spotActiveSym?.exchange ?? activeUnderlying.spotExchange}
-                </span>
-                <span className="text-[#52525b] dark:text-[#a1a1aa] text-[10px]">▾</span>
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              align="start"
-              sideOffset={6}
-              className="w-[360px] p-1.5 rounded-xl border border-black/[0.11] bg-white text-[#09090b] shadow-[0_12px_32px_rgba(0,0,0,0.14)] dark:border-white/[0.12] dark:bg-[#171717] dark:text-[#ececec] dark:shadow-[0_16px_40px_rgba(0,0,0,0.75)]"
-            >
-              {UNDERLYINGS.map((u) => {
-                const q = indexQuotesById[u.id]
-                const isUp = (q?.change ?? 0) >= 0
-                const flash = flashes[u.id]
-                return (
-                  <DropdownMenuItem
-                    key={u.id}
-                    onSelect={() => handleSelectUnderlying(u)}
-                    className={cn(
-                      'flex items-center justify-between gap-3 rounded-lg px-2.5 py-2 text-xs font-medium transition-colors cursor-pointer',
-                      u.id === underlyingId
-                        ? 'bg-[#e4e8ee] text-[#09090b] font-semibold dark:bg-[#2d3036] dark:text-white'
-                        : 'text-[#3f3f46] hover:bg-[#eef1f5] hover:text-[#09090b] dark:text-[#b4b4b4] dark:hover:bg-[#26282d] dark:hover:text-white'
-                    )}
-                  >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span
-                        className={cn(
-                          'h-1.5 w-1.5 rounded-full shrink-0',
-                          q?.change != null && q.change < 0 ? 'bg-[#dc2626]' : 'bg-[#16a34a]'
-                        )}
-                      />
-                      <span className="truncate font-semibold text-[#09090b] dark:text-[#ececec]">
-                        {u.label}
-                      </span>
-                      <span className="rounded bg-[#f4f4f5] border border-black/[0.09] px-1.5 py-0.5 text-[9.5px] font-mono text-[#52525b] dark:bg-[#262626] dark:border-white/[0.10] dark:text-[#a1a1aa] shrink-0">
-                        {u.foExchange}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2 font-mono tabular-nums shrink-0">
-                      <span
-                        className={cn(
-                          'text-xs font-bold px-1 py-0.5 rounded transition-colors duration-150',
-                          flash === 'up'
-                            ? 'bg-[#16a34a]/20 text-[#15803d] dark:bg-[#16a34a]/25 dark:text-[#4ade80]'
-                            : flash === 'down'
-                              ? 'bg-[#dc2626]/20 text-[#dc2626] dark:bg-[#dc2626]/25 dark:text-[#f87171]'
-                              : 'text-[#09090b] dark:text-[#ececec]'
-                        )}
-                      >
-                        {q && q.ltp > 0
-                          ? q.ltp.toLocaleString('en-IN', {
-                              minimumFractionDigits: 2,
-                              maximumFractionDigits: 2,
-                            })
-                          : '—'}
-                      </span>
-                      {q && q.change !== null && q.changePct !== null ? (
-                        <span
-                          className={cn(
-                            'rounded px-1.5 py-0.5 text-[10.5px] font-semibold',
-                            isUp
-                              ? 'bg-[#16a34a]/12 text-[#15803d] dark:bg-[#16a34a]/15 dark:text-[#4ade80]'
-                              : 'bg-[#dc2626]/12 text-[#dc2626] dark:bg-[#dc2626]/15 dark:text-[#f87171]'
-                          )}
-                        >
-                          {isUp ? '+' : ''}
-                          {q.change.toFixed(2)} ({isUp ? '+' : ''}
-                          {q.changePct.toFixed(2)}%)
-                        </span>
-                      ) : (
-                        <span className="text-[10.5px] text-[#71717a] dark:text-[#8e8ea0]">—</span>
-                      )}
-                    </div>
-                  </DropdownMenuItem>
-                )
-              })}
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          {/* Expiry Selector (OpenAI Light & Dark UI Style) */}
-          {expiries.length > 0 && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
-                  className={cn(
-                    'flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[11px] font-mono transition-all duration-150',
-                    'border-black/[0.11] bg-white text-[#3f3f46] shadow-2xs hover:border-black/[0.24] hover:bg-[#e8ecf1] hover:text-[#09090b]',
-                    'dark:border-white/[0.12] dark:bg-[#212121] dark:text-[#b4b4b4] dark:shadow-none dark:hover:border-white/[0.26] dark:hover:bg-[#2d3036] dark:hover:text-white'
-                  )}
-                  title="Options Expiry"
-                >
-                  <span className="text-[#52525b] dark:text-[#a1a1aa]">Exp:</span>
-                  <span className="font-semibold text-[#09090b] dark:text-[#ececec]">
-                    {selectedExpiry}
-                  </span>
-                  <span className="text-[10px] text-[#52525b] dark:text-[#a1a1aa]">▾</span>
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent
-                align="start"
-                sideOffset={6}
-                className="max-h-64 w-44 overflow-y-auto p-1 rounded-xl border border-black/[0.11] bg-white text-[#09090b] shadow-[0_12px_32px_rgba(0,0,0,0.14)] dark:border-white/[0.12] dark:bg-[#171717] dark:text-[#ececec] dark:shadow-[0_16px_40px_rgba(0,0,0,0.75)]"
-              >
-                {expiries.map((exp) => (
-                  <DropdownMenuItem
-                    key={exp}
-                    onSelect={() => setSelectedExpiry(exp)}
-                    className={cn(
-                      'rounded-lg px-2.5 py-1.5 font-mono text-xs transition-colors cursor-pointer',
-                      exp === selectedExpiry
-                        ? 'bg-[#e4e8ee] text-[#09090b] font-semibold dark:bg-[#2d3036] dark:text-white'
-                        : 'text-[#3f3f46] hover:bg-[#eef1f5] hover:text-[#09090b] dark:text-[#b4b4b4] dark:hover:bg-[#26282d] dark:hover:text-white'
-                    )}
-                  >
-                    {exp}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
-
-          {/* ATM Strike Pill (OpenAI Light & Dark UI Style) */}
-          {effectiveAtmStrike != null && (
-            <span className="rounded-lg border border-black/[0.10] bg-white px-2.5 py-0.5 text-[11px] font-mono text-[#52525b] shadow-2xs dark:border-white/[0.10] dark:bg-[#212121] dark:text-[#b4b4b4] dark:shadow-none">
-              ATM:{' '}
-              <strong className="font-semibold text-[#09090b] dark:text-[#ececec]">
-                {effectiveAtmStrike}
-              </strong>
-            </span>
-          )}
-
-          {/* Max Pain Pill (OpenAI Light & Dark UI Style) */}
-          {maxPainStrike != null && (
-            <span
-              className="hidden xl:inline-flex items-center gap-1 rounded-lg border border-black/[0.10] bg-white px-2 py-0.5 text-[10px] font-mono text-[#52525b] shadow-2xs dark:border-white/[0.10] dark:bg-[#212121] dark:text-[#b4b4b4] dark:shadow-none"
-              title="Option Chain Max Pain Strike"
-            >
-              MaxPain:{' '}
-              <strong className="font-semibold text-[#09090b] dark:text-[#ececec]">
-                {maxPainStrike}
-              </strong>
-            </span>
-          )}
-        </div>
-
-        {/* Right: SANDBOX/LIVE + SPOT/CE/PE Toggles + Layout + Margin/P&L + EXIT ALL */}
-        <div className="flex items-center gap-2 shrink-0">
-          {/* Sandbox / Live Mode Switch */}
-          <button
-            type="button"
-            disabled={isTogglingMode}
-            onClick={() => void toggleAppMode()}
-            className={cn(
-              'flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider transition-all',
-              appMode === 'analyzer'
-                ? 'border-purple-500/45 bg-purple-500/12 text-purple-700 hover:bg-purple-500/22 hover:border-purple-600/60 dark:border-purple-500/50 dark:bg-purple-500/15 dark:text-purple-300 dark:hover:bg-purple-500/28'
-                : 'border-[#16a34a]/45 bg-[#16a34a]/12 text-[#15803d] hover:bg-[#16a34a]/22 hover:border-[#16a34a]/65 dark:border-emerald-500/50 dark:bg-emerald-500/15 dark:text-emerald-300 dark:hover:bg-emerald-500/28'
-            )}
-            title="Click to switch between Sandbox (Analyze) and Live broker execution"
-          >
-            <span
-              className={cn(
-                'h-1.5 w-1.5 rounded-full',
-                appMode === 'analyzer'
-                  ? 'bg-purple-500 dark:bg-purple-400'
-                  : 'bg-[#16a34a] dark:bg-emerald-400 animate-pulse'
-              )}
-            />
-            {appMode === 'analyzer' ? 'SANDBOX' : 'LIVE'}
-          </button>
-
-          {/* Pane Visibility Pills: SPOT | CE | PE */}
-          <div className="flex items-center gap-0.5 rounded-md border border-black/[0.10] bg-[#eef0f3] p-0.5 dark:border-white/[0.10] dark:bg-[#1e1e1e]">
-            <button
-              type="button"
-              onClick={() => togglePaneVisibility('spot')}
-              className={cn(
-                'rounded px-2 py-0.5 text-[11px] font-bold transition-all',
-                visiblePanes.spot
-                  ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs'
-                  : 'text-[#52525b] hover:bg-[#dfe3e8] hover:text-[#09090b] dark:text-[#a1a1aa] dark:hover:bg-[#2c2e33] dark:hover:text-white'
-              )}
-              title="Toggle SPOT chart pane"
-            >
-              SPOT
-            </button>
-            <button
-              type="button"
-              onClick={() => togglePaneVisibility('ce')}
-              className={cn(
-                'rounded px-2 py-0.5 text-[11px] font-bold transition-all',
-                visiblePanes.ce
-                  ? 'bg-[#16a34a] hover:bg-[#15803d] text-white shadow-xs'
-                  : 'text-[#52525b] hover:bg-[#dfe3e8] hover:text-[#09090b] dark:text-[#a1a1aa] dark:hover:bg-[#2c2e33] dark:hover:text-white'
-              )}
-              title="Toggle CALL (CE) chart pane"
-            >
-              CE
-            </button>
-            <button
-              type="button"
-              onClick={() => togglePaneVisibility('pe')}
-              className={cn(
-                'rounded px-2 py-0.5 text-[11px] font-bold transition-all',
-                visiblePanes.pe
-                  ? 'bg-[#dc2626] hover:bg-[#b91c1c] text-white shadow-xs'
-                  : 'text-[#52525b] hover:bg-[#dfe3e8] hover:text-[#09090b] dark:text-[#a1a1aa] dark:hover:bg-[#2c2e33] dark:hover:text-white'
-              )}
-              title="Toggle PUT (PE) chart pane"
-            >
-              PE
-            </button>
-          </div>
-
-          {/* Layout Toggle: 1+2 Split vs 3 Columns */}
-          <div className="flex items-center gap-0.5 rounded-md border border-black/[0.10] bg-[#eef0f3] p-0.5 dark:border-white/[0.10] dark:bg-[#1e1e1e]">
-            <button
-              type="button"
-              onClick={() => {
-                setMaximizedPane(null)
-                setLayoutMode('split')
-              }}
-              className={cn(
-                'rounded p-1 transition-colors',
-                layoutMode === 'split'
-                  ? 'bg-white text-[#09090b] shadow-2xs dark:bg-[#2d3036] dark:text-white'
-                  : 'text-[#52525b] hover:bg-[#dfe3e8] hover:text-[#09090b] dark:text-[#a1a1aa] dark:hover:bg-[#2c2e33] dark:hover:text-white'
-              )}
-              title="1 + 2 Split Layout (SPOT Left, CE Top-Right, PE Bottom-Right)"
-            >
-              <LayoutGrid className="h-3.5 w-3.5" />
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setMaximizedPane(null)
-                setLayoutMode('cols3')
-              }}
-              className={cn(
-                'rounded p-1 transition-colors',
-                layoutMode === 'cols3'
-                  ? 'bg-white text-[#09090b] shadow-2xs dark:bg-[#2d3036] dark:text-white'
-                  : 'text-[#52525b] hover:bg-[#dfe3e8] hover:text-[#09090b] dark:text-[#a1a1aa] dark:hover:bg-[#2c2e33] dark:hover:text-white'
-              )}
-              title="3 Columns Layout (SPOT | CE | PE)"
-            >
-              <Columns3 className="h-3.5 w-3.5" />
-            </button>
-          </div>
-
-          {/* Margin & P&L Pill */}
-          <div className="hidden lg:flex items-center gap-2.5 rounded-md border border-black/[0.10] bg-white px-2.5 py-1 text-xs font-mono shadow-2xs dark:border-white/[0.10] dark:bg-[#212121] dark:shadow-none">
-            <span>
-              <span className="text-[#52525b] dark:text-[#a1a1aa]">Margin: </span>
-              <strong className="text-[#09090b] dark:text-white">{marginText}</strong>
-            </span>
-            <span className="h-3 w-px bg-black/[0.10] dark:bg-white/[0.10]" />
-            <span>
-              <span className="text-[#52525b] dark:text-[#a1a1aa]">P&amp;L: </span>
-              <strong
-                className={cn(
-                  pnlValue >= 0
-                    ? 'text-[#16a34a] dark:text-[#22c55e]'
-                    : 'text-[#dc2626] dark:text-[#f87171]'
-                )}
-              >
-                {pnlValue >= 0 ? '+' : ''}₹{pnlValue.toFixed(2)}
-              </strong>
-            </span>
-          </div>
-
-          {/* EXIT ALL Button */}
-          <button
-            type="button"
-            disabled={orderBusy.exitAll}
-            onClick={() => void handleExitAll()}
-            className="rounded-md border border-[#dc2626]/40 bg-[#dc2626] hover:bg-[#b91c1c] px-3 py-1 text-xs font-bold uppercase tracking-wider text-white shadow-xs transition-all active:scale-95 disabled:opacity-50"
-            title="Close all open positions and cancel all open orders immediately"
-          >
-            EXIT ALL
-          </button>
-        </div>
-      </header>
+      <ScalperHeader
+        underlying={activeUnderlying}
+        underlyings={UNDERLYINGS}
+        exchange={spotActiveSym?.exchange ?? activeUnderlying.spotExchange}
+        quote={activeIndexQuote}
+        quotes={indexQuotesById}
+        flashes={flashes}
+        expiries={expiries}
+        expiry={selectedExpiry}
+        atmStrike={effectiveAtmStrike}
+        maxPainStrike={maxPainStrike}
+        activeView={
+          showDockBar && dock === 'positions'
+            ? 'positions'
+            : showDockBar && dock === 'orders'
+              ? 'orders'
+              : 'scalper'
+        }
+        optionChainOpen={panel === 'options'}
+        navigationVisible={showMainNavbar}
+        sandbox={appMode === 'analyzer'}
+        switchingMode={isTogglingMode}
+        visiblePanes={visiblePanes}
+        layout={layoutMode}
+        margin={marginText}
+        pnl={pnlValue}
+        exiting={Boolean(orderBusy.exitAll)}
+        onNavigationToggle={() => setShowMainNavbar((v) => !v)}
+        onUnderlyingSelect={(id) => {
+          const choice = UNDERLYINGS.find((u) => u.id === id)
+          if (choice) handleSelectUnderlying(choice)
+        }}
+        onExpirySelect={setSelectedExpiry}
+        onViewSelect={(view) => {
+          if (view === 'scalper') {
+            setShowDockBar(false)
+            setDock(null)
+            return
+          }
+          setDock(view)
+          setShowDockBar((v) => (dock === view ? !v : true))
+        }}
+        onOptionChainToggle={() => setPanel((p) => (p === 'options' ? null : 'options'))}
+        onModeToggle={() => void toggleAppMode()}
+        onPaneToggle={togglePaneVisibility}
+        onLayoutSelect={(layout) => {
+          setMaximizedPane(null)
+          setLayoutMode(layout)
+        }}
+        onExitAll={() => void handleExitAll()}
+      />
 
       {/* ═══ MAIN WORKSPACE CONTAINER ═════════════════════════════════════ */}
       <div className="flex flex-1 flex-col overflow-hidden">
@@ -3188,640 +2579,633 @@ function ScalperWorkspace({ account }: { account: string | null }) {
                     }
                   >
                     {/* ── PANE 0: SPOT (NIFTY 50 / INDEX) ─────────────────── */}
-                    {visiblePanes.spot &&
-                      (!maximizedPane || maximizedPane === 'scalper-p0') && (
+                    {visiblePanes.spot && (!maximizedPane || maximizedPane === 'scalper-p0') && (
+                      <div
+                        style={{ gridArea: maximizedPane ? 'max' : 'a' }}
+                        className={cn(
+                          'flex flex-col min-h-0 min-w-0 rounded-lg border bg-card overflow-hidden transition-colors',
+                          focusedPane === 'scalper-p0'
+                            ? 'border-indigo-500/80 shadow-[0_0_0_1px_rgba(99,102,241,0.25)]'
+                            : 'border-border/70'
+                        )}
+                      >
+                        {/* Sleek Pane Header Bar */}
                         <div
-                          style={{ gridArea: maximizedPane ? 'max' : 'a' }}
-                          className={cn(
-                            'flex flex-col min-h-0 min-w-0 rounded-lg border bg-card overflow-hidden transition-colors',
-                            focusedPane === 'scalper-p0'
-                              ? 'border-indigo-500/80 shadow-[0_0_0_1px_rgba(99,102,241,0.25)]'
-                              : 'border-border/70'
-                          )}
+                          onClick={() =>
+                            focusPane(terminalsRef.current['scalper-p0'] ?? null, 'scalper-p0')
+                          }
+                          className="flex h-7 shrink-0 cursor-pointer items-center justify-between border-b border-border/60 bg-muted/30 px-2.5 text-[11px]"
                         >
-                          {/* Sleek Pane Header Bar */}
-                          <div
-                            onClick={() =>
-                              focusPane(terminalsRef.current['scalper-p0'] ?? null, 'scalper-p0')
-                            }
-                            className="flex h-7 shrink-0 cursor-pointer items-center justify-between border-b border-border/60 bg-muted/30 px-2.5 text-[11px]"
-                          >
-                            <div className="flex items-center gap-2">
-                              <span className="font-bold tracking-wide text-indigo-600 dark:text-indigo-400">
-                                SPOT: {spotActiveSym?.symbol ?? activeUnderlying.label}
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold tracking-wide text-indigo-600 dark:text-indigo-400">
+                              SPOT: {spotActiveSym?.symbol ?? activeUnderlying.label}
+                            </span>
+                            <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">
+                              {spotActiveSym?.exchange ?? activeUnderlying.spotExchange}
+                            </span>
+                            {focusedPane === 'scalper-p0' && (
+                              <span className="rounded bg-indigo-500/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300">
+                                ACTIVE
                               </span>
-                              <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">
-                                {spotActiveSym?.exchange ?? activeUnderlying.spotExchange}
-                              </span>
-                              {focusedPane === 'scalper-p0' && (
-                                <span className="rounded bg-indigo-500/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300">
-                                  ACTIVE
-                                </span>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <span
-                                className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_6px_#10b981]"
-                                title="Live 0-1ms WebSocket stream active"
-                              />
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  setMaximizedPane((m) =>
-                                    m === 'scalper-p0' ? null : 'scalper-p0'
-                                  )
-                                }}
-                                className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-                                title={
-                                  maximizedPane === 'scalper-p0' ? 'Restore 3-pane view' : 'Maximize SPOT pane'
-                                }
-                              >
-                                {maximizedPane === 'scalper-p0' ? (
-                                  <Minimize2 className="h-3 w-3" />
-                                ) : (
-                                  <Maximize2 className="h-3 w-3" />
-                                )}
-                              </button>
-                            </div>
+                            )}
                           </div>
-
-                          <div className="relative flex-1 min-h-0">
-                            <ChartPane
-                              paneId="scalper-p0"
-                              paneLabel="SPOT Chart"
-                              toolbarHost={toolbarHost}
-                              focused={focusedPane === 'scalper-p0'}
-                              chartSelector={chartSelector}
-                              apiKey={apiKey}
-                              wsUrl={wsUrl}
-                              style={{ height: '100%', border: 'none', borderRadius: 0 }}
-                              sharedTool={tool}
-                              sharedMagnet={magnet}
-                              sharedStay={stay}
-                              sharedLatch={latched}
-                              onReplayStart={startWorkspaceReplay}
-                              workspaceReplay={replaySnapshot}
-                              onBeforeSourceChange={stopWorkspaceReplay}
-                              onFocusPane={focusPane}
-                              onSymbolChange={noteSymbol}
-                              onIntervalChange={noteChartChanged}
-                              onTerminalChange={noteTerminal}
-                              onObjectsChange={noteObjects}
-                              onOpenScriptSource={showScriptSource}
-                              onAlertsReady={noteAlerts}
-                              onAlertFired={noteAlertFired}
-                              onAlertsChanged={() => setAlertRevision((n) => n + 1)}
-                              onDrawStats={onPaneDrawStats}
-                              onToggleRail={() => setShowRail((v) => !v)}
-                              railVisible={showRail}
-                              linkGroup={linkGroup}
-                              armed={armed}
-                              layoutPicker={workspaceControls}
+                          <div className="flex items-center gap-2">
+                            <span
+                              className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_6px_#10b981]"
+                              title="Live WebSocket market stream active"
                             />
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setMaximizedPane((m) => (m === 'scalper-p0' ? null : 'scalper-p0'))
+                              }}
+                              className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                              title={
+                                maximizedPane === 'scalper-p0'
+                                  ? 'Restore 3-pane view'
+                                  : 'Maximize SPOT pane'
+                              }
+                            >
+                              {maximizedPane === 'scalper-p0' ? (
+                                <Minimize2 className="h-3 w-3" />
+                              ) : (
+                                <Maximize2 className="h-3 w-3" />
+                              )}
+                            </button>
                           </div>
                         </div>
-                      )}
+
+                        <div className="relative flex-1 min-h-0">
+                          <ChartPane
+                            paneId="scalper-p0"
+                            paneLabel="SPOT Chart"
+                            toolbarHost={toolbarHost}
+                            focused={focusedPane === 'scalper-p0'}
+                            chartSelector={chartSelector}
+                            apiKey={apiKey}
+                            wsUrl={wsUrl}
+                            style={{ height: '100%', border: 'none', borderRadius: 0 }}
+                            sharedTool={tool}
+                            sharedMagnet={magnet}
+                            sharedStay={stay}
+                            sharedLatch={latched}
+                            onReplayStart={startWorkspaceReplay}
+                            workspaceReplay={replaySnapshot}
+                            onBeforeSourceChange={stopWorkspaceReplay}
+                            onFocusPane={focusPane}
+                            onSymbolChange={noteSymbol}
+                            onIntervalChange={noteChartChanged}
+                            onTerminalChange={noteTerminal}
+                            onObjectsChange={noteObjects}
+                            onOpenScriptSource={showScriptSource}
+                            onAlertsReady={noteAlerts}
+                            onAlertFired={noteAlertFired}
+                            onAlertsChanged={() => setAlertRevision((n) => n + 1)}
+                            onDrawStats={onPaneDrawStats}
+                            onToggleRail={() => setShowRail((v) => !v)}
+                            railVisible={showRail}
+                            linkGroup={linkGroup}
+                            armed={armed}
+                            layoutPicker={workspaceControls}
+                          />
+                        </div>
+                      </div>
+                    )}
 
                     {/* ── PANE 1: CALL / CE ───────────────────────────────── */}
-                    {visiblePanes.ce &&
-                      (!maximizedPane || maximizedPane === 'scalper-p1') && (
+                    {visiblePanes.ce && (!maximizedPane || maximizedPane === 'scalper-p1') && (
+                      <div
+                        style={{ gridArea: maximizedPane ? 'max' : 'b' }}
+                        className={cn(
+                          'flex flex-col min-h-0 min-w-0 rounded-lg border bg-card overflow-hidden transition-colors',
+                          focusedPane === 'scalper-p1'
+                            ? 'border-indigo-500/80 shadow-[0_0_0_1px_rgba(99,102,241,0.25)]'
+                            : 'border-border/70'
+                        )}
+                      >
+                        {/* Sleek Pane Header Bar */}
                         <div
-                          style={{ gridArea: maximizedPane ? 'max' : 'b' }}
-                          className={cn(
-                            'flex flex-col min-h-0 min-w-0 rounded-lg border bg-card overflow-hidden transition-colors',
-                            focusedPane === 'scalper-p1'
-                              ? 'border-indigo-500/80 shadow-[0_0_0_1px_rgba(99,102,241,0.25)]'
-                              : 'border-border/70'
-                          )}
+                          onClick={() =>
+                            focusPane(terminalsRef.current['scalper-p1'] ?? null, 'scalper-p1')
+                          }
+                          className="flex h-7 shrink-0 cursor-pointer items-center justify-between border-b border-border/60 bg-muted/30 px-2.5 text-[11px]"
                         >
-                          {/* Sleek Pane Header Bar */}
-                          <div
-                            onClick={() =>
-                              focusPane(terminalsRef.current['scalper-p1'] ?? null, 'scalper-p1')
-                            }
-                            className="flex h-7 shrink-0 cursor-pointer items-center justify-between border-b border-border/60 bg-muted/30 px-2.5 text-[11px]"
-                          >
-                            <div className="flex items-center gap-2">
-                              <span className="font-bold tracking-wide text-foreground">
-                                CALL: {ceActiveSym?.symbol ?? 'Select CE'}
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold tracking-wide text-foreground">
+                              CALL: {ceActiveSym?.symbol ?? 'Select CE'}
+                            </span>
+                            <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">
+                              {ceActiveSym?.exchange ?? activeUnderlying.foExchange}
+                            </span>
+                            {focusedPane === 'scalper-p1' && (
+                              <span className="rounded bg-indigo-500/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300">
+                                ACTIVE
                               </span>
-                              <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">
-                                {ceActiveSym?.exchange ?? activeUnderlying.foExchange}
-                              </span>
-                              {focusedPane === 'scalper-p1' && (
-                                <span className="rounded bg-indigo-500/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300">
-                                  ACTIVE
-                                </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span
+                              className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_6px_#10b981]"
+                              title="Live WebSocket market stream active"
+                            />
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setMaximizedPane((m) => (m === 'scalper-p1' ? null : 'scalper-p1'))
+                              }}
+                              className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                              title={
+                                maximizedPane === 'scalper-p1'
+                                  ? 'Restore 3-pane view'
+                                  : 'Maximize CALL pane'
+                              }
+                            >
+                              {maximizedPane === 'scalper-p1' ? (
+                                <Minimize2 className="h-3 w-3" />
+                              ) : (
+                                <Maximize2 className="h-3 w-3" />
                               )}
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <span
-                                className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_6px_#10b981]"
-                                title="Live 0-1ms WebSocket stream active"
-                              />
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  setMaximizedPane((m) =>
-                                    m === 'scalper-p1' ? null : 'scalper-p1'
-                                  )
-                                }}
-                                className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-                                title={
-                                  maximizedPane === 'scalper-p1' ? 'Restore 3-pane view' : 'Maximize CALL pane'
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="relative flex-1 min-h-0">
+                          <ChartPane
+                            paneId="scalper-p1"
+                            paneLabel="CALL (CE) Chart"
+                            toolbarHost={toolbarHost}
+                            focused={focusedPane === 'scalper-p1'}
+                            chartSelector={chartSelector}
+                            apiKey={apiKey}
+                            wsUrl={wsUrl}
+                            style={{ height: '100%', border: 'none', borderRadius: 0 }}
+                            sharedTool={tool}
+                            sharedMagnet={magnet}
+                            sharedStay={stay}
+                            sharedLatch={latched}
+                            onReplayStart={startWorkspaceReplay}
+                            workspaceReplay={replaySnapshot}
+                            onBeforeSourceChange={stopWorkspaceReplay}
+                            onFocusPane={focusPane}
+                            onSymbolChange={noteSymbol}
+                            onIntervalChange={noteChartChanged}
+                            onTerminalChange={noteTerminal}
+                            onObjectsChange={noteObjects}
+                            onOpenScriptSource={showScriptSource}
+                            onAlertsReady={noteAlerts}
+                            onAlertFired={noteAlertFired}
+                            onAlertsChanged={() => setAlertRevision((n) => n + 1)}
+                            onDrawStats={onPaneDrawStats}
+                            onToggleRail={() => setShowRail((v) => !v)}
+                            railVisible={showRail}
+                            linkGroup={linkGroup}
+                            armed={armed}
+                            externalQty={ceLots}
+                            onQtyChange={(_, nextLots) => {
+                              setCeCustomQty(null)
+                              setCeLots(Math.max(1, nextLots))
+                            }}
+                            defaultProduct={product}
+                            onProductChange={(_, nextProd) => {
+                              if (nextProd === 'NRML' || nextProd === 'MIS') {
+                                setProduct(nextProd)
+                              }
+                            }}
+                            onTradeQtyClick={() => {
+                              setCeChartQtyFocused(true)
+                              setTimeout(() => ceChartQtyInputRef.current?.select(), 0)
+                            }}
+                            layoutPicker={workspaceControls}
+                          />
+
+                          {/* Editable Middle Lot/Qty Box between On-Chart SELL and BUY buttons */}
+                          <div
+                            style={{
+                              position: 'absolute',
+                              left: '68.28px',
+                              top: '44px',
+                              width: '28.8px',
+                              height: '30.24px',
+                              zIndex: 12,
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            onWheel={(e) => {
+                              e.preventDefault()
+                              e.stopPropagation()
+                              const delta = e.deltaY < 0 ? 1 : -1
+                              setCeCustomQty(null)
+                              setCeLots((l) => Math.max(1, l + delta))
+                            }}
+                            title={`Click to edit CE Lots / Quantity (${ceLots}L = ${ceOrderQty} Qty · ${product})`}
+                          >
+                            <input
+                              ref={ceChartQtyInputRef}
+                              type="text"
+                              inputMode="numeric"
+                              aria-label="Edit CE Chart Lots"
+                              value={
+                                ceChartQtyFocused ? (ceLotsText ?? String(ceLots)) : `${ceLots}L`
+                              }
+                              onFocus={(e) => {
+                                setCeChartQtyFocused(true)
+                                setCeLotsText(String(ceLots))
+                                e.currentTarget.select()
+                              }}
+                              onChange={(e) => {
+                                const raw = e.target.value.replace(/[^0-9]/g, '')
+                                setCeLotsText(raw)
+                                const num = parseInt(raw, 10)
+                                if (Number.isFinite(num) && num >= 1) {
+                                  setCeCustomQty(null)
+                                  setCeLots(num)
                                 }
-                              >
-                                {maximizedPane === 'scalper-p1' ? (
-                                  <Minimize2 className="h-3 w-3" />
-                                ) : (
-                                  <Maximize2 className="h-3 w-3" />
-                                )}
-                              </button>
-                            </div>
+                              }}
+                              onBlur={() => {
+                                const num = parseInt(ceLotsText ?? '', 10)
+                                const safe =
+                                  Number.isFinite(num) && num >= 1 ? num : Math.max(1, ceLots)
+                                setCeLots(safe)
+                                setCeLotsText(null)
+                                setTimeout(() => setCeChartQtyFocused(false), 140)
+                              }}
+                              onKeyDown={(e) => {
+                                e.stopPropagation()
+                                if (e.key === 'Enter' || e.key === 'Escape') {
+                                  e.currentTarget.blur()
+                                } else if (e.key === 'ArrowUp') {
+                                  e.preventDefault()
+                                  setCeCustomQty(null)
+                                  setCeLots((l) => {
+                                    const next = l + 1
+                                    setCeLotsText(String(next))
+                                    return next
+                                  })
+                                } else if (e.key === 'ArrowDown') {
+                                  e.preventDefault()
+                                  setCeCustomQty(null)
+                                  setCeLots((l) => {
+                                    const next = Math.max(1, l - 1)
+                                    setCeLotsText(String(next))
+                                    return next
+                                  })
+                                }
+                              }}
+                              className={cn(
+                                'h-full w-full cursor-text select-all rounded-[4px] border text-center font-mono text-[10px] font-bold transition-colors focus:outline-none',
+                                ceChartQtyFocused
+                                  ? 'border-[#10a37f] bg-white text-[#0d0d0d] ring-1 ring-[#10a37f]/50 dark:bg-[#171717] dark:text-white'
+                                  : 'border-black/15 bg-white/95 text-[#0d0d0d] hover:border-black/30 hover:bg-[#f4f4f4] dark:border-white/15 dark:bg-[#171717]/90 dark:text-[#ececec] dark:hover:border-white/35 dark:hover:bg-[#242424]'
+                              )}
+                            />
                           </div>
 
-                          <div className="relative flex-1 min-h-0">
-                            <ChartPane
-                              paneId="scalper-p1"
-                              paneLabel="CALL (CE) Chart"
-                              toolbarHost={toolbarHost}
-                              focused={focusedPane === 'scalper-p1'}
-                              chartSelector={chartSelector}
-                              apiKey={apiKey}
-                              wsUrl={wsUrl}
-                              style={{ height: '100%', border: 'none', borderRadius: 0 }}
-                              sharedTool={tool}
-                              sharedMagnet={magnet}
-                              sharedStay={stay}
-                              sharedLatch={latched}
-                              onReplayStart={startWorkspaceReplay}
-                              workspaceReplay={replaySnapshot}
-                              onBeforeSourceChange={stopWorkspaceReplay}
-                              onFocusPane={focusPane}
-                              onSymbolChange={noteSymbol}
-                              onIntervalChange={noteChartChanged}
-                              onTerminalChange={noteTerminal}
-                              onObjectsChange={noteObjects}
-                              onOpenScriptSource={showScriptSource}
-                              onAlertsReady={noteAlerts}
-                              onAlertFired={noteAlertFired}
-                              onAlertsChanged={() => setAlertRevision((n) => n + 1)}
-                              onDrawStats={onPaneDrawStats}
-                              onToggleRail={() => setShowRail((v) => !v)}
-                              railVisible={showRail}
-                              linkGroup={linkGroup}
-                              armed={armed}
-                              externalQty={ceLots}
-                              onQtyChange={(_, nextLots) => {
-                                setCeCustomQty(null)
-                                setCeLots(Math.max(1, nextLots))
-                              }}
-                              defaultProduct={product}
-                              onProductChange={(_, nextProd) => {
-                                if (nextProd === 'NRML' || nextProd === 'MIS') {
-                                  setProduct(nextProd)
-                                }
-                              }}
-                              onTradeQtyClick={() => {
-                                setCeChartQtyFocused(true)
-                                setTimeout(() => ceChartQtyInputRef.current?.select(), 0)
-                              }}
-                              layoutPicker={workspaceControls}
-                            />
-
-                            {/* Editable Middle Lot/Qty Box between On-Chart SELL and BUY buttons */}
+                          {/* Quick Lot & Qty Editor Bar right underneath [SELL] [Lots] [BUY] when focused */}
+                          {ceChartQtyFocused && (
                             <div
                               style={{
                                 position: 'absolute',
-                                left: '68.28px',
-                                top: '44px',
-                                width: '28.8px',
-                                height: '30.24px',
-                                zIndex: 12,
+                                left: '14px',
+                                top: '77px',
+                                zIndex: 20,
                               }}
-                              onClick={(e) => e.stopPropagation()}
-                              onMouseDown={(e) => e.stopPropagation()}
-                              onWheel={(e) => {
+                              onMouseDown={(e) => {
                                 e.preventDefault()
                                 e.stopPropagation()
-                                const delta = e.deltaY < 0 ? 1 : -1
-                                setCeCustomQty(null)
-                                setCeLots((l) => Math.max(1, l + delta))
                               }}
-                              title={`Click to edit CE Lots / Quantity (${ceLots}L = ${ceOrderQty} Qty · ${product})`}
+                              onClick={(e) => e.stopPropagation()}
+                              className="flex items-center gap-1.5 rounded-md border border-border bg-popover/95 px-2 py-1 text-[11px] font-mono text-popover-foreground shadow-lg backdrop-blur-md"
                             >
-                              <input
-                                ref={ceChartQtyInputRef}
-                                type="text"
-                                inputMode="numeric"
-                                aria-label="Edit CE Chart Lots"
-                                value={
-                                  ceChartQtyFocused
-                                    ? (ceLotsText ?? String(ceLots))
-                                    : `${ceLots}L`
-                                }
-                                onFocus={(e) => {
-                                  setCeChartQtyFocused(true)
-                                  setCeLotsText(String(ceLots))
-                                  e.currentTarget.select()
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setCeCustomQty(null)
+                                  setCeLots((l) => {
+                                    const next = Math.max(1, l - 1)
+                                    setCeLotsText(String(next))
+                                    return next
+                                  })
                                 }}
-                                onChange={(e) => {
-                                  const raw = e.target.value.replace(/[^0-9]/g, '')
-                                  setCeLotsText(raw)
-                                  const num = parseInt(raw, 10)
-                                  if (Number.isFinite(num) && num >= 1) {
-                                    setCeCustomQty(null)
-                                    setCeLots(num)
-                                  }
-                                }}
-                                onBlur={() => {
-                                  const num = parseInt(ceLotsText ?? '', 10)
-                                  const safe =
-                                    Number.isFinite(num) && num >= 1 ? num : Math.max(1, ceLots)
-                                  setCeLots(safe)
-                                  setCeLotsText(null)
-                                  setTimeout(() => setCeChartQtyFocused(false), 140)
-                                }}
-                                onKeyDown={(e) => {
-                                  e.stopPropagation()
-                                  if (e.key === 'Enter' || e.key === 'Escape') {
-                                    e.currentTarget.blur()
-                                  } else if (e.key === 'ArrowUp') {
-                                    e.preventDefault()
-                                    setCeCustomQty(null)
-                                    setCeLots((l) => {
-                                      const next = l + 1
-                                      setCeLotsText(String(next))
-                                      return next
-                                    })
-                                  } else if (e.key === 'ArrowDown') {
-                                    e.preventDefault()
-                                    setCeCustomQty(null)
-                                    setCeLots((l) => {
-                                      const next = Math.max(1, l - 1)
-                                      setCeLotsText(String(next))
-                                      return next
-                                    })
-                                  }
-                                }}
-                                className={cn(
-                                  'h-full w-full cursor-text select-all rounded-[4px] border text-center font-mono text-[10px] font-bold transition-colors focus:outline-none',
-                                  ceChartQtyFocused
-                                    ? 'border-[#10a37f] bg-white text-[#0d0d0d] ring-1 ring-[#10a37f]/50 dark:bg-[#171717] dark:text-white'
-                                    : 'border-black/15 bg-white/95 text-[#0d0d0d] hover:border-black/30 hover:bg-[#f4f4f4] dark:border-white/15 dark:bg-[#171717]/90 dark:text-[#ececec] dark:hover:border-white/35 dark:hover:bg-[#242424]'
-                                )}
-                              />
-                            </div>
-
-                            {/* Quick Lot & Qty Editor Bar right underneath [SELL] [Lots] [BUY] when focused */}
-                            {ceChartQtyFocused && (
-                              <div
-                                style={{
-                                  position: 'absolute',
-                                  left: '14px',
-                                  top: '77px',
-                                  zIndex: 20,
-                                }}
-                                onMouseDown={(e) => {
-                                  e.preventDefault()
-                                  e.stopPropagation()
-                                }}
-                                onClick={(e) => e.stopPropagation()}
-                                className="flex items-center gap-1.5 rounded-md border border-border bg-popover/95 px-2 py-1 text-[11px] font-mono text-popover-foreground shadow-lg backdrop-blur-md"
+                                className="flex h-5 w-5 items-center justify-center rounded border border-border/70 bg-muted/50 font-bold hover:bg-muted"
                               >
+                                −
+                              </button>
+                              <span className="text-[10px] text-muted-foreground">
+                                {ceLots}L ={' '}
+                                <strong className="text-foreground">{ceOrderQty}</strong> Q
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setCeCustomQty(null)
+                                  setCeLots((l) => {
+                                    const next = l + 1
+                                    setCeLotsText(String(next))
+                                    return next
+                                  })
+                                }}
+                                className="flex h-5 w-5 items-center justify-center rounded border border-border/70 bg-muted/50 font-bold hover:bg-muted"
+                              >
+                                +
+                              </button>
+                              <div className="mx-0.5 h-3.5 w-px bg-border" />
+                              {[1, 2, 5, 10].map((presetLot) => (
                                 <button
+                                  key={presetLot}
                                   type="button"
                                   onClick={() => {
                                     setCeCustomQty(null)
-                                    setCeLots((l) => {
-                                      const next = Math.max(1, l - 1)
-                                      setCeLotsText(String(next))
-                                      return next
-                                    })
+                                    setCeLots(presetLot)
+                                    setCeLotsText(String(presetLot))
+                                    setCeChartQtyFocused(false)
                                   }}
-                                  className="flex h-5 w-5 items-center justify-center rounded border border-border/70 bg-muted/50 font-bold hover:bg-muted"
+                                  className={cn(
+                                    'rounded px-1.5 py-0.5 text-[10px] font-semibold transition-colors',
+                                    ceLots === presetLot
+                                      ? 'bg-primary text-primary-foreground'
+                                      : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground'
+                                  )}
                                 >
-                                  −
+                                  {presetLot}L
                                 </button>
-                                <span className="text-[10px] text-muted-foreground">
-                                  {ceLots}L ={' '}
-                                  <strong className="text-foreground">{ceOrderQty}</strong> Q
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setCeCustomQty(null)
-                                    setCeLots((l) => {
-                                      const next = l + 1
-                                      setCeLotsText(String(next))
-                                      return next
-                                    })
-                                  }}
-                                  className="flex h-5 w-5 items-center justify-center rounded border border-border/70 bg-muted/50 font-bold hover:bg-muted"
-                                >
-                                  +
-                                </button>
-                                <div className="mx-0.5 h-3.5 w-px bg-border" />
-                                {[1, 2, 5, 10].map((presetLot) => (
-                                  <button
-                                    key={presetLot}
-                                    type="button"
-                                    onClick={() => {
-                                      setCeCustomQty(null)
-                                      setCeLots(presetLot)
-                                      setCeLotsText(String(presetLot))
-                                      setCeChartQtyFocused(false)
-                                    }}
-                                    className={cn(
-                                      'rounded px-1.5 py-0.5 text-[10px] font-semibold transition-colors',
-                                      ceLots === presetLot
-                                        ? 'bg-primary text-primary-foreground'
-                                        : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground'
-                                    )}
-                                  >
-                                    {presetLot}L
-                                  </button>
-                                ))}
-                                <span className="ml-0.5 rounded bg-[#10a37f]/15 px-1 py-0.5 text-[9px] font-bold text-[#0d8a6a] dark:text-[#34d399]">
-                                  {product}
-                                </span>
-                              </div>
-                            )}
-                          </div>
+                              ))}
+                              <span className="ml-0.5 rounded bg-[#10a37f]/15 px-1 py-0.5 text-[9px] font-bold text-[#0d8a6a] dark:text-[#34d399]">
+                                {product}
+                              </span>
+                            </div>
+                          )}
                         </div>
-                      )}
+                      </div>
+                    )}
 
                     {/* ── PANE 2: PUT / PE ────────────────────────────────── */}
-                    {visiblePanes.pe &&
-                      (!maximizedPane || maximizedPane === 'scalper-p2') && (
+                    {visiblePanes.pe && (!maximizedPane || maximizedPane === 'scalper-p2') && (
+                      <div
+                        style={{ gridArea: maximizedPane ? 'max' : 'c' }}
+                        className={cn(
+                          'flex flex-col min-h-0 min-w-0 rounded-lg border bg-card overflow-hidden transition-colors',
+                          focusedPane === 'scalper-p2'
+                            ? 'border-indigo-500/80 shadow-[0_0_0_1px_rgba(99,102,241,0.25)]'
+                            : 'border-border/70'
+                        )}
+                      >
+                        {/* Sleek Pane Header Bar */}
                         <div
-                          style={{ gridArea: maximizedPane ? 'max' : 'c' }}
-                          className={cn(
-                            'flex flex-col min-h-0 min-w-0 rounded-lg border bg-card overflow-hidden transition-colors',
-                            focusedPane === 'scalper-p2'
-                              ? 'border-indigo-500/80 shadow-[0_0_0_1px_rgba(99,102,241,0.25)]'
-                              : 'border-border/70'
-                          )}
+                          onClick={() =>
+                            focusPane(terminalsRef.current['scalper-p2'] ?? null, 'scalper-p2')
+                          }
+                          className="flex h-7 shrink-0 cursor-pointer items-center justify-between border-b border-border/60 bg-muted/30 px-2.5 text-[11px]"
                         >
-                          {/* Sleek Pane Header Bar */}
-                          <div
-                            onClick={() =>
-                              focusPane(terminalsRef.current['scalper-p2'] ?? null, 'scalper-p2')
-                            }
-                            className="flex h-7 shrink-0 cursor-pointer items-center justify-between border-b border-border/60 bg-muted/30 px-2.5 text-[11px]"
-                          >
-                            <div className="flex items-center gap-2">
-                              <span className="font-bold tracking-wide text-foreground">
-                                PUT: {peActiveSym?.symbol ?? 'Select PE'}
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold tracking-wide text-foreground">
+                              PUT: {peActiveSym?.symbol ?? 'Select PE'}
+                            </span>
+                            <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">
+                              {peActiveSym?.exchange ?? activeUnderlying.foExchange}
+                            </span>
+                            {focusedPane === 'scalper-p2' && (
+                              <span className="rounded bg-indigo-500/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300">
+                                ACTIVE
                               </span>
-                              <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">
-                                {peActiveSym?.exchange ?? activeUnderlying.foExchange}
-                              </span>
-                              {focusedPane === 'scalper-p2' && (
-                                <span className="rounded bg-indigo-500/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300">
-                                  ACTIVE
-                                </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span
+                              className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_6px_#10b981]"
+                              title="Live WebSocket market stream active"
+                            />
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setMaximizedPane((m) => (m === 'scalper-p2' ? null : 'scalper-p2'))
+                              }}
+                              className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                              title={
+                                maximizedPane === 'scalper-p2'
+                                  ? 'Restore 3-pane view'
+                                  : 'Maximize PUT pane'
+                              }
+                            >
+                              {maximizedPane === 'scalper-p2' ? (
+                                <Minimize2 className="h-3 w-3" />
+                              ) : (
+                                <Maximize2 className="h-3 w-3" />
                               )}
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <span
-                                className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_6px_#10b981]"
-                                title="Live 0-1ms WebSocket stream active"
-                              />
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  setMaximizedPane((m) =>
-                                    m === 'scalper-p2' ? null : 'scalper-p2'
-                                  )
-                                }}
-                                className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-                                title={
-                                  maximizedPane === 'scalper-p2' ? 'Restore 3-pane view' : 'Maximize PUT pane'
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="relative flex-1 min-h-0">
+                          <ChartPane
+                            paneId="scalper-p2"
+                            paneLabel="PUT (PE) Chart"
+                            toolbarHost={toolbarHost}
+                            focused={focusedPane === 'scalper-p2'}
+                            chartSelector={chartSelector}
+                            apiKey={apiKey}
+                            wsUrl={wsUrl}
+                            style={{ height: '100%', border: 'none', borderRadius: 0 }}
+                            sharedTool={tool}
+                            sharedMagnet={magnet}
+                            sharedStay={stay}
+                            sharedLatch={latched}
+                            onReplayStart={startWorkspaceReplay}
+                            workspaceReplay={replaySnapshot}
+                            onBeforeSourceChange={stopWorkspaceReplay}
+                            onFocusPane={focusPane}
+                            onSymbolChange={noteSymbol}
+                            onIntervalChange={noteChartChanged}
+                            onTerminalChange={noteTerminal}
+                            onObjectsChange={noteObjects}
+                            onOpenScriptSource={showScriptSource}
+                            onAlertsReady={noteAlerts}
+                            onAlertFired={noteAlertFired}
+                            onAlertsChanged={() => setAlertRevision((n) => n + 1)}
+                            onDrawStats={onPaneDrawStats}
+                            onToggleRail={() => setShowRail((v) => !v)}
+                            railVisible={showRail}
+                            linkGroup={linkGroup}
+                            armed={armed}
+                            externalQty={peLots}
+                            onQtyChange={(_, nextLots) => {
+                              setPeCustomQty(null)
+                              setPeLots(Math.max(1, nextLots))
+                            }}
+                            defaultProduct={product}
+                            onProductChange={(_, nextProd) => {
+                              if (nextProd === 'NRML' || nextProd === 'MIS') {
+                                setProduct(nextProd)
+                              }
+                            }}
+                            onTradeQtyClick={() => {
+                              setPeChartQtyFocused(true)
+                              setTimeout(() => peChartQtyInputRef.current?.select(), 0)
+                            }}
+                            layoutPicker={workspaceControls}
+                          />
+
+                          {/* Editable Middle Lot/Qty Box between On-Chart SELL and BUY buttons */}
+                          <div
+                            style={{
+                              position: 'absolute',
+                              left: '68.28px',
+                              top: '44px',
+                              width: '28.8px',
+                              height: '30.24px',
+                              zIndex: 12,
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            onWheel={(e) => {
+                              e.preventDefault()
+                              e.stopPropagation()
+                              const delta = e.deltaY < 0 ? 1 : -1
+                              setPeCustomQty(null)
+                              setPeLots((l) => Math.max(1, l + delta))
+                            }}
+                            title={`Click to edit PE Lots / Quantity (${peLots}L = ${peOrderQty} Qty · ${product})`}
+                          >
+                            <input
+                              ref={peChartQtyInputRef}
+                              type="text"
+                              inputMode="numeric"
+                              aria-label="Edit PE Chart Lots"
+                              value={
+                                peChartQtyFocused ? (peLotsText ?? String(peLots)) : `${peLots}L`
+                              }
+                              onFocus={(e) => {
+                                setPeChartQtyFocused(true)
+                                setPeLotsText(String(peLots))
+                                e.currentTarget.select()
+                              }}
+                              onChange={(e) => {
+                                const raw = e.target.value.replace(/[^0-9]/g, '')
+                                setPeLotsText(raw)
+                                const num = parseInt(raw, 10)
+                                if (Number.isFinite(num) && num >= 1) {
+                                  setPeCustomQty(null)
+                                  setPeLots(num)
                                 }
-                              >
-                                {maximizedPane === 'scalper-p2' ? (
-                                  <Minimize2 className="h-3 w-3" />
-                                ) : (
-                                  <Maximize2 className="h-3 w-3" />
-                                )}
-                              </button>
-                            </div>
+                              }}
+                              onBlur={() => {
+                                const num = parseInt(peLotsText ?? '', 10)
+                                const safe =
+                                  Number.isFinite(num) && num >= 1 ? num : Math.max(1, peLots)
+                                setPeLots(safe)
+                                setPeLotsText(null)
+                                setTimeout(() => setPeChartQtyFocused(false), 140)
+                              }}
+                              onKeyDown={(e) => {
+                                e.stopPropagation()
+                                if (e.key === 'Enter' || e.key === 'Escape') {
+                                  e.currentTarget.blur()
+                                } else if (e.key === 'ArrowUp') {
+                                  e.preventDefault()
+                                  setPeCustomQty(null)
+                                  setPeLots((l) => {
+                                    const next = l + 1
+                                    setPeLotsText(String(next))
+                                    return next
+                                  })
+                                } else if (e.key === 'ArrowDown') {
+                                  e.preventDefault()
+                                  setPeCustomQty(null)
+                                  setPeLots((l) => {
+                                    const next = Math.max(1, l - 1)
+                                    setPeLotsText(String(next))
+                                    return next
+                                  })
+                                }
+                              }}
+                              className={cn(
+                                'h-full w-full cursor-text select-all rounded-[4px] border text-center font-mono text-[10px] font-bold transition-colors focus:outline-none',
+                                peChartQtyFocused
+                                  ? 'border-[#ef5350] bg-white text-[#0d0d0d] ring-1 ring-[#ef5350]/50 dark:bg-[#171717] dark:text-white'
+                                  : 'border-black/15 bg-white/95 text-[#0d0d0d] hover:border-black/30 hover:bg-[#f4f4f4] dark:border-white/15 dark:bg-[#171717]/90 dark:text-[#ececec] dark:hover:border-white/35 dark:hover:bg-[#242424]'
+                              )}
+                            />
                           </div>
 
-                          <div className="relative flex-1 min-h-0">
-                            <ChartPane
-                              paneId="scalper-p2"
-                              paneLabel="PUT (PE) Chart"
-                              toolbarHost={toolbarHost}
-                              focused={focusedPane === 'scalper-p2'}
-                              chartSelector={chartSelector}
-                              apiKey={apiKey}
-                              wsUrl={wsUrl}
-                              style={{ height: '100%', border: 'none', borderRadius: 0 }}
-                              sharedTool={tool}
-                              sharedMagnet={magnet}
-                              sharedStay={stay}
-                              sharedLatch={latched}
-                              onReplayStart={startWorkspaceReplay}
-                              workspaceReplay={replaySnapshot}
-                              onBeforeSourceChange={stopWorkspaceReplay}
-                              onFocusPane={focusPane}
-                              onSymbolChange={noteSymbol}
-                              onIntervalChange={noteChartChanged}
-                              onTerminalChange={noteTerminal}
-                              onObjectsChange={noteObjects}
-                              onOpenScriptSource={showScriptSource}
-                              onAlertsReady={noteAlerts}
-                              onAlertFired={noteAlertFired}
-                              onAlertsChanged={() => setAlertRevision((n) => n + 1)}
-                              onDrawStats={onPaneDrawStats}
-                              onToggleRail={() => setShowRail((v) => !v)}
-                              railVisible={showRail}
-                              linkGroup={linkGroup}
-                              armed={armed}
-                              externalQty={peLots}
-                              onQtyChange={(_, nextLots) => {
-                                setPeCustomQty(null)
-                                setPeLots(Math.max(1, nextLots))
-                              }}
-                              defaultProduct={product}
-                              onProductChange={(_, nextProd) => {
-                                if (nextProd === 'NRML' || nextProd === 'MIS') {
-                                  setProduct(nextProd)
-                                }
-                              }}
-                              onTradeQtyClick={() => {
-                                setPeChartQtyFocused(true)
-                                setTimeout(() => peChartQtyInputRef.current?.select(), 0)
-                              }}
-                              layoutPicker={workspaceControls}
-                            />
-
-                            {/* Editable Middle Lot/Qty Box between On-Chart SELL and BUY buttons */}
+                          {/* Quick Lot & Qty Editor Bar right underneath [SELL] [Lots] [BUY] when focused */}
+                          {peChartQtyFocused && (
                             <div
                               style={{
                                 position: 'absolute',
-                                left: '68.28px',
-                                top: '44px',
-                                width: '28.8px',
-                                height: '30.24px',
-                                zIndex: 12,
+                                left: '14px',
+                                top: '77px',
+                                zIndex: 20,
                               }}
-                              onClick={(e) => e.stopPropagation()}
-                              onMouseDown={(e) => e.stopPropagation()}
-                              onWheel={(e) => {
+                              onMouseDown={(e) => {
                                 e.preventDefault()
                                 e.stopPropagation()
-                                const delta = e.deltaY < 0 ? 1 : -1
-                                setPeCustomQty(null)
-                                setPeLots((l) => Math.max(1, l + delta))
                               }}
-                              title={`Click to edit PE Lots / Quantity (${peLots}L = ${peOrderQty} Qty · ${product})`}
+                              onClick={(e) => e.stopPropagation()}
+                              className="flex items-center gap-1.5 rounded-md border border-border bg-popover/95 px-2 py-1 text-[11px] font-mono text-popover-foreground shadow-lg backdrop-blur-md"
                             >
-                              <input
-                                ref={peChartQtyInputRef}
-                                type="text"
-                                inputMode="numeric"
-                                aria-label="Edit PE Chart Lots"
-                                value={
-                                  peChartQtyFocused
-                                    ? (peLotsText ?? String(peLots))
-                                    : `${peLots}L`
-                                }
-                                onFocus={(e) => {
-                                  setPeChartQtyFocused(true)
-                                  setPeLotsText(String(peLots))
-                                  e.currentTarget.select()
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setPeCustomQty(null)
+                                  setPeLots((l) => {
+                                    const next = Math.max(1, l - 1)
+                                    setPeLotsText(String(next))
+                                    return next
+                                  })
                                 }}
-                                onChange={(e) => {
-                                  const raw = e.target.value.replace(/[^0-9]/g, '')
-                                  setPeLotsText(raw)
-                                  const num = parseInt(raw, 10)
-                                  if (Number.isFinite(num) && num >= 1) {
-                                    setPeCustomQty(null)
-                                    setPeLots(num)
-                                  }
-                                }}
-                                onBlur={() => {
-                                  const num = parseInt(peLotsText ?? '', 10)
-                                  const safe =
-                                    Number.isFinite(num) && num >= 1 ? num : Math.max(1, peLots)
-                                  setPeLots(safe)
-                                  setPeLotsText(null)
-                                  setTimeout(() => setPeChartQtyFocused(false), 140)
-                                }}
-                                onKeyDown={(e) => {
-                                  e.stopPropagation()
-                                  if (e.key === 'Enter' || e.key === 'Escape') {
-                                    e.currentTarget.blur()
-                                  } else if (e.key === 'ArrowUp') {
-                                    e.preventDefault()
-                                    setPeCustomQty(null)
-                                    setPeLots((l) => {
-                                      const next = l + 1
-                                      setPeLotsText(String(next))
-                                      return next
-                                    })
-                                  } else if (e.key === 'ArrowDown') {
-                                    e.preventDefault()
-                                    setPeCustomQty(null)
-                                    setPeLots((l) => {
-                                      const next = Math.max(1, l - 1)
-                                      setPeLotsText(String(next))
-                                      return next
-                                    })
-                                  }
-                                }}
-                                className={cn(
-                                  'h-full w-full cursor-text select-all rounded-[4px] border text-center font-mono text-[10px] font-bold transition-colors focus:outline-none',
-                                  peChartQtyFocused
-                                    ? 'border-[#ef5350] bg-white text-[#0d0d0d] ring-1 ring-[#ef5350]/50 dark:bg-[#171717] dark:text-white'
-                                    : 'border-black/15 bg-white/95 text-[#0d0d0d] hover:border-black/30 hover:bg-[#f4f4f4] dark:border-white/15 dark:bg-[#171717]/90 dark:text-[#ececec] dark:hover:border-white/35 dark:hover:bg-[#242424]'
-                                )}
-                              />
-                            </div>
-
-                            {/* Quick Lot & Qty Editor Bar right underneath [SELL] [Lots] [BUY] when focused */}
-                            {peChartQtyFocused && (
-                              <div
-                                style={{
-                                  position: 'absolute',
-                                  left: '14px',
-                                  top: '77px',
-                                  zIndex: 20,
-                                }}
-                                onMouseDown={(e) => {
-                                  e.preventDefault()
-                                  e.stopPropagation()
-                                }}
-                                onClick={(e) => e.stopPropagation()}
-                                className="flex items-center gap-1.5 rounded-md border border-border bg-popover/95 px-2 py-1 text-[11px] font-mono text-popover-foreground shadow-lg backdrop-blur-md"
+                                className="flex h-5 w-5 items-center justify-center rounded border border-border/70 bg-muted/50 font-bold hover:bg-muted"
                               >
+                                −
+                              </button>
+                              <span className="text-[10px] text-muted-foreground">
+                                {peLots}L ={' '}
+                                <strong className="text-foreground">{peOrderQty}</strong> Q
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setPeCustomQty(null)
+                                  setPeLots((l) => {
+                                    const next = l + 1
+                                    setPeLotsText(String(next))
+                                    return next
+                                  })
+                                }}
+                                className="flex h-5 w-5 items-center justify-center rounded border border-border/70 bg-muted/50 font-bold hover:bg-muted"
+                              >
+                                +
+                              </button>
+                              <div className="mx-0.5 h-3.5 w-px bg-border" />
+                              {[1, 2, 5, 10].map((presetLot) => (
                                 <button
+                                  key={presetLot}
                                   type="button"
                                   onClick={() => {
                                     setPeCustomQty(null)
-                                    setPeLots((l) => {
-                                      const next = Math.max(1, l - 1)
-                                      setPeLotsText(String(next))
-                                      return next
-                                    })
+                                    setPeLots(presetLot)
+                                    setPeLotsText(String(presetLot))
+                                    setPeChartQtyFocused(false)
                                   }}
-                                  className="flex h-5 w-5 items-center justify-center rounded border border-border/70 bg-muted/50 font-bold hover:bg-muted"
+                                  className={cn(
+                                    'rounded px-1.5 py-0.5 text-[10px] font-semibold transition-colors',
+                                    peLots === presetLot
+                                      ? 'bg-primary text-primary-foreground'
+                                      : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground'
+                                  )}
                                 >
-                                  −
+                                  {presetLot}L
                                 </button>
-                                <span className="text-[10px] text-muted-foreground">
-                                  {peLots}L ={' '}
-                                  <strong className="text-foreground">{peOrderQty}</strong> Q
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setPeCustomQty(null)
-                                    setPeLots((l) => {
-                                      const next = l + 1
-                                      setPeLotsText(String(next))
-                                      return next
-                                    })
-                                  }}
-                                  className="flex h-5 w-5 items-center justify-center rounded border border-border/70 bg-muted/50 font-bold hover:bg-muted"
-                                >
-                                  +
-                                </button>
-                                <div className="mx-0.5 h-3.5 w-px bg-border" />
-                                {[1, 2, 5, 10].map((presetLot) => (
-                                  <button
-                                    key={presetLot}
-                                    type="button"
-                                    onClick={() => {
-                                      setPeCustomQty(null)
-                                      setPeLots(presetLot)
-                                      setPeLotsText(String(presetLot))
-                                      setPeChartQtyFocused(false)
-                                    }}
-                                    className={cn(
-                                      'rounded px-1.5 py-0.5 text-[10px] font-semibold transition-colors',
-                                      peLots === presetLot
-                                        ? 'bg-primary text-primary-foreground'
-                                        : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground'
-                                    )}
-                                  >
-                                    {presetLot}L
-                                  </button>
-                                ))}
-                                <span className="ml-0.5 rounded bg-[#10a37f]/15 px-1 py-0.5 text-[9px] font-bold text-[#0d8a6a] dark:text-[#34d399]">
-                                  {product}
-                                </span>
-                              </div>
-                            )}
-                          </div>
+                              ))}
+                              <span className="ml-0.5 rounded bg-[#10a37f]/15 px-1 py-0.5 text-[9px] font-bold text-[#0d8a6a] dark:text-[#34d399]">
+                                {product}
+                              </span>
+                            </div>
+                          )}
                         </div>
-                      )}
+                      </div>
+                    )}
                   </div>
 
                   {/* Draggable Grid Dividers between SPOT, CE and PE */}
@@ -4011,561 +3395,52 @@ function ScalperWorkspace({ account }: { account: string | null }) {
         )}
 
         {/* ═══ SCALPER FAST EXECUTION FOOTER BAR (OpenAI Light & Dark UI Style + Option Chain + In-Between Editable Lots/Qty) ═══ */}
-        <footer
-          className={cn(
-            'flex h-11 shrink-0 items-center justify-between gap-2 px-3 select-none',
-            'border-t border-black/[0.09] bg-[#f8f9fa] text-[#09090b]',
-            'dark:border-white/[0.09] dark:bg-[#141414] dark:text-[#ececec]'
-          )}
-        >
+        <footer className="scalper-execution-bar">
           {/* Left: CALL (CE) OpenAI UI Option Chain + [ BUY CE ] [ − Lots/Qty + ] [ SELL CE ] */}
-          <div className="flex items-center gap-1.5">
+          <div className="scalper-order-cluster" data-option-side="CE">
             {/* CE Strike Live Option Chain Selector (OpenAI UI Capsule when Closed & Open) */}
-            <DropdownMenu open={ceChainOpen} onOpenChange={setCeChainOpen}>
-              <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
-                  className={cn(
-                    'flex h-8 items-center gap-2 rounded-lg border px-2.5 text-xs font-mono transition-all duration-150',
-                    'border-black/[0.11] bg-white text-[#09090b] shadow-2xs',
-                    'hover:border-black/[0.24] hover:bg-[#e8ecf1]',
-                    'dark:border-white/[0.12] dark:bg-[#212121] dark:text-[#ececec] dark:shadow-none',
-                    'dark:hover:border-white/[0.26] dark:hover:bg-[#2d3036] dark:hover:text-white',
-                    ceChainOpen &&
-                      'border-black/[0.28] bg-[#e2e6ec] ring-1 ring-black/[0.10] dark:border-white/[0.28] dark:bg-[#2d3036] dark:ring-white/[0.12]'
-                  )}
-                  title="Open Call (CE) Option Chain · Switch Strike or Expiry"
-                >
-                  <span className="h-2 w-2 rounded-full bg-[#16a34a] shrink-0" />
-                  <span className="font-semibold tracking-tight text-[#09090b] dark:text-[#ececec]">
-                    {ceStrike ? `${ceStrike} CE` : (ceActiveSym?.symbol ?? 'CE Strike')}
-                  </span>
-                  {selectedExpiry && (
-                    <span className="rounded border border-black/[0.09] bg-[#f1f3f5] px-1.5 py-0.5 text-[10px] font-medium text-[#3f3f46] dark:border-white/[0.10] dark:bg-[#2f2f2f] dark:text-[#b4b4b4]">
-                      {selectedExpiry}
-                    </span>
-                  )}
-                  {ceRow?.ce?.moneyness && (
-                    <span
-                      className={cn(
-                        'rounded border px-1.5 py-0.5 text-[9px] font-semibold',
-                        ceRow.ce.moneyness === 'ATM'
-                          ? 'border-black/[0.18] bg-[#e2e6ec] text-[#09090b] dark:border-white/[0.18] dark:bg-[#303030] dark:text-[#ececec]'
-                          : ceRow.ce.moneyness === 'ITM'
-                            ? 'border-[#16a34a]/35 bg-[#16a34a]/14 text-[#15803d] dark:text-[#4ade80]'
-                            : 'border-black/[0.09] bg-[#f1f3f5] text-[#52525b] dark:border-white/[0.10] dark:bg-[#262626] dark:text-[#a1a1aa]'
-                      )}
-                    >
-                      {ceRow.ce.moneyness}
-                    </span>
-                  )}
-                  {typeof ceRow?.ce?.ltp === 'number' && ceRow.ce.ltp > 0 && (
-                    <span className="font-semibold text-[#09090b] dark:text-[#ececec] tabular-nums">
-                      {ceRow.ce.ltp.toFixed(2)}
-                    </span>
-                  )}
-                  {typeof ceRow?.ce?.chgPct === 'number' && (
-                    <span
-                      className={cn(
-                        'hidden xl:inline text-[10px] font-medium tabular-nums',
-                        ceRow.ce.chgPct >= 0
-                          ? 'text-[#16a34a] dark:text-[#4ade80]'
-                          : 'text-[#dc2626] dark:text-[#f87171]'
-                      )}
-                    >
-                      {ceRow.ce.chgPct >= 0 ? '+' : ''}
-                      {ceRow.ce.chgPct.toFixed(1)}%
-                    </span>
-                  )}
-                  <span className="text-[10px] text-[#52525b] dark:text-[#a1a1aa]">▾</span>
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent
-                align="start"
-                side="top"
-                sideOffset={8}
-                className={cn(
-                  'w-[548px] p-0 overflow-hidden rounded-2xl',
-                  'border border-black/[0.11] bg-white text-[#09090b] shadow-[0_20px_50px_-12px_rgba(0,0,0,0.22)]',
-                  'dark:border-white/[0.12] dark:bg-[#171717] dark:text-[#ececec] dark:shadow-[0_24px_60px_-12px_rgba(0,0,0,0.85)]'
-                )}
-              >
-                {/* OpenAI UI Header Bar: CALLS Badge + Index Selector + Expiry Selector + ATM + Refresh */}
-                <div className="flex items-center justify-between gap-3 border-b border-black/[0.08] bg-[#f4f5f7] px-4 py-3 dark:border-white/[0.08] dark:bg-[#1e1e1e]">
-                  <div className="flex items-center gap-1.5 min-w-0">
-                    <span className="inline-flex items-center gap-1.5 rounded-md border border-[#16a34a]/35 bg-[#16a34a]/12 px-2 py-0.5 font-mono text-[10px] font-semibold tracking-wide text-[#15803d] dark:bg-[#16a34a]/15 dark:text-[#4ade80] shrink-0">
-                      <span className="h-1.5 w-1.5 rounded-full bg-[#16a34a]" />
-                      CALLS (CE)
-                    </span>
-                    {/* OpenAI UI Underlying Index Selector with Live Price, ±Pts & ±% */}
-                    <div className="relative">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.preventDefault()
-                          e.stopPropagation()
-                          setCeIndexOpen((v) => !v)
-                        }}
-                        className={cn(
-                          'flex h-6.5 cursor-pointer items-center gap-1.5 rounded-md border px-2 font-mono text-[11px] font-semibold transition-colors',
-                          'border-black/[0.12] bg-white text-[#09090b] hover:border-black/[0.24] hover:bg-[#e8ecf1] focus:outline-none',
-                          'dark:border-white/[0.12] dark:bg-[#262626] dark:text-[#ececec] dark:hover:border-white/[0.26] dark:hover:bg-[#32353c]'
-                        )}
-                      >
-                        <span>{activeUnderlying.id}</span>
-                        {activeIndexQuote.ltp > 0 && (
-                          <span className="font-bold tabular-nums text-[#09090b] dark:text-[#ececec]">
-                            {activeIndexQuote.ltp.toLocaleString('en-IN', {
-                              minimumFractionDigits: 2,
-                              maximumFractionDigits: 2,
-                            })}
-                          </span>
-                        )}
-                        {activeIndexQuote.change !== null && activeIndexQuote.changePct !== null && (
-                          <span
-                            className={cn(
-                              'text-[10px] font-semibold tabular-nums',
-                              activeIndexQuote.change >= 0
-                                ? 'text-[#15803d] dark:text-[#4ade80]'
-                                : 'text-[#dc2626] dark:text-[#f87171]'
-                            )}
-                          >
-                            {activeIndexQuote.change >= 0 ? '+' : ''}
-                            {activeIndexQuote.change.toFixed(2)} (
-                            {activeIndexQuote.changePct >= 0 ? '+' : ''}
-                            {activeIndexQuote.changePct.toFixed(2)}%)
-                          </span>
-                        )}
-                        <span className="text-[9px] text-[#52525b] dark:text-[#a1a1aa]">▾</span>
-                      </button>
-                      {ceIndexOpen && (
-                        <div
-                          className="absolute left-0 top-full z-50 mt-1 w-[340px] rounded-xl border border-black/[0.12] bg-white p-1.5 shadow-[0_14px_34px_rgba(0,0,0,0.18)] dark:border-white/[0.14] dark:bg-[#171717] dark:shadow-[0_18px_42px_rgba(0,0,0,0.85)]"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          {UNDERLYINGS.map((u) => {
-                            const q = indexQuotesById[u.id]
-                            const isUp = (q?.change ?? 0) >= 0
-                            return (
-                              <button
-                                key={u.id}
-                                type="button"
-                                onClick={(e) => {
-                                  e.preventDefault()
-                                  e.stopPropagation()
-                                  ceDidScrollRef.current = false
-                                  setCeIndexOpen(false)
-                                  handleSelectUnderlying(u)
-                                }}
-                                className={cn(
-                                  'flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-left font-mono text-[11px] transition-colors cursor-pointer',
-                                  u.id === activeUnderlying.id
-                                    ? 'bg-[#e4e8ee] text-[#09090b] font-semibold dark:bg-[#2d3036] dark:text-white'
-                                    : 'text-[#3f3f46] hover:bg-[#eef1f5] hover:text-[#09090b] dark:text-[#b4b4b4] dark:hover:bg-[#26282d] dark:hover:text-white'
-                                )}
-                              >
-                                <div className="flex items-center gap-1.5 min-w-0">
-                                  <span
-                                    className={cn(
-                                      'h-1.5 w-1.5 rounded-full shrink-0',
-                                      q?.change != null && q.change < 0
-                                        ? 'bg-[#dc2626]'
-                                        : 'bg-[#16a34a]'
-                                    )}
-                                  />
-                                  <span className="font-semibold text-[#09090b] dark:text-[#ececec]">
-                                    {u.label}
-                                  </span>
-                                  <span className="rounded bg-[#f4f4f5] border border-black/[0.09] px-1.5 py-px text-[9px] leading-4 text-[#52525b] dark:bg-[#262626] dark:border-white/[0.10] dark:text-[#a1a1aa]">
-                                    {u.foExchange}
-                                  </span>
-                                </div>
-                                <div className="flex items-center gap-1.5 tabular-nums shrink-0">
-                                  <span className="font-bold text-[#09090b] dark:text-[#ececec]">
-                                    {q && q.ltp > 0
-                                      ? q.ltp.toLocaleString('en-IN', {
-                                          minimumFractionDigits: 2,
-                                          maximumFractionDigits: 2,
-                                        })
-                                      : '—'}
-                                  </span>
-                                  {q && q.change !== null && q.changePct !== null && (
-                                    <span
-                                      className={cn(
-                                        'rounded px-1.5 py-0.5 text-[10px] font-semibold',
-                                        isUp
-                                          ? 'bg-[#16a34a]/12 text-[#15803d] dark:bg-[#16a34a]/15 dark:text-[#4ade80]'
-                                          : 'bg-[#dc2626]/12 text-[#dc2626] dark:bg-[#dc2626]/15 dark:text-[#f87171]'
-                                      )}
-                                    >
-                                      {isUp ? '+' : ''}
-                                      {q.change.toFixed(2)} ({isUp ? '+' : ''}
-                                      {q.changePct.toFixed(2)}%)
-                                    </span>
-                                  )}
-                                </div>
-                              </button>
-                            )
-                          })}
-                        </div>
-                      )}
-                    </div>
-                    {/* OpenAI UI Expiry Date Selector */}
-                    <select
-                      aria-label="CE Expiry Date"
-                      value={selectedExpiry}
-                      onChange={(e) => {
-                        ceDidScrollRef.current = false
-                        peDidScrollRef.current = false
-                        setSelectedExpiry(e.target.value)
-                      }}
-                      className={cn(
-                        'h-6.5 cursor-pointer rounded-md border px-2 font-mono text-[11px] font-medium transition-colors',
-                        'border-black/[0.12] bg-white text-[#09090b] hover:border-black/[0.24] hover:bg-[#e8ecf1] focus:outline-none focus:border-black/[0.32]',
-                        'dark:border-white/[0.12] dark:bg-[#262626] dark:text-[#ececec] dark:hover:border-white/[0.26] dark:hover:bg-[#32353c] dark:focus:border-white/[0.32]'
-                      )}
-                    >
-                      {expiries.length === 0 ? (
-                        <option
-                          value=""
-                          className="bg-white text-[#09090b] dark:bg-[#1e1e1e] dark:text-[#ececec]"
-                        >
-                          Loading expiries…
-                        </option>
-                      ) : (
-                        expiries.map((exp) => (
-                          <option
-                            key={exp}
-                            value={exp}
-                            className="bg-white text-[#09090b] dark:bg-[#1e1e1e] dark:text-[#ececec]"
-                          >
-                            {exp}
-                          </option>
-                        ))
-                      )}
-                    </select>
-                  </div>
-
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    {isOptionChainStreaming && (
-                      <span
-                        className="inline-flex items-center gap-1 rounded-full border border-[#16a34a]/30 bg-[#16a34a]/12 px-1.5 py-0.5 text-[9px] font-mono font-semibold text-[#15803d] dark:text-[#4ade80]"
-                        title="Real-time 0–1ms WebSocket stream active"
-                      >
-                        <span className="h-1.5 w-1.5 rounded-full bg-[#16a34a] animate-pulse" />
-                        LIVE
-                      </span>
-                    )}
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.preventDefault()
-                        e.stopPropagation()
-                        scrollCeToAtm()
-                      }}
-                      className="h-6.5 rounded-md border border-black/[0.12] bg-white hover:bg-[#e8ecf1] hover:border-black/[0.24] px-2 font-mono text-[10px] font-semibold text-[#09090b] dark:border-white/[0.12] dark:bg-[#262626] dark:hover:bg-[#32353c] dark:hover:border-white/[0.26] dark:text-[#ececec] transition-colors"
-                      title="Center scroll on ATM strike"
-                    >
-                      ATM
-                    </button>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.preventDefault()
-                        e.stopPropagation()
-                        refetchOptionChain()
-                      }}
-                      className="flex h-6.5 w-6.5 items-center justify-center rounded-md border border-black/[0.12] bg-white text-[#52525b] hover:bg-[#e8ecf1] hover:border-black/[0.24] hover:text-[#09090b] dark:border-white/[0.12] dark:bg-[#262626] dark:text-[#b4b4b4] dark:hover:bg-[#32353c] dark:hover:border-white/[0.26] dark:hover:text-white transition-colors"
-                      title="Refresh Option Chain & OI"
-                    >
-                      <RefreshCw
-                        className={cn('h-3 w-3', isOptionChainLoading && 'animate-spin')}
-                      />
-                    </button>
-                  </div>
-                </div>
-
-                {/* OpenAI UI Telemetry Strip: SPOT | ATM | MAX PAIN | PCR | S | R */}
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-black/[0.07] bg-[#eef0f3] px-4 py-2.5 text-[11px] font-mono tabular-nums dark:border-white/[0.07] dark:bg-[#1a1a1a]">
-                  <div className="flex items-center gap-2">
-                    <span className="inline-flex items-center gap-1.5 text-[#52525b] dark:text-[#a1a1aa]">
-                      SPOT{' '}
-                      <strong className="font-semibold text-[#09090b] dark:text-[#ececec]">
-                        {activeIndexQuote.ltp > 0
-                          ? activeIndexQuote.ltp.toLocaleString('en-IN', {
-                              minimumFractionDigits: 2,
-                              maximumFractionDigits: 2,
-                            })
-                          : '—'}
-                      </strong>
-                      {activeIndexQuote.change !== null && activeIndexQuote.changePct !== null && (
-                        <span
-                          className={cn(
-                            'font-semibold',
-                            activeIndexQuote.change >= 0
-                              ? 'text-[#15803d] dark:text-[#4ade80]'
-                              : 'text-[#dc2626] dark:text-[#f87171]'
-                          )}
-                        >
-                          {activeIndexQuote.change >= 0 ? '+' : ''}
-                          {activeIndexQuote.change.toFixed(2)} (
-                          {activeIndexQuote.changePct >= 0 ? '+' : ''}
-                          {activeIndexQuote.changePct.toFixed(2)}%)
-                        </span>
-                      )}
-                    </span>
-                    {effectiveAtmStrike != null && (
-                      <span className="rounded border border-black/[0.10] bg-white px-1.5 py-0.5 text-[#52525b] dark:border-white/[0.10] dark:bg-[#262626] dark:text-[#b4b4b4]">
-                        ATM{' '}
-                        <strong className="font-semibold text-[#09090b] dark:text-[#ececec]">
-                          {effectiveAtmStrike}
-                        </strong>
-                      </span>
-                    )}
-                    {maxPainStrike != null && (
-                      <span
-                        className="rounded border border-black/[0.10] bg-white px-1.5 py-0.5 text-[#3f3f46] font-medium dark:border-white/[0.10] dark:bg-[#262626] dark:text-[#d4d4d4]"
-                        title="Option Chain Max Pain Strike"
-                      >
-                        MP {maxPainStrike}
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    {pcr > 0 && (
-                      <span
-                        className={cn(
-                          'rounded border px-1.5 py-0.5 font-medium',
-                          pcr >= 1
-                            ? 'border-[#16a34a]/30 bg-[#16a34a]/12 text-[#15803d] dark:text-[#4ade80]'
-                            : pcr <= 0.7
-                              ? 'border-[#dc2626]/30 bg-[#dc2626]/12 text-[#dc2626] dark:text-[#f87171]'
-                              : 'border-black/[0.10] bg-white text-[#52525b] dark:border-white/[0.10] dark:bg-[#262626] dark:text-[#b4b4b4]'
-                        )}
-                        title="Put-Call OI Ratio"
-                      >
-                        PCR {pcr.toFixed(2)}
-                      </span>
-                    )}
-                    {maxPeOiStrike != null && (
-                      <span
-                        className="rounded border border-[#16a34a]/35 bg-[#16a34a]/12 px-1.5 py-0.5 text-[#15803d] dark:text-[#4ade80] font-semibold"
-                        title="Support (S) — Highest Put OI Strike"
-                      >
-                        S {maxPeOiStrike}
-                      </span>
-                    )}
-                    {maxCeOiStrike != null && (
-                      <span
-                        className="rounded border border-[#dc2626]/35 bg-[#dc2626]/12 px-1.5 py-0.5 text-[#dc2626] dark:text-[#f87171] font-semibold"
-                        title="Resistance (R) — Highest Call OI Strike"
-                      >
-                        R {maxCeOiStrike}
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {/* 4-Column OpenAI UI Table Header */}
-                <div className="sticky top-0 z-20 grid grid-cols-[176px_1fr_100px_84px] items-center gap-2 border-b border-black/[0.08] bg-[#e6e9ef] px-4 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-[#52525b] font-mono dark:border-white/[0.08] dark:bg-[#1c1c1c] dark:text-[#a1a1aa]">
-                  <span>Strike · Level</span>
-                  <span className="text-right pr-2">OI / Build</span>
-                  <span className="text-right">LTP</span>
-                  <span className="text-right">Chg%</span>
-                </div>
-
-                {/* Scrollable Full Strike Range (51 Strikes — Never jumps on WebSocket tick) */}
-                <div
-                  ref={ceListRef}
-                  className="max-h-[440px] overflow-y-auto overscroll-contain [scrollbar-width:thin] divide-y divide-black/[0.05] bg-white dark:divide-white/[0.04] dark:bg-[#171717]"
-                >
-                  {enrichedChain.length === 0 ? (
-                    <div className="py-10 text-center font-mono text-xs text-[#52525b] dark:text-[#a1a1aa]">
-                      Loading option chain strikes…
-                    </div>
-                  ) : (
-                    enrichedChain.map((r) => {
-                      const s = String(r.strike)
-                      const leg = r.ce
-                      if (!leg) return null
-                      const isAtm = r.strike === effectiveAtmStrike
-                      const isSelected = s === ceStrike
-                      const isMaxCeOi =
-                        maxCeOiStrike != null && r.strike === maxCeOiStrike && leg.oi > 0
-                      const isMaxPeOi =
-                        maxPeOiStrike != null && r.strike === maxPeOiStrike && (r.pe?.oi ?? 0) > 0
-                      const isMaxPain =
-                        maxPainStrike != null && r.strike === maxPainStrike
-                      const oiPct =
-                        leg.oi > 0 ? Math.min(100, Math.round((leg.oi / peakCeOi) * 100)) : 0
-                      const flash = flashes[leg.symbol]
-
-                      return (
-                        <div
-                          key={s}
-                          data-atm={isAtm ? 'true' : undefined}
-                          onMouseEnter={() => {
-                            if (apiKey && leg.symbol) {
-                              void prefetchSymbolData(
-                                apiKey,
-                                leg.symbol,
-                                activeUnderlying.foExchange,
-                                terminalsRef.current['scalper-p1']?.currentInterval() || '1m'
-                              )
-                            }
-                          }}
-                          onClick={() => {
-                            handleSelectCeStrike(s)
-                            setCeChainOpen(false)
-                          }}
-                          className={cn(
-                            'group relative grid h-10 w-full cursor-pointer grid-cols-[176px_1fr_100px_84px] items-center gap-2 px-4 font-mono text-[12px] tabular-nums transition-colors duration-150',
-                            'hover:bg-[#e8ecf2] dark:hover:bg-[#262930]',
-                            leg.moneyness === 'ITM' && 'bg-black/[0.02] dark:bg-white/[0.015]',
-                            isAtm &&
-                              'bg-[#e2e6ec] border-y border-black/[0.15] font-semibold dark:bg-[#262626] dark:border-white/[0.15]',
-                            isSelected &&
-                              'bg-[#16a34a]/[0.14] ring-1 ring-inset ring-[#16a34a]/50 shadow-[inset_3px_0_0_#16a34a] dark:bg-[#16a34a]/[0.16]',
-                            flash === 'up' && 'bg-[#16a34a]/25',
-                            flash === 'down' && 'bg-[#dc2626]/25'
-                          )}
-                        >
-                          {/* Strike + ATM / ITM / OTM Tag + Support (S) / Resistance (R) / MaxPain Badge */}
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            <span
-                              className={cn(
-                                'font-semibold tracking-tight',
-                                isAtm
-                                  ? 'text-[#09090b] dark:text-white font-bold'
-                                  : isSelected
-                                    ? 'text-[#15803d] dark:text-[#4ade80] font-bold'
-                                    : 'text-[#09090b] dark:text-[#ececec]'
-                              )}
-                            >
-                              {s}
-                            </span>
-                            {isAtm ? (
-                              <span className="rounded border border-black/[0.18] bg-[#d4d8df] px-1.5 py-px text-[9px] leading-4 font-bold text-[#09090b] dark:border-white/[0.18] dark:bg-[#333333] dark:text-white">
-                                ATM
-                              </span>
-                            ) : (
-                              <span
-                                className={cn(
-                                  'rounded border px-1.5 py-px text-[9px] leading-4 font-medium',
-                                  leg.moneyness === 'ITM'
-                                    ? 'border-[#16a34a]/30 bg-[#16a34a]/12 text-[#15803d] dark:text-[#4ade80]'
-                                    : 'border-black/[0.09] bg-[#f1f3f5] text-[#52525b] dark:border-white/[0.09] dark:bg-[#222222] dark:text-[#a1a1aa]'
-                                )}
-                              >
-                                {leg.moneyness}
-                              </span>
-                            )}
-                            {isMaxCeOi && (
-                              <span
-                                className="rounded border border-[#dc2626]/40 bg-[#dc2626]/15 px-1.5 py-px text-[9px] leading-4 font-bold text-[#dc2626] dark:text-[#f87171]"
-                                title="Resistance (R) — Highest Call OI"
-                              >
-                                R
-                              </span>
-                            )}
-                            {isMaxPeOi && !isMaxCeOi && (
-                              <span
-                                className="rounded border border-[#16a34a]/40 bg-[#16a34a]/15 px-1.5 py-px text-[9px] leading-4 font-bold text-[#15803d] dark:text-[#4ade80]"
-                                title="Support (S) — Highest Put OI"
-                              >
-                                S
-                              </span>
-                            )}
-                            {isMaxPain && !isAtm && (
-                              <span
-                                className="rounded border border-black/[0.14] bg-[#e4e7ec] px-1.5 py-px text-[9px] leading-4 font-bold text-[#3f3f46] dark:border-white/[0.14] dark:bg-[#2a2a2a] dark:text-[#d4d4d4]"
-                                title="Max Pain Strike"
-                              >
-                                MP
-                              </span>
-                            )}
-                          </div>
-
-                          {/* OI Cell with OpenAI UI Bar */}
-                          <div className="relative flex h-full items-center justify-end pr-2 overflow-hidden">
-                            {oiPct > 0 && (
-                              <div
-                                className={cn(
-                                  'pointer-events-none absolute inset-y-2.5 right-1 rounded-sm transition-all duration-300',
-                                  isMaxCeOi
-                                    ? 'bg-[#16a34a]/30 border-r-2 border-[#16a34a] dark:bg-[#16a34a]/35'
-                                    : 'bg-[#16a34a]/15 dark:bg-[#16a34a]/18'
-                                )}
-                                style={{ width: `${oiPct}%` }}
-                              />
-                            )}
-                            <span
-                              className={cn(
-                                'relative z-10 text-[10px]',
-                                isMaxCeOi
-                                  ? 'font-bold text-[#09090b] dark:text-[#ececec]'
-                                  : 'text-[#52525b] dark:text-[#b4b4b4]'
-                              )}
-                            >
-                              {formatCompactOi(leg.oi)}
-                            </span>
-                          </div>
-
-                          {/* Live LTP */}
-                          <span
-                            className={cn(
-                              'text-right font-semibold',
-                              flash === 'up'
-                                ? 'text-[#16a34a] dark:text-[#4ade80]'
-                                : flash === 'down'
-                                  ? 'text-[#dc2626] dark:text-[#f87171]'
-                                  : 'text-[#09090b] dark:text-[#ececec]'
-                            )}
-                          >
-                            {leg.ltp > 0 ? leg.ltp.toFixed(2) : '—'}
-                          </span>
-
-                          {/* Live % Change */}
-                          <span
-                            className={cn(
-                              'text-right text-[10px] font-medium',
-                              leg.chgPct != null
-                                ? leg.chgPct >= 0
-                                  ? 'text-[#16a34a] dark:text-[#4ade80]'
-                                  : 'text-[#dc2626] dark:text-[#f87171]'
-                                : 'text-[#52525b] dark:text-[#a1a1aa]'
-                            )}
-                          >
-                            {leg.chgPct != null
-                              ? `${leg.chgPct >= 0 ? '+' : ''}${leg.chgPct.toFixed(1)}%`
-                              : '—'}
-                          </span>
-                        </div>
-                      )
-                    })
-                  )}
-                </div>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <ScalperStrikePicker
+              side="CE"
+              choices={enrichedChain.map((row) => ({
+                strike: row.strike,
+                symbol: row.ce?.symbol || '',
+                price: row.ce?.ltp,
+                openInterest: row.ce?.oi,
+                label: row.ce?.tag,
+                direction: row.ce?.symbol ? flashes[row.ce.symbol] : undefined,
+              }))}
+              value={ceStrike}
+              atmStrike={effectiveAtmStrike}
+              expiry={selectedExpiry}
+              open={ceChainOpen}
+              onOpenChange={setCeChainOpen}
+              onSelect={handleSelectCeStrike}
+              loading={isOptionChainLoading}
+              streaming={isOptionChainStreaming}
+              marketOpen={isMarketOpen(activeUnderlying.spotExchange)}
+              onRefresh={() => {
+                void refetchOptionChain()
+              }}
+              onFullChain={() => setPanel('options')}
+            />
 
             {/* BUY CE Button — Solid Green (#16a34a / hover #15803d) in both Light & Dark Mode matching PlaceOrderDialog */}
             <button
               type="button"
               disabled={orderBusy['CE-BUY']}
-              onClick={() =>
-                void executeQuickOrder('CE', 'BUY', ceActiveSym, ceOrderQty)
-              }
+              onClick={() => void executeQuickOrder('CE', 'BUY', ceActiveSym, ceOrderQty)}
               style={{
                 borderColor: chartTradeColors.border,
               }}
-              className="h-8 rounded-md border bg-[#16a34a] hover:bg-[#15803d] px-3 text-xs font-bold uppercase tracking-wider text-white shadow-xs transition-all active:scale-95 disabled:opacity-50"
+              className="scalper-action-button"
+              data-action="buy"
             >
               BUY CE
             </button>
 
             {/* CE Editable Lot & Quantity Control (OpenAI UI — Positioned IN BETWEEN BUY CE and SELL CE) */}
             <div
-              className="flex h-8 items-center gap-1 rounded-lg border border-black/[0.11] bg-white px-1.5 text-xs font-mono text-[#09090b] shadow-2xs dark:border-white/[0.12] dark:bg-[#212121] dark:text-[#ececec] dark:shadow-none"
+              className="scalper-quantity-control"
               onWheel={(e) => {
                 e.preventDefault()
                 const delta = e.deltaY < 0 ? 1 : -1
@@ -4582,7 +3457,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
                   setCeQtyText(null)
                   setCeLots((l) => Math.max(1, l - 1))
                 }}
-                className="flex h-5 w-5 items-center justify-center rounded hover:bg-[#e2e6ec] text-[#52525b] hover:text-[#09090b] dark:hover:bg-[#32353c] dark:text-[#a1a1aa] dark:hover:text-white font-bold transition-colors"
+                className="scalper-step-button"
                 title="Decrease 1 CE lot"
               >
                 −
@@ -4634,14 +3509,13 @@ function ScalperWorkspace({ account }: { account: string | null }) {
                       })
                     }
                   }}
-                  className="w-8 rounded border border-black/[0.12] bg-[#f1f3f5] hover:bg-[#e8ecf1] px-1 py-0.5 text-center font-bold text-[#09090b] focus:outline-none focus:border-black/[0.30] dark:border-white/[0.12] dark:bg-[#171717] dark:hover:bg-[#262930] dark:text-[#ececec] dark:focus:border-white/[0.30]"
+                  className="scalper-lots-input"
                 />
-                <span className="text-[11px] font-semibold text-[#52525b] dark:text-[#a1a1aa]">L</span>
+                <span className="scalper-quantity-unit">L</span>
               </div>
 
               {/* Direct Editable Quantity Input */}
-              <div className="flex items-center text-[11px] text-[#52525b] dark:text-[#a1a1aa]">
-                <span>(</span>
+              <div className="scalper-total-quantity">
                 <input
                   type="text"
                   inputMode="numeric"
@@ -4671,9 +3545,9 @@ function ScalperWorkspace({ account }: { account: string | null }) {
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') e.currentTarget.blur()
                   }}
-                  className="w-11 rounded bg-transparent px-0.5 text-center font-semibold text-[#09090b] hover:bg-[#e8ecf1] focus:bg-[#f1f3f5] focus:outline-none focus:ring-1 focus:ring-black/[0.24] dark:text-[#ececec] dark:hover:bg-[#32353c] dark:focus:bg-[#171717] dark:focus:ring-white/[0.24]"
+                  className="scalper-qty-input"
                 />
-                <span>Q)</span>
+                <span>Q</span>
               </div>
 
               <button
@@ -4684,7 +3558,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
                   setCeQtyText(null)
                   setCeLots((l) => l + 1)
                 }}
-                className="flex h-5 w-5 items-center justify-center rounded hover:bg-[#e2e6ec] text-[#52525b] hover:text-[#09090b] dark:hover:bg-[#32353c] dark:text-[#a1a1aa] dark:hover:text-white font-bold transition-colors"
+                className="scalper-step-button"
                 title="Increase 1 CE lot"
               >
                 +
@@ -4695,42 +3569,37 @@ function ScalperWorkspace({ account }: { account: string | null }) {
             <button
               type="button"
               disabled={orderBusy['CE-SELL']}
-              onClick={() =>
-                void executeQuickOrder('CE', 'SELL', ceActiveSym, ceOrderQty)
-              }
+              onClick={() => void executeQuickOrder('CE', 'SELL', ceActiveSym, ceOrderQty)}
               style={{
                 borderColor: chartTradeColors.border,
               }}
-              className="h-8 rounded-md border bg-[#dc2626] hover:bg-[#b91c1c] px-3 text-xs font-bold uppercase tracking-wider text-white shadow-xs transition-all active:scale-95 disabled:opacity-50"
+              className="scalper-action-button"
+              data-action="sell"
             >
               SELL CE
             </button>
           </div>
 
           {/* Center: OpenAI UI Product Mode (Defaults to NRML) + Sandbox/Live Pill + Latency + Dock Toggle */}
-          <div className="hidden md:flex items-center gap-2 text-xs">
+          <div className="scalper-deck-center">
             <button
               type="button"
               onClick={() => setProduct((p) => (p === 'NRML' ? 'MIS' : 'NRML'))}
-              className="rounded-lg border border-black/[0.11] bg-white hover:bg-[#e8ecf1] hover:border-black/[0.24] px-2.5 py-1 font-mono text-[11px] font-semibold text-[#09090b] shadow-2xs dark:border-white/[0.12] dark:bg-[#212121] dark:hover:bg-[#2d3036] dark:hover:border-white/[0.26] dark:text-[#ececec] dark:hover:text-white dark:shadow-none transition-all"
+              className="scalper-deck-control"
               title="Default order product (NRML). Click to toggle NRML / MIS"
             >
               {product} • {armed ? '1-CLICK' : 'TICKET'}
             </button>
 
             <span
-              className={cn(
-                'rounded-lg border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider',
-                appMode === 'analyzer'
-                  ? 'border-purple-500/35 bg-purple-500/12 text-purple-700 dark:border-purple-400/35 dark:bg-purple-500/15 dark:text-purple-200'
-                  : 'border-[#16a34a]/35 bg-[#16a34a]/12 text-[#15803d] dark:bg-[#16a34a]/15 dark:text-[#4ade80]'
-              )}
+              className="scalper-deck-mode"
+              data-sandbox={appMode === 'analyzer' ? 'true' : undefined}
             >
               {appMode === 'analyzer' ? 'SANDBOX' : 'LIVE'}
             </span>
 
             {lastOrderMs !== null && (
-              <span className="flex items-center gap-1 rounded-lg border border-[#16a34a]/30 bg-[#16a34a]/12 px-2 py-0.5 font-mono text-[10px] text-[#15803d] dark:text-[#4ade80]">
+              <span className="scalper-deck-latency">
                 <Activity className="h-3 w-3" />
                 {lastOrderMs}ms
               </span>
@@ -4742,7 +3611,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
                 if (!dock) setDock('positions')
                 setShowDockBar((v) => !v)
               }}
-              className="flex items-center gap-1 rounded-lg border border-black/[0.11] bg-white hover:bg-[#e8ecf1] hover:border-black/[0.24] px-2 py-1 text-[11px] text-[#52525b] hover:text-[#09090b] shadow-2xs dark:border-white/[0.12] dark:bg-[#212121] dark:hover:bg-[#2d3036] dark:hover:border-white/[0.26] dark:text-[#b4b4b4] dark:hover:text-white dark:shadow-none transition-all"
+              className="scalper-deck-control"
               title="Show or hide the full Positions / Orders / Trades dock"
             >
               <Eye className="h-3 w-3" />
@@ -4751,25 +3620,24 @@ function ScalperWorkspace({ account }: { account: string | null }) {
           </div>
 
           {/* Right: [ BUY PE ] [ − Lots/Qty + ] [ SELL PE ] + PUT (PE) OpenAI UI Option Chain */}
-          <div className="flex items-center gap-1.5">
+          <div className="scalper-order-cluster" data-option-side="PE">
             {/* BUY PE Button — Solid Green (#16a34a / hover #15803d) in both Light & Dark Mode matching PlaceOrderDialog */}
             <button
               type="button"
               disabled={orderBusy['PE-BUY']}
-              onClick={() =>
-                void executeQuickOrder('PE', 'BUY', peActiveSym, peOrderQty)
-              }
+              onClick={() => void executeQuickOrder('PE', 'BUY', peActiveSym, peOrderQty)}
               style={{
                 borderColor: chartTradeColors.border,
               }}
-              className="h-8 rounded-md border bg-[#16a34a] hover:bg-[#15803d] px-3 text-xs font-bold uppercase tracking-wider text-white shadow-xs transition-all active:scale-95 disabled:opacity-50"
+              className="scalper-action-button"
+              data-action="buy"
             >
               BUY PE
             </button>
 
             {/* PE Editable Lot & Quantity Control (OpenAI UI — Positioned IN BETWEEN BUY PE and SELL PE) */}
             <div
-              className="flex h-8 items-center gap-1 rounded-lg border border-black/[0.11] bg-white px-1.5 text-xs font-mono text-[#09090b] shadow-2xs dark:border-white/[0.12] dark:bg-[#212121] dark:text-[#ececec] dark:shadow-none"
+              className="scalper-quantity-control"
               onWheel={(e) => {
                 e.preventDefault()
                 const delta = e.deltaY < 0 ? 1 : -1
@@ -4786,7 +3654,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
                   setPeQtyText(null)
                   setPeLots((l) => Math.max(1, l - 1))
                 }}
-                className="flex h-5 w-5 items-center justify-center rounded hover:bg-[#e2e6ec] text-[#52525b] hover:text-[#09090b] dark:hover:bg-[#32353c] dark:text-[#a1a1aa] dark:hover:text-white font-bold transition-colors"
+                className="scalper-step-button"
                 title="Decrease 1 PE lot"
               >
                 −
@@ -4838,14 +3706,13 @@ function ScalperWorkspace({ account }: { account: string | null }) {
                       })
                     }
                   }}
-                  className="w-8 rounded border border-black/[0.12] bg-[#f1f3f5] hover:bg-[#e8ecf1] px-1 py-0.5 text-center font-bold text-[#09090b] focus:outline-none focus:border-black/[0.30] dark:border-white/[0.12] dark:bg-[#171717] dark:hover:bg-[#262930] dark:text-[#ececec] dark:focus:border-white/[0.30]"
+                  className="scalper-lots-input"
                 />
-                <span className="text-[11px] font-semibold text-[#52525b] dark:text-[#a1a1aa]">L</span>
+                <span className="scalper-quantity-unit">L</span>
               </div>
 
               {/* Direct Editable Quantity Input */}
-              <div className="flex items-center text-[11px] text-[#52525b] dark:text-[#a1a1aa]">
-                <span>(</span>
+              <div className="scalper-total-quantity">
                 <input
                   type="text"
                   inputMode="numeric"
@@ -4875,9 +3742,9 @@ function ScalperWorkspace({ account }: { account: string | null }) {
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') e.currentTarget.blur()
                   }}
-                  className="w-11 rounded bg-transparent px-0.5 text-center font-semibold text-[#09090b] hover:bg-[#e8ecf1] focus:bg-[#f1f3f5] focus:outline-none focus:ring-1 focus:ring-black/[0.24] dark:text-[#ececec] dark:hover:bg-[#32353c] dark:focus:bg-[#171717] dark:focus:ring-white/[0.24]"
+                  className="scalper-qty-input"
                 />
-                <span>Q)</span>
+                <span>Q</span>
               </div>
 
               <button
@@ -4888,7 +3755,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
                   setPeQtyText(null)
                   setPeLots((l) => l + 1)
                 }}
-                className="flex h-5 w-5 items-center justify-center rounded hover:bg-[#e2e6ec] text-[#52525b] hover:text-[#09090b] dark:hover:bg-[#32353c] dark:text-[#a1a1aa] dark:hover:text-white font-bold transition-colors"
+                className="scalper-step-button"
                 title="Increase 1 PE lot"
               >
                 +
@@ -4899,544 +3766,41 @@ function ScalperWorkspace({ account }: { account: string | null }) {
             <button
               type="button"
               disabled={orderBusy['PE-SELL']}
-              onClick={() =>
-                void executeQuickOrder('PE', 'SELL', peActiveSym, peOrderQty)
-              }
+              onClick={() => void executeQuickOrder('PE', 'SELL', peActiveSym, peOrderQty)}
               style={{
                 borderColor: chartTradeColors.border,
               }}
-              className="h-8 rounded-md border bg-[#dc2626] hover:bg-[#b91c1c] px-3 text-xs font-bold uppercase tracking-wider text-white shadow-xs transition-all active:scale-95 disabled:opacity-50"
+              className="scalper-action-button"
+              data-action="sell"
             >
               SELL PE
             </button>
 
             {/* PE Strike Live Option Chain Selector (OpenAI UI Capsule when Closed & Open) */}
-            <DropdownMenu open={peChainOpen} onOpenChange={setPeChainOpen}>
-              <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
-                  className={cn(
-                    'flex h-8 items-center gap-2 rounded-lg border px-2.5 text-xs font-mono transition-all duration-150',
-                    'border-black/[0.11] bg-white text-[#09090b] shadow-2xs',
-                    'hover:border-black/[0.24] hover:bg-[#e8ecf1]',
-                    'dark:border-white/[0.12] dark:bg-[#212121] dark:text-[#ececec] dark:shadow-none',
-                    'dark:hover:border-white/[0.26] dark:hover:bg-[#2d3036] dark:hover:text-white',
-                    peChainOpen &&
-                      'border-black/[0.28] bg-[#e2e6ec] ring-1 ring-black/[0.10] dark:border-white/[0.28] dark:bg-[#2d3036] dark:ring-white/[0.12]'
-                  )}
-                  title="Open Put (PE) Option Chain · Switch Strike or Expiry"
-                >
-                  <span className="h-2 w-2 rounded-full bg-[#dc2626] shrink-0" />
-                  <span className="font-semibold tracking-tight text-[#09090b] dark:text-[#ececec]">
-                    {peStrike ? `${peStrike} PE` : (peActiveSym?.symbol ?? 'PE Strike')}
-                  </span>
-                  {selectedExpiry && (
-                    <span className="rounded border border-black/[0.09] bg-[#f1f3f5] px-1.5 py-0.5 text-[10px] font-medium text-[#3f3f46] dark:border-white/[0.10] dark:bg-[#2f2f2f] dark:text-[#b4b4b4]">
-                      {selectedExpiry}
-                    </span>
-                  )}
-                  {peRow?.pe?.moneyness && (
-                    <span
-                      className={cn(
-                        'rounded border px-1.5 py-0.5 text-[9px] font-semibold',
-                        peRow.pe.moneyness === 'ATM'
-                          ? 'border-black/[0.18] bg-[#e2e6ec] text-[#09090b] dark:border-white/[0.18] dark:bg-[#303030] dark:text-[#ececec]'
-                          : peRow.pe.moneyness === 'ITM'
-                            ? 'border-[#16a34a]/35 bg-[#16a34a]/14 text-[#15803d] dark:text-[#4ade80]'
-                            : 'border-black/[0.09] bg-[#f1f3f5] text-[#52525b] dark:border-white/[0.10] dark:bg-[#262626] dark:text-[#a1a1aa]'
-                      )}
-                    >
-                      {peRow.pe.moneyness}
-                    </span>
-                  )}
-                  {typeof peRow?.pe?.ltp === 'number' && peRow.pe.ltp > 0 && (
-                    <span className="font-semibold text-[#09090b] dark:text-[#ececec] tabular-nums">
-                      {peRow.pe.ltp.toFixed(2)}
-                    </span>
-                  )}
-                  {typeof peRow?.pe?.chgPct === 'number' && (
-                    <span
-                      className={cn(
-                        'hidden xl:inline text-[10px] font-medium tabular-nums',
-                        peRow.pe.chgPct >= 0
-                          ? 'text-[#16a34a] dark:text-[#4ade80]'
-                          : 'text-[#dc2626] dark:text-[#f87171]'
-                      )}
-                    >
-                      {peRow.pe.chgPct >= 0 ? '+' : ''}
-                      {peRow.pe.chgPct.toFixed(1)}%
-                    </span>
-                  )}
-                  <span className="text-[10px] text-[#52525b] dark:text-[#a1a1aa]">▾</span>
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent
-                align="end"
-                side="top"
-                sideOffset={8}
-                className={cn(
-                  'w-[548px] p-0 overflow-hidden rounded-2xl',
-                  'border border-black/[0.11] bg-white text-[#09090b] shadow-[0_20px_50px_-12px_rgba(0,0,0,0.22)]',
-                  'dark:border-white/[0.12] dark:bg-[#171717] dark:text-[#ececec] dark:shadow-[0_24px_60px_-12px_rgba(0,0,0,0.85)]'
-                )}
-              >
-                {/* OpenAI UI Header Bar: PUTS Badge + Index Selector + Expiry Selector + ATM + Refresh */}
-                <div className="flex items-center justify-between gap-3 border-b border-black/[0.08] bg-[#f4f5f7] px-4 py-3 dark:border-white/[0.08] dark:bg-[#1e1e1e]">
-                  <div className="flex items-center gap-1.5 min-w-0">
-                    <span className="inline-flex items-center gap-1.5 rounded-md border border-[#dc2626]/35 bg-[#dc2626]/12 px-2 py-0.5 font-mono text-[10px] font-semibold tracking-wide text-[#dc2626] dark:bg-[#dc2626]/15 dark:text-[#f87171] shrink-0">
-                      <span className="h-1.5 w-1.5 rounded-full bg-[#dc2626]" />
-                      PUTS (PE)
-                    </span>
-                    {/* OpenAI UI Underlying Index Selector with Live Price, ±Pts & ±% */}
-                    <div className="relative">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.preventDefault()
-                          e.stopPropagation()
-                          setPeIndexOpen((v) => !v)
-                        }}
-                        className={cn(
-                          'flex h-6.5 cursor-pointer items-center gap-1.5 rounded-md border px-2 font-mono text-[11px] font-semibold transition-colors',
-                          'border-black/[0.12] bg-white text-[#09090b] hover:border-black/[0.24] hover:bg-[#e8ecf1] focus:outline-none',
-                          'dark:border-white/[0.12] dark:bg-[#262626] dark:text-[#ececec] dark:hover:border-white/[0.26] dark:hover:bg-[#32353c]'
-                        )}
-                      >
-                        <span>{activeUnderlying.id}</span>
-                        {activeIndexQuote.ltp > 0 && (
-                          <span className="font-bold tabular-nums text-[#09090b] dark:text-[#ececec]">
-                            {activeIndexQuote.ltp.toLocaleString('en-IN', {
-                              minimumFractionDigits: 2,
-                              maximumFractionDigits: 2,
-                            })}
-                          </span>
-                        )}
-                        {activeIndexQuote.change !== null && activeIndexQuote.changePct !== null && (
-                          <span
-                            className={cn(
-                              'text-[10px] font-semibold tabular-nums',
-                              activeIndexQuote.change >= 0
-                                ? 'text-[#15803d] dark:text-[#4ade80]'
-                                : 'text-[#dc2626] dark:text-[#f87171]'
-                            )}
-                          >
-                            {activeIndexQuote.change >= 0 ? '+' : ''}
-                            {activeIndexQuote.change.toFixed(2)} (
-                            {activeIndexQuote.changePct >= 0 ? '+' : ''}
-                            {activeIndexQuote.changePct.toFixed(2)}%)
-                          </span>
-                        )}
-                        <span className="text-[9px] text-[#52525b] dark:text-[#a1a1aa]">▾</span>
-                      </button>
-                      {peIndexOpen && (
-                        <div
-                          className="absolute left-0 top-full z-50 mt-1 w-[340px] rounded-xl border border-black/[0.12] bg-white p-1.5 shadow-[0_14px_34px_rgba(0,0,0,0.18)] dark:border-white/[0.14] dark:bg-[#171717] dark:shadow-[0_18px_42px_rgba(0,0,0,0.85)]"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          {UNDERLYINGS.map((u) => {
-                            const q = indexQuotesById[u.id]
-                            const isUp = (q?.change ?? 0) >= 0
-                            return (
-                              <button
-                                key={u.id}
-                                type="button"
-                                onClick={(e) => {
-                                  e.preventDefault()
-                                  e.stopPropagation()
-                                  peDidScrollRef.current = false
-                                  setPeIndexOpen(false)
-                                  handleSelectUnderlying(u)
-                                }}
-                                className={cn(
-                                  'flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-left font-mono text-[11px] transition-colors cursor-pointer',
-                                  u.id === activeUnderlying.id
-                                    ? 'bg-[#e4e8ee] text-[#09090b] font-semibold dark:bg-[#2d3036] dark:text-white'
-                                    : 'text-[#3f3f46] hover:bg-[#eef1f5] hover:text-[#09090b] dark:text-[#b4b4b4] dark:hover:bg-[#26282d] dark:hover:text-white'
-                                )}
-                              >
-                                <div className="flex items-center gap-1.5 min-w-0">
-                                  <span
-                                    className={cn(
-                                      'h-1.5 w-1.5 rounded-full shrink-0',
-                                      q?.change != null && q.change < 0
-                                        ? 'bg-[#dc2626]'
-                                        : 'bg-[#16a34a]'
-                                    )}
-                                  />
-                                  <span className="font-semibold text-[#09090b] dark:text-[#ececec]">
-                                    {u.label}
-                                  </span>
-                                  <span className="rounded bg-[#f4f4f5] border border-black/[0.09] px-1.5 py-px text-[9px] leading-4 text-[#52525b] dark:bg-[#262626] dark:border-white/[0.10] dark:text-[#a1a1aa]">
-                                    {u.foExchange}
-                                  </span>
-                                </div>
-                                <div className="flex items-center gap-1.5 tabular-nums shrink-0">
-                                  <span className="font-bold text-[#09090b] dark:text-[#ececec]">
-                                    {q && q.ltp > 0
-                                      ? q.ltp.toLocaleString('en-IN', {
-                                          minimumFractionDigits: 2,
-                                          maximumFractionDigits: 2,
-                                        })
-                                      : '—'}
-                                  </span>
-                                  {q && q.change !== null && q.changePct !== null && (
-                                    <span
-                                      className={cn(
-                                        'rounded px-1.5 py-0.5 text-[10px] font-semibold',
-                                        isUp
-                                          ? 'bg-[#16a34a]/12 text-[#15803d] dark:bg-[#16a34a]/15 dark:text-[#4ade80]'
-                                          : 'bg-[#dc2626]/12 text-[#dc2626] dark:bg-[#dc2626]/15 dark:text-[#f87171]'
-                                      )}
-                                    >
-                                      {isUp ? '+' : ''}
-                                      {q.change.toFixed(2)} ({isUp ? '+' : ''}
-                                      {q.changePct.toFixed(2)}%)
-                                    </span>
-                                  )}
-                                </div>
-                              </button>
-                            )
-                          })}
-                        </div>
-                      )}
-                    </div>
-                    {/* OpenAI UI Expiry Date Selector */}
-                    <select
-                      aria-label="PE Expiry Date"
-                      value={selectedExpiry}
-                      onChange={(e) => {
-                        ceDidScrollRef.current = false
-                        peDidScrollRef.current = false
-                        setSelectedExpiry(e.target.value)
-                      }}
-                      className={cn(
-                        'h-6.5 cursor-pointer rounded-md border px-2 font-mono text-[11px] font-medium transition-colors',
-                        'border-black/[0.12] bg-white text-[#09090b] hover:border-black/[0.24] hover:bg-[#e8ecf1] focus:outline-none focus:border-black/[0.32]',
-                        'dark:border-white/[0.12] dark:bg-[#262626] dark:text-[#ececec] dark:hover:border-white/[0.26] dark:hover:bg-[#32353c] dark:focus:border-white/[0.32]'
-                      )}
-                    >
-                      {expiries.length === 0 ? (
-                        <option
-                          value=""
-                          className="bg-white text-[#09090b] dark:bg-[#1e1e1e] dark:text-[#ececec]"
-                        >
-                          Loading expiries…
-                        </option>
-                      ) : (
-                        expiries.map((exp) => (
-                          <option
-                            key={exp}
-                            value={exp}
-                            className="bg-white text-[#09090b] dark:bg-[#1e1e1e] dark:text-[#ececec]"
-                          >
-                            {exp}
-                          </option>
-                        ))
-                      )}
-                    </select>
-                  </div>
-
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    {isOptionChainStreaming && (
-                      <span
-                        className="inline-flex items-center gap-1 rounded-full border border-[#16a34a]/30 bg-[#16a34a]/12 px-1.5 py-0.5 text-[9px] font-mono font-semibold text-[#15803d] dark:text-[#4ade80]"
-                        title="Real-time 0–1ms WebSocket stream active"
-                      >
-                        <span className="h-1.5 w-1.5 rounded-full bg-[#16a34a] animate-pulse" />
-                        LIVE
-                      </span>
-                    )}
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.preventDefault()
-                        e.stopPropagation()
-                        scrollPeToAtm()
-                      }}
-                      className="h-6.5 rounded-md border border-black/[0.12] bg-white hover:bg-[#e8ecf1] hover:border-black/[0.24] px-2 font-mono text-[10px] font-semibold text-[#09090b] dark:border-white/[0.12] dark:bg-[#262626] dark:hover:bg-[#32353c] dark:hover:border-white/[0.26] dark:text-[#ececec] transition-colors"
-                      title="Center scroll on ATM strike"
-                    >
-                      ATM
-                    </button>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.preventDefault()
-                        e.stopPropagation()
-                        refetchOptionChain()
-                      }}
-                      className="flex h-6.5 w-6.5 items-center justify-center rounded-md border border-black/[0.12] bg-white text-[#52525b] hover:bg-[#e8ecf1] hover:border-black/[0.24] hover:text-[#09090b] dark:border-white/[0.12] dark:bg-[#262626] dark:text-[#b4b4b4] dark:hover:bg-[#32353c] dark:hover:border-white/[0.26] dark:hover:text-white transition-colors"
-                      title="Refresh Option Chain & OI"
-                    >
-                      <RefreshCw
-                        className={cn('h-3 w-3', isOptionChainLoading && 'animate-spin')}
-                      />
-                    </button>
-                  </div>
-                </div>
-
-                {/* OpenAI UI Telemetry Strip: SPOT | ATM | MAX PAIN | PCR | S | R */}
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-black/[0.07] bg-[#eef0f3] px-4 py-2.5 text-[11px] font-mono tabular-nums dark:border-white/[0.07] dark:bg-[#1a1a1a]">
-                  <div className="flex items-center gap-2">
-                    <span className="inline-flex items-center gap-1.5 text-[#52525b] dark:text-[#a1a1aa]">
-                      SPOT{' '}
-                      <strong className="font-semibold text-[#09090b] dark:text-[#ececec]">
-                        {activeIndexQuote.ltp > 0
-                          ? activeIndexQuote.ltp.toLocaleString('en-IN', {
-                              minimumFractionDigits: 2,
-                              maximumFractionDigits: 2,
-                            })
-                          : '—'}
-                      </strong>
-                      {activeIndexQuote.change !== null && activeIndexQuote.changePct !== null && (
-                        <span
-                          className={cn(
-                            'font-semibold',
-                            activeIndexQuote.change >= 0
-                              ? 'text-[#15803d] dark:text-[#4ade80]'
-                              : 'text-[#dc2626] dark:text-[#f87171]'
-                          )}
-                        >
-                          {activeIndexQuote.change >= 0 ? '+' : ''}
-                          {activeIndexQuote.change.toFixed(2)} (
-                          {activeIndexQuote.changePct >= 0 ? '+' : ''}
-                          {activeIndexQuote.changePct.toFixed(2)}%)
-                        </span>
-                      )}
-                    </span>
-                    {effectiveAtmStrike != null && (
-                      <span className="rounded border border-black/[0.10] bg-white px-1.5 py-0.5 text-[#52525b] dark:border-white/[0.10] dark:bg-[#262626] dark:text-[#b4b4b4]">
-                        ATM{' '}
-                        <strong className="font-semibold text-[#09090b] dark:text-[#ececec]">
-                          {effectiveAtmStrike}
-                        </strong>
-                      </span>
-                    )}
-                    {maxPainStrike != null && (
-                      <span
-                        className="rounded border border-black/[0.10] bg-white px-1.5 py-0.5 text-[#3f3f46] font-medium dark:border-white/[0.10] dark:bg-[#262626] dark:text-[#d4d4d4]"
-                        title="Option Chain Max Pain Strike"
-                      >
-                        MP {maxPainStrike}
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    {pcr > 0 && (
-                      <span
-                        className={cn(
-                          'rounded border px-1.5 py-0.5 font-medium',
-                          pcr >= 1
-                            ? 'border-[#16a34a]/30 bg-[#16a34a]/12 text-[#15803d] dark:text-[#4ade80]'
-                            : pcr <= 0.7
-                              ? 'border-[#dc2626]/30 bg-[#dc2626]/12 text-[#dc2626] dark:text-[#f87171]'
-                              : 'border-black/[0.10] bg-white text-[#52525b] dark:border-white/[0.10] dark:bg-[#262626] dark:text-[#b4b4b4]'
-                        )}
-                        title="Put-Call OI Ratio"
-                      >
-                        PCR {pcr.toFixed(2)}
-                      </span>
-                    )}
-                    {maxPeOiStrike != null && (
-                      <span
-                        className="rounded border border-[#16a34a]/35 bg-[#16a34a]/12 px-1.5 py-0.5 text-[#15803d] dark:text-[#4ade80] font-semibold"
-                        title="Support (S) — Highest Put OI Strike"
-                      >
-                        S {maxPeOiStrike}
-                      </span>
-                    )}
-                    {maxCeOiStrike != null && (
-                      <span
-                        className="rounded border border-[#dc2626]/35 bg-[#dc2626]/12 px-1.5 py-0.5 text-[#dc2626] dark:text-[#f87171] font-semibold"
-                        title="Resistance (R) — Highest Call OI Strike"
-                      >
-                        R {maxCeOiStrike}
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {/* 4-Column OpenAI UI Table Header */}
-                <div className="sticky top-0 z-20 grid grid-cols-[176px_1fr_100px_84px] items-center gap-2 border-b border-black/[0.08] bg-[#e6e9ef] px-4 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-[#52525b] font-mono dark:border-white/[0.08] dark:bg-[#1c1c1c] dark:text-[#a1a1aa]">
-                  <span>Strike · Level</span>
-                  <span className="text-right pr-2">OI / Build</span>
-                  <span className="text-right">LTP</span>
-                  <span className="text-right">Chg%</span>
-                </div>
-
-                {/* Scrollable Full Strike Range (51 Strikes — Never jumps on WebSocket tick) */}
-                <div
-                  ref={peListRef}
-                  className="max-h-[440px] overflow-y-auto overscroll-contain [scrollbar-width:thin] divide-y divide-black/[0.05] bg-white dark:divide-white/[0.04] dark:bg-[#171717]"
-                >
-                  {enrichedChain.length === 0 ? (
-                    <div className="py-10 text-center font-mono text-xs text-[#52525b] dark:text-[#a1a1aa]">
-                      Loading option chain strikes…
-                    </div>
-                  ) : (
-                    enrichedChain.map((r) => {
-                      const s = String(r.strike)
-                      const leg = r.pe
-                      if (!leg) return null
-                      const isAtm = r.strike === effectiveAtmStrike
-                      const isSelected = s === peStrike
-                      const isMaxPeOi =
-                        maxPeOiStrike != null && r.strike === maxPeOiStrike && leg.oi > 0
-                      const isMaxCeOi =
-                        maxCeOiStrike != null && r.strike === maxCeOiStrike && (r.ce?.oi ?? 0) > 0
-                      const isMaxPain =
-                        maxPainStrike != null && r.strike === maxPainStrike
-                      const oiPct =
-                        leg.oi > 0 ? Math.min(100, Math.round((leg.oi / peakPeOi) * 100)) : 0
-                      const flash = flashes[leg.symbol]
-
-                      return (
-                        <div
-                          key={s}
-                          data-atm={isAtm ? 'true' : undefined}
-                          onMouseEnter={() => {
-                            if (apiKey && leg.symbol) {
-                              void prefetchSymbolData(
-                                apiKey,
-                                leg.symbol,
-                                activeUnderlying.foExchange,
-                                terminalsRef.current['scalper-p2']?.currentInterval() || '1m'
-                              )
-                            }
-                          }}
-                          onClick={() => {
-                            handleSelectPeStrike(s)
-                            setPeChainOpen(false)
-                          }}
-                          className={cn(
-                            'group relative grid h-10 w-full cursor-pointer grid-cols-[176px_1fr_100px_84px] items-center gap-2 px-4 font-mono text-[12px] tabular-nums transition-colors duration-150',
-                            'hover:bg-[#e8ecf2] dark:hover:bg-[#262930]',
-                            leg.moneyness === 'ITM' && 'bg-black/[0.02] dark:bg-white/[0.015]',
-                            isAtm &&
-                              'bg-[#e2e6ec] border-y border-black/[0.15] font-semibold dark:bg-[#262626] dark:border-white/[0.15]',
-                            isSelected &&
-                              'bg-[#dc2626]/[0.14] ring-1 ring-inset ring-[#dc2626]/50 shadow-[inset_3px_0_0_#dc2626] dark:bg-[#dc2626]/[0.16]',
-                            flash === 'up' && 'bg-[#16a34a]/25',
-                            flash === 'down' && 'bg-[#dc2626]/25'
-                          )}
-                        >
-                          {/* Strike + ATM / ITM / OTM Tag + Support (S) / Resistance (R) / MaxPain Badge */}
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            <span
-                              className={cn(
-                                'font-semibold tracking-tight',
-                                isAtm
-                                  ? 'text-[#09090b] dark:text-white font-bold'
-                                  : isSelected
-                                    ? 'text-[#dc2626] dark:text-[#f87171] font-bold'
-                                    : 'text-[#09090b] dark:text-[#ececec]'
-                              )}
-                            >
-                              {s}
-                            </span>
-                            {isAtm ? (
-                              <span className="rounded border border-black/[0.18] bg-[#d4d8df] px-1.5 py-px text-[9px] leading-4 font-bold text-[#09090b] dark:border-white/[0.18] dark:bg-[#333333] dark:text-white">
-                                ATM
-                              </span>
-                            ) : (
-                              <span
-                                className={cn(
-                                  'rounded border px-1.5 py-px text-[9px] leading-4 font-medium',
-                                  leg.moneyness === 'ITM'
-                                    ? 'border-[#16a34a]/30 bg-[#16a34a]/12 text-[#15803d] dark:text-[#4ade80]'
-                                    : 'border-black/[0.09] bg-[#f1f3f5] text-[#52525b] dark:border-white/[0.09] dark:bg-[#222222] dark:text-[#a1a1aa]'
-                                )}
-                              >
-                                {leg.moneyness}
-                              </span>
-                            )}
-                            {isMaxPeOi && (
-                              <span
-                                className="rounded border border-[#16a34a]/40 bg-[#16a34a]/15 px-1.5 py-px text-[9px] leading-4 font-bold text-[#15803d] dark:text-[#4ade80]"
-                                title="Support (S) — Highest Put OI"
-                              >
-                                S
-                              </span>
-                            )}
-                            {isMaxCeOi && !isMaxPeOi && (
-                              <span
-                                className="rounded border border-[#dc2626]/40 bg-[#dc2626]/15 px-1.5 py-px text-[9px] leading-4 font-bold text-[#dc2626] dark:text-[#f87171]"
-                                title="Resistance (R) — Highest Call OI"
-                              >
-                                R
-                              </span>
-                            )}
-                            {isMaxPain && !isAtm && (
-                              <span
-                                className="rounded border border-black/[0.14] bg-[#e4e7ec] px-1.5 py-px text-[9px] leading-4 font-bold text-[#3f3f46] dark:border-white/[0.14] dark:bg-[#2a2a2a] dark:text-[#d4d4d4]"
-                                title="Max Pain Strike"
-                              >
-                                MP
-                              </span>
-                            )}
-                          </div>
-
-                          {/* OI Cell with OpenAI UI Bar */}
-                          <div className="relative flex h-full items-center justify-end pr-2 overflow-hidden">
-                            {oiPct > 0 && (
-                              <div
-                                className={cn(
-                                  'pointer-events-none absolute inset-y-2.5 right-1 rounded-sm transition-all duration-300',
-                                  isMaxPeOi
-                                    ? 'bg-[#dc2626]/30 border-r-2 border-[#dc2626] dark:bg-[#dc2626]/35'
-                                    : 'bg-[#dc2626]/15 dark:bg-[#dc2626]/18'
-                                )}
-                                style={{ width: `${oiPct}%` }}
-                              />
-                            )}
-                            <span
-                              className={cn(
-                                'relative z-10 text-[10px]',
-                                isMaxPeOi
-                                  ? 'font-bold text-[#09090b] dark:text-[#ececec]'
-                                  : 'text-[#52525b] dark:text-[#b4b4b4]'
-                              )}
-                            >
-                              {formatCompactOi(leg.oi)}
-                            </span>
-                          </div>
-
-                          {/* Live LTP */}
-                          <span
-                            className={cn(
-                              'text-right font-semibold',
-                              flash === 'up'
-                                ? 'text-[#16a34a] dark:text-[#4ade80]'
-                                : flash === 'down'
-                                  ? 'text-[#dc2626] dark:text-[#f87171]'
-                                  : 'text-[#09090b] dark:text-[#ececec]'
-                            )}
-                          >
-                            {leg.ltp > 0 ? leg.ltp.toFixed(2) : '—'}
-                          </span>
-
-                          {/* Live % Change */}
-                          <span
-                            className={cn(
-                              'text-right text-[10px] font-medium',
-                              leg.chgPct != null
-                                ? leg.chgPct >= 0
-                                  ? 'text-[#16a34a] dark:text-[#4ade80]'
-                                  : 'text-[#dc2626] dark:text-[#f87171]'
-                                : 'text-[#52525b] dark:text-[#a1a1aa]'
-                            )}
-                          >
-                            {leg.chgPct != null
-                              ? `${leg.chgPct >= 0 ? '+' : ''}${leg.chgPct.toFixed(1)}%`
-                              : '—'}
-                          </span>
-                        </div>
-                      )
-                    })
-                  )}
-                </div>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <ScalperStrikePicker
+              side="PE"
+              choices={enrichedChain.map((row) => ({
+                strike: row.strike,
+                symbol: row.pe?.symbol || '',
+                price: row.pe?.ltp,
+                openInterest: row.pe?.oi,
+                label: row.pe?.tag,
+                direction: row.pe?.symbol ? flashes[row.pe.symbol] : undefined,
+              }))}
+              value={peStrike}
+              atmStrike={effectiveAtmStrike}
+              expiry={selectedExpiry}
+              open={peChainOpen}
+              onOpenChange={setPeChainOpen}
+              onSelect={handleSelectPeStrike}
+              loading={isOptionChainLoading}
+              streaming={isOptionChainStreaming}
+              marketOpen={isMarketOpen(activeUnderlying.spotExchange)}
+              onRefresh={() => {
+                void refetchOptionChain()
+              }}
+              onFullChain={() => setPanel('options')}
+            />
           </div>
         </footer>
       </div>

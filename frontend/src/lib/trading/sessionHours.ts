@@ -244,16 +244,26 @@ const INTRADAY_SKIP_INTERVALS = new Set(['D', '1d', 'W', '1w', 'M', '1M'])
 const IST_0915_SEC = 9 * 3600 + 15 * 60 // 33,300s (09:15:00 IST)
 const IST_1530_SEC = 15 * 3600 + 30 * 60 // 55,800s (15:30:00 IST)
 
-/**
- * Returns true if `timeSec` (Unix seconds) falls inside an active trading session
- * where chart candles should form.
- *
- * For Indian exchanges (NSE, NSE_INDEX, NFO, BSE, BSE_INDEX, BFO):
- *   - Pre-open / pre-market ticks before 09:15:00 IST (including the 09:00–09:14:59
- *     index fluctuation window) return `false` so they NEVER form or mutate candles.
- *   - Exactly at 09:15:00 IST (`secOfDay >= 33300`), returns `true` so the 09:15
- *     candle forms instantaneously on the first live tick.
- */
+/** Align local seconds candles to the exchange open, including special sessions. */
+export function candleSessionAnchor(exchange: string, timeSec: number): number {
+  const code = calendarExchange(exchange.toUpperCase().trim())
+  const midnight = Math.floor((timeSec + IST_OFFSET_MS / 1000) / 86400) * 86400 - IST_OFFSET_MS / 1000
+  const date = new Date(timeSec * 1000 + IST_OFFSET_MS).toISOString().slice(0, 10)
+  const special = book?.holidays
+    ?.find((holiday) => holiday.date === date && holiday.holiday_type !== 'SETTLEMENT_HOLIDAY')
+    ?.open_exchanges?.find(
+      (session) => session.exchange === code && timeSec * 1000 >= session.start_time && timeSec * 1000 < session.end_time
+    )
+  if (special) return special.start_time / 1000
+  const timing = book?.timings?.find((row) => row.exchange === code)
+  const offset = timing ? Number(timing.start_offset) / 1000 : NaN
+  if (INDIAN_REGULAR_EXCHANGES.has(code)) {
+    return midnight + (Number.isFinite(offset) ? Math.max(IST_0915_SEC, offset) : IST_0915_SEC)
+  }
+  return Number.isFinite(offset) ? midnight + offset : 0
+}
+
+/** Reject ticks outside the regular or special exchange session. */
 export function isTradingSessionOpenForCandles(
   exchange: string,
   timeSec: number,
