@@ -68,6 +68,7 @@ import {
 import type { DataExportOptions } from '@/lib/trading/chartDataExport'
 import type { WorkspaceReplaySnapshot } from '@/lib/trading/workspaceReplay'
 import { cn } from '@/lib/utils'
+import { formatTradingSymbol } from '@/lib/trading/displaySymbol'
 import { useAuthStore } from '@/stores/authStore'
 import { useThemeStore } from '@/stores/themeStore'
 import { showToast } from '@/utils/toast'
@@ -342,6 +343,8 @@ interface Props {
   onProductChange?(paneId: string, product: string): void
   /** Optional callback when the middle qty chip between SELL and BUY on the chart is clicked. */
   onTradeQtyClick?(paneId: string): void
+  /** Initial volume visibility for a specialised pane. */
+  defaultVolumeVisible?: boolean
 }
 
 /**
@@ -389,6 +392,7 @@ export function ChartPane({
   defaultProduct,
   onProductChange,
   onTradeQtyClick,
+  defaultVolumeVisible = true,
 }: Props) {
   const chartRef = useRef<HTMLDivElement>(null)
   const legendRef = useRef<HTMLDivElement>(null)
@@ -512,7 +516,7 @@ export function ChartPane({
   const [grid, setGrid] = useState({ vertical: true, horizontal: true })
   const [fullscreen, setFullscreen] = useState(false)
   const [gridSub, setGridSub] = useState(false)
-  const [volumeOn, setVolumeOn] = useState(true)
+  const [volumeOn, setVolumeOn] = useState(defaultVolumeVisible)
   /**
    * The snapshot menu: saving and pasting are both wanted, so the camera asks.
    *
@@ -734,7 +738,11 @@ export function ChartPane({
             statsCbRef.current?.(stats)
             noteHistory(stats)
             setGrid(owner.gridState())
-            setVolumeOn(owner.volumeVisible())
+            // Option panes start without the volume histogram so the price
+            // action gets the full plot height. The toolbar can still turn it
+            // back on and the preference is then persisted by the terminal.
+            if (defaultVolumeVisible === false) owner.setVolumeVisible(false)
+            setVolumeOn(defaultVolumeVisible === false ? false : owner.volumeVisible())
             setReady(true)
             initializedCbRef.current?.(paneId, owner)
           })
@@ -1250,7 +1258,9 @@ export function ChartPane({
               }}
             >
               <Search className="h-3.5 w-3.5 opacity-60" />
-              <span className="max-w-[10rem] truncate">{sym?.symbol ?? 'Search symbol'}</span>
+              <span className="max-w-[15rem] truncate" title={sym?.symbol ?? undefined}>
+                {formatTradingSymbol(sym?.symbol) || 'Search symbol'}
+              </span>
               {sym && (
                 <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
                   {sym.exchange}

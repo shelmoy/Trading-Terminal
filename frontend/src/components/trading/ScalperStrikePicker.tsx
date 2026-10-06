@@ -4,6 +4,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
+import { formatTradingSymbol } from '@/lib/trading/displaySymbol'
 
 export interface StrikeChoice {
   strike: number
@@ -81,7 +82,7 @@ export function ScalperStrikePicker({ side, choices, value, atmStrike, expiry, o
         <button type="button" className="scalper-strike-trigger" data-option-side={side}
           aria-label={`Select ${side === 'CE' ? 'call' : 'put'} strike`} title="Choose a strike or use Quick select">
           <span className="scalper-option-dot" />
-          <span className="scalper-strike-contract">{value || 'Select strike'} {side === 'CE' ? 'CALL' : 'PUT'}</span>
+          <span className="scalper-strike-contract">{formatTradingSymbol(value) || 'Select strike'} {side === 'CE' ? 'CALL' : 'PUT'}</span>
           <span className="scalper-strike-moneyness">{selectedIndex >= 0 ? label(selectedIndex) : '—'}</span>
           <span className={cn('scalper-strike-price', selected?.direction && `scalper-tick-${selected.direction}`)}>{rupees(selected?.price)}</span>
           <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 opacity-50" />

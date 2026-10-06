@@ -68,6 +68,7 @@ import {
   utcSecondsToZonedDateString,
   withBarCache,
 } from 'openalgo-charts'
+import { formatTradingSymbol } from '@/lib/trading/displaySymbol'
 import type {
   DrawingController,
   DrawingPatch,
@@ -2300,7 +2301,7 @@ export class TradingTerminal {
     const sym = this.sym
     if (!sym) return []
     const runs = buildChartLegend({
-      symbol: sym.symbol,
+      symbol: formatTradingSymbol(sym.symbol),
       interval: this.interval,
       exchange: sym.exchange,
       lotsize: sym.lots ? sym.lotsize : null,
@@ -2903,9 +2904,9 @@ export class TradingTerminal {
       this.tradeBtns = new BuySellButtons({
         id: 'trade',
         position: 'top-left',
-        margin: { x: 14, y: 44 },
+        margin: { x: 16, y: 52 },
         qty: this.qtyChip(),
-        scale: 0.72,
+        scale: 0.8,
       })
       if (lp != null) this.tradeBtns.setMark(lp)
       this.applyTradeColors()

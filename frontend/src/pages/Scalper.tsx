@@ -87,8 +87,10 @@ import {
   type WorkspaceReplaySnapshot,
 } from '@/lib/trading/workspaceReplay'
 import { cn } from '@/lib/utils'
+import { formatTradingSymbol } from '@/lib/trading/displaySymbol'
 import { useAuthStore } from '@/stores/authStore'
 import { useThemeStore } from '@/stores/themeStore'
+import type { Position } from '@/types/trading'
 import type { OptionChainRow, ScalpingProduct } from '@/types/scalping'
 import { showToast } from '@/utils/toast'
 import type { MagnetMode } from 'openalgo-charts/draw'
@@ -438,6 +440,12 @@ function seedPaneDefaultStorage(
 
 const SCALPER_INDEX_SNAPSHOTS_KEY = 'openalgo.scalper.indexSnapshots.v1'
 
+// Once the cash market is closed, the broker's quote endpoint may keep an
+// older LTP while the chart has already loaded the final session candle. Keep
+// the selected option closes from the same history endpoint used by charts so
+// the quick picker and chart show one authoritative closing value.
+const optionHistoryCloseCache = new Map<string, number>()
+
 interface IndexSnapshot {
   expiries: string[]
   selectedExpiry: string
@@ -585,6 +593,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
   const [ceChainOpen, setCeChainOpen] = useState(false)
   const [peChainOpen, setPeChainOpen] = useState(false)
   const [resolvedCloses, setResolvedCloses] = useState<Record<string, number>>({})
+  const [optionHistoryCloses, setOptionHistoryCloses] = useState<Record<string, number>>({})
   const [indexHistorySnapshots, setIndexHistorySnapshots] = useState<
     Record<string, { ltp: number; prevClose: number }>
   >({})
@@ -629,6 +638,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
   // Margin & Live P&L summary in Scalper header
   const [marginText, setMarginText] = useState<string>('—')
   const [pnlValue, setPnlValue] = useState<number>(0)
+  const [positionSnapshot, setPositionSnapshot] = useState<Position[]>([])
   const [orderBusy, setOrderBusy] = useState<Record<string, boolean>>({})
   const [lastOrderMs, setLastOrderMs] = useState<number | null>(null)
 
@@ -1370,6 +1380,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
 
   /* ── Real-Time 0–1ms Live Quotes for All 5 Indices (Top & Bottom Dropdowns) ─ */
   const { isMarketOpen } = useMarketStatus()
+  const activeMarketOpen = isMarketOpen(activeUnderlying.spotExchange)
   const indexPriceableItems = useMemo<PriceableItem[]>(
     () =>
       UNDERLYINGS.map((u) => ({
@@ -1387,6 +1398,41 @@ function ScalperWorkspace({ account }: { account: string | null }) {
       multiQuotesRefreshInterval: 10000,
       pauseWhenHidden: true,
     }
+  )
+
+  // Subscribe to every open position independently from the index/option-chain
+  // streams. This keeps the header P&L on tick-time updates instead of waiting
+  // for the 10-second positionbook refresh.
+  const pnlPriceableItems = useMemo<PriceableItem[]>(
+    () =>
+      positionSnapshot
+        .filter((position) => Number(position.quantity || 0) !== 0)
+        .map((position) => ({
+          symbol: position.symbol,
+          exchange: position.exchange,
+          ltp: Number(position.ltp || 0),
+          pnl: Number(position.pnl || 0),
+          pnlpercent: Number(position.pnlpercent || 0),
+          quantity: Number(position.quantity || 0),
+          average_price: Number(position.average_price || 0),
+          today_realized_pnl: Number(position.today_realized_pnl || 0),
+          lot_size: Number(position.lot_size ?? 1),
+        })),
+    [positionSnapshot]
+  )
+  const { data: livePnlPositions } = useLivePrice(pnlPriceableItems, {
+    enabled: Boolean(apiKey && pnlPriceableItems.length > 0),
+    staleThreshold: 1500,
+    useMultiQuotesFallback: true,
+    multiQuotesRefreshInterval: 10000,
+    pauseWhenHidden: true,
+  })
+  const headerPnl = useMemo(
+    () =>
+      pnlPriceableItems.length > 0
+        ? livePnlPositions.reduce((total, position) => total + Number(position.pnl || 0), 0)
+        : pnlValue,
+    [livePnlPositions, pnlPriceableItems.length, pnlValue]
   )
 
   // Resolve previous closes and fallback daily bars for all 5 indices so Price, ±Pts, and ±%
@@ -1590,6 +1636,52 @@ function ScalperWorkspace({ account }: { account: string | null }) {
     chain,
   ])
 
+  // The option chain is intentionally structure-first for fast startup, and
+  // its quote stream is live while the market is open. After close, reconcile
+  // the currently selected CE/PE with the exact candle source used by the
+  // chart. This is limited to the two selected legs to avoid N*2 history calls.
+  useEffect(() => {
+    if (!apiKey || activeMarketOpen) return
+    let alive = true
+    const selectedSymbols = [
+      chain.find((row) => String(row.strike) === ceStrike)?.ce?.symbol,
+      chain.find((row) => String(row.strike) === peStrike)?.pe?.symbol,
+    ].filter((symbol): symbol is string => Boolean(symbol))
+
+    for (const symbol of selectedSymbols) {
+      const key = `${activeUnderlying.foExchange}:${symbol}`
+      const cached = optionHistoryCloseCache.get(key)
+      if (cached && cached > 0) {
+        setOptionHistoryCloses((prev) => (prev[key] === cached ? prev : { ...prev, [key]: cached }))
+        continue
+      }
+
+      void scalpingApi
+        .getHistory(symbol, activeUnderlying.foExchange, '1m')
+        .then((history) => {
+          if (!alive) return
+          const close = Number(history.candles.at(-1)?.close ?? 0)
+          if (!(close > 0)) return
+          optionHistoryCloseCache.set(key, close)
+          setOptionHistoryCloses((prev) => (prev[key] === close ? prev : { ...prev, [key]: close }))
+        })
+        .catch(() => {
+          /* The live quote remains the fallback when history is unavailable. */
+        })
+    }
+
+    return () => {
+      alive = false
+    }
+  }, [
+    apiKey,
+    activeMarketOpen,
+    activeUnderlying.foExchange,
+    ceStrike,
+    peStrike,
+    chain,
+  ])
+
   const enrichedChain = useMemo(() => {
     const byStrike = new Map<
       number,
@@ -1777,10 +1869,30 @@ function ScalperWorkspace({ account }: { account: string | null }) {
       const stepCount = Math.abs(dist)
       const ceTag = isAtm ? 'ATM' : `${ceMoney}${stepCount}`
       const peTag = isAtm ? 'ATM' : `${peMoney}${stepCount}`
+      const ceHistoryClose = r.ce
+        ? optionHistoryCloses[`${activeUnderlying.foExchange}:${r.ce.symbol}`]
+        : undefined
+      const peHistoryClose = r.pe
+        ? optionHistoryCloses[`${activeUnderlying.foExchange}:${r.pe.symbol}`]
+        : undefined
       return {
         ...r,
-        ce: r.ce ? { ...r.ce, moneyness: ceMoney, tag: ceTag } : null,
-        pe: r.pe ? { ...r.pe, moneyness: peMoney, tag: peTag } : null,
+        ce: r.ce
+          ? {
+              ...r.ce,
+              ...(ceHistoryClose && !activeMarketOpen ? { ltp: ceHistoryClose } : {}),
+              moneyness: ceMoney,
+              tag: ceTag,
+            }
+          : null,
+        pe: r.pe
+          ? {
+              ...r.pe,
+              ...(peHistoryClose && !activeMarketOpen ? { ltp: peHistoryClose } : {}),
+              moneyness: peMoney,
+              tag: peTag,
+            }
+          : null,
       }
     })
   }, [
@@ -1790,6 +1902,8 @@ function ScalperWorkspace({ account }: { account: string | null }) {
     activeUnderlying.foExchange,
     effectiveAtmStrike,
     resolvedCloses,
+    optionHistoryCloses,
+    activeMarketOpen,
   ])
 
   /* ── 0ms In-Memory Symbol Metadata Seeding for All Option Chain Strikes ─ */
@@ -2143,7 +2257,9 @@ function ScalperWorkspace({ account }: { account: string | null }) {
         }
       }
       if (posRes.status === 'success' && Array.isArray(posRes.data)) {
-        const totalPnl = posRes.data.reduce((acc, p) => acc + Number(p.pnl || 0), 0)
+        const positions = posRes.data as Position[]
+        setPositionSnapshot(positions)
+        const totalPnl = positions.reduce((acc, p) => acc + Number(p.pnl || 0), 0)
         setPnlValue(totalPnl)
       }
     } catch {
@@ -2492,7 +2608,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
         visiblePanes={visiblePanes}
         layout={layoutMode}
         margin={marginText}
-        pnl={pnlValue}
+        pnl={headerPnl}
         exiting={Boolean(orderBusy.exitAll)}
         onNavigationToggle={() => setShowMainNavbar((v) => !v)}
         onUnderlyingSelect={(id) => {
@@ -2693,7 +2809,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
                         >
                           <div className="flex items-center gap-2">
                             <span className="font-bold tracking-wide text-foreground">
-                              CALL: {ceActiveSym?.symbol ?? 'Select CE'}
+                              CALL: {formatTradingSymbol(ceActiveSym?.symbol) || 'Select CE'}
                             </span>
                             <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">
                               {ceActiveSym?.exchange ?? activeUnderlying.foExchange}
@@ -2778,6 +2894,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
                               setTimeout(() => ceChartQtyInputRef.current?.select(), 0)
                             }}
                             layoutPicker={workspaceControls}
+                            defaultVolumeVisible={false}
                           />
 
                           {/* Editable Middle Lot/Qty Box between On-Chart SELL and BUY buttons */}
@@ -2960,7 +3077,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
                         >
                           <div className="flex items-center gap-2">
                             <span className="font-bold tracking-wide text-foreground">
-                              PUT: {peActiveSym?.symbol ?? 'Select PE'}
+                              PUT: {formatTradingSymbol(peActiveSym?.symbol) || 'Select PE'}
                             </span>
                             <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">
                               {peActiveSym?.exchange ?? activeUnderlying.foExchange}
@@ -3045,6 +3162,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
                               setTimeout(() => peChartQtyInputRef.current?.select(), 0)
                             }}
                             layoutPicker={workspaceControls}
+                            defaultVolumeVisible={false}
                           />
 
                           {/* Editable Middle Lot/Qty Box between On-Chart SELL and BUY buttons */}
