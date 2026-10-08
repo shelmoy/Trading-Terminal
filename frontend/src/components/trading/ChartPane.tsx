@@ -305,6 +305,8 @@ interface Props {
    * and whose rows charted nothing, on a page that looks perfectly ready.
    */
   onTerminalChange?(paneId: string, terminal: TradingTerminal | null): void
+  /** Lets a multi-pane host defer auxiliary requests until candle loads settle. */
+  onChartStateChange?(paneId: string, state: ChartStateView): void
   /** Reports the current chart generation's object inventory. */
   onObjectsChange?(paneId: string, objects: ChartObjects | null): void
   /**
@@ -376,6 +378,7 @@ export function ChartPane({
   onSymbolChange,
   onIntervalChange,
   onTerminalChange,
+  onChartStateChange,
   onObjectsChange,
   onOpenScriptSource,
   onAlertsReady,
@@ -423,6 +426,8 @@ export function ChartPane({
   intervalCbRef.current = onIntervalChange
   const terminalCbRef = useRef(onTerminalChange)
   terminalCbRef.current = onTerminalChange
+  const chartStateCbRef = useRef(onChartStateChange)
+  chartStateCbRef.current = onChartStateChange
   const objectsCbRef = useRef(onObjectsChange)
   objectsCbRef.current = onObjectsChange
   const scriptSourceCbRef = useRef(onOpenScriptSource)
@@ -670,7 +675,10 @@ export function ChartPane({
       // menu row, so the menu label has to follow it.
       onVolumeChange: (on) => current && setVolumeOn(on),
       onChartState: (state) => {
-        if (current) chartStateGate.current?.set(state)
+        if (current) {
+          chartStateGate.current?.set(state)
+          chartStateCbRef.current?.(paneId, state)
+        }
       },
       onReplayChange: (state) => {
         if (!current) return

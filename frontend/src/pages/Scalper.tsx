@@ -61,6 +61,7 @@ import { useOptionChainLive } from '@/hooks/useOptionChainLive'
 import type { AgentChartCommand } from '@/lib/agent/stream'
 import type { LayoutPreset } from '@/lib/chart/layouts'
 import { clearLog, fetchLog, type LoggedFire } from '@/lib/trading/alertLog'
+import type { ChartStateView } from '@/lib/trading/chartState'
 import { historyChord } from '@/lib/trading/chartHistory'
 import { chartMayTakeKey } from '@/lib/trading/drawingKeys'
 import {
@@ -72,12 +73,13 @@ import {
   writeGridWeights,
 } from '@/lib/trading/gridSizes'
 import { idForScript } from '@/lib/trading/openscriptFiles'
-import { needsPreviousClose, previousClose } from '@/lib/trading/previousClose'
+import { needsPreviousClose } from '@/lib/trading/previousClose'
 import {
   type AlertFire,
   type AlertsView,
   type DrawStats,
   persistFastCache,
+  globalBarMemoryCache,
   type SearchRow,
   symbolMetadataCache,
   type TradingTerminal,
@@ -597,6 +599,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
   const [indexHistorySnapshots, setIndexHistorySnapshots] = useState<
     Record<string, { ltp: number; prevClose: number }>
   >({})
+  const indexReferencesLoaded = useRef(new Set<string>())
   const [flashes, setFlashes] = useState<Record<string, 'up' | 'down'>>({})
   const prevPricesRef = useRef<Map<string, number>>(new Map())
 
@@ -677,6 +680,16 @@ function ScalperWorkspace({ account }: { account: string | null }) {
   const [alertRevision, setAlertRevision] = useState(0)
 
   const terminalsRef = useRef<Record<string, TradingTerminal | null>>({})
+  const [paneLoadStates, setPaneLoadStates] = useState<Record<string, ChartStateView['kind']>>({})
+  const noteLoadState = useCallback((paneId: string, state: ChartStateView) => {
+    const kind = state.refreshing ? 'loading' : state.kind
+    setPaneLoadStates((prev) => prev[paneId] === kind ? prev : { ...prev, [paneId]: kind })
+  }, [])
+  const foregroundLoading = ALL_PANE_IDS.some((id) => {
+    const visible = id === 'scalper-p0' ? visiblePanes.spot : id === 'scalper-p1' ? visiblePanes.ce : visiblePanes.pe
+    return visible && (!maximizedPane || maximizedPane === id) &&
+      (!paneLoadStates[id] || paneLoadStates[id] === 'loading')
+  })
   const bottomBar = useRef<BottomBarControl | null>(null)
   const orderBridge = useRef<ChartOrderBridgeRef['current']>(null)
 
@@ -903,7 +916,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
         symUpper.endsWith('CE') &&
         terminalsRef.current['scalper-p1']
       ) {
-        void terminalsRef.current['scalper-p1']?.loadSymbol(row)
+        void terminalsRef.current['scalper-p1']?.ensureSymbol(row)
         return
       }
       if (
@@ -911,10 +924,10 @@ function ScalperWorkspace({ account }: { account: string | null }) {
         symUpper.endsWith('PE') &&
         terminalsRef.current['scalper-p2']
       ) {
-        void terminalsRef.current['scalper-p2']?.loadSymbol(row)
+        void terminalsRef.current['scalper-p2']?.ensureSymbol(row)
         return
       }
-      void panelTarget()?.loadSymbol(row)
+      void panelTarget()?.ensureSymbol(row)
     },
     [panelTarget, stopWorkspaceReplay]
   )
@@ -1204,7 +1217,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
         seedPaneDefaultStorage('scalper-p1', atmRow.ce.symbol, foExch, true)
         const t1 = terminalsRef.current['scalper-p1']
         if (t1) {
-          void t1.loadSymbol({
+          void t1.ensureSymbol({
             symbol: atmRow.ce.symbol,
             exchange: foExch,
             lotsize: atmRow.ce.lotsize ?? preset.defaultLotSize,
@@ -1216,7 +1229,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
         seedPaneDefaultStorage('scalper-p2', atmRow.pe.symbol, foExch, true)
         const t2 = terminalsRef.current['scalper-p2']
         if (t2) {
-          void t2.loadSymbol({
+          void t2.ensureSymbol({
             symbol: atmRow.pe.symbol,
             exchange: foExch,
             lotsize: atmRow.pe.lotsize ?? preset.defaultLotSize,
@@ -1253,7 +1266,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
       const peRowSnap = snap.chain.find((r) => String(r.strike) === snap.peStrike) ?? snap.chain[0]
       if (ceRowSnap?.ce?.symbol) {
         seedPaneDefaultStorage('scalper-p1', ceRowSnap.ce.symbol, preset.foExchange, true)
-        void terminalsRef.current['scalper-p1']?.loadSymbol({
+        void terminalsRef.current['scalper-p1']?.ensureSymbol({
           symbol: ceRowSnap.ce.symbol,
           exchange: preset.foExchange,
           lotsize: ceRowSnap.ce.lotsize ?? preset.defaultLotSize,
@@ -1262,7 +1275,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
       }
       if (peRowSnap?.pe?.symbol) {
         seedPaneDefaultStorage('scalper-p2', peRowSnap.pe.symbol, preset.foExchange, true)
-        void terminalsRef.current['scalper-p2']?.loadSymbol({
+        void terminalsRef.current['scalper-p2']?.ensureSymbol({
           symbol: peRowSnap.pe.symbol,
           exchange: preset.foExchange,
           lotsize: peRowSnap.pe.lotsize ?? preset.defaultLotSize,
@@ -1435,25 +1448,22 @@ function ScalperWorkspace({ account }: { account: string | null }) {
     [livePnlPositions, pnlPriceableItems.length, pnlValue]
   )
 
-  // Resolve previous closes and fallback daily bars for all 5 indices so Price, ±Pts, and ±%
-  // are always populated in both live/pre-market and closed sessions
+  // Prioritize visible candles over daily fallback requests for index labels.
+  // Fill dropdown reference prices serially afterward, selected index first.
   useEffect(() => {
-    if (!apiKey) return
+    if (!apiKey || foregroundLoading) return
     let alive = true
     const pad = (n: number) => String(n).padStart(2, '0')
     const fmtDate = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
     const startDate = fmtDate(new Date(Date.now() - 20 * 86400_000))
     const endDate = fmtDate(new Date())
 
-    for (const u of UNDERLYINGS) {
-      const key = `${u.spotExchange}:${u.spotSymbol}`
-      const marketOpenNow = isMarketOpen(u.spotExchange)
-      void previousClose(apiKey, u.spotSymbol, u.spotExchange, marketOpenNow).then((val) => {
-        if (!alive || !val || val <= 0) return
-        setResolvedCloses((prev) => (prev[key] === val ? prev : { ...prev, [key]: val }))
-      })
-
-      void (async () => {
+    void (async () => {
+      for (const u of [activeUnderlying, ...UNDERLYINGS.filter((item) => item.id !== activeUnderlying.id)]) {
+        if (!alive) return
+        const key = `${u.spotExchange}:${u.spotSymbol}`
+        const referenceKey = `${endDate}:${key}`
+        if (indexReferencesLoaded.current.has(referenceKey)) continue
         try {
           const [quoteRes, histRes] = await Promise.allSettled([
             tradingApi.getQuotes(apiKey, u.spotSymbol, u.spotExchange),
@@ -1510,15 +1520,16 @@ function ScalperWorkspace({ account }: { account: string | null }) {
               prev[key] === prevClose ? prev : { ...prev, [key]: prevClose }
             )
           }
+          if (ltp > 0 && prevClose > 0) indexReferencesLoaded.current.add(referenceKey)
         } catch {
           /* ignore fallback error */
         }
-      })()
-    }
+      }
+    })()
     return () => {
       alive = false
     }
-  }, [apiKey, isMarketOpen])
+  }, [apiKey, activeUnderlying, foregroundLoading])
 
   const indexQuotesById = useMemo(() => {
     const map: Record<
@@ -1641,7 +1652,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
   // the currently selected CE/PE with the exact candle source used by the
   // chart. This is limited to the two selected legs to avoid N*2 history calls.
   useEffect(() => {
-    if (!apiKey || activeMarketOpen) return
+    if (!apiKey || activeMarketOpen || foregroundLoading) return
     let alive = true
     const selectedSymbols = [
       chain.find((row) => String(row.strike) === ceStrike)?.ce?.symbol,
@@ -1650,7 +1661,11 @@ function ScalperWorkspace({ account }: { account: string | null }) {
 
     for (const symbol of selectedSymbols) {
       const key = `${activeUnderlying.foExchange}:${symbol}`
-      const cached = optionHistoryCloseCache.get(key)
+      // A fresh chart response already contains this option's final close.
+      const chartBars = globalBarMemoryCache.get(`${symbol.toUpperCase()}:${activeUnderlying.foExchange.toUpperCase()}:1m`)
+      const chartClose = chartBars && Date.now() - chartBars.time < 2_000
+        ? Number(chartBars.bars.at(-1)?.close ?? 0) : 0
+      const cached = chartClose > 0 ? chartClose : optionHistoryCloseCache.get(key)
       if (cached && cached > 0) {
         setOptionHistoryCloses((prev) => (prev[key] === cached ? prev : { ...prev, [key]: cached }))
         continue
@@ -1676,6 +1691,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
   }, [
     apiKey,
     activeMarketOpen,
+    foregroundLoading,
     activeUnderlying.foExchange,
     ceStrike,
     peStrike,
@@ -2048,7 +2064,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
     seedPaneDefaultStorage('scalper-p0', preset.spotSymbol, preset.spotExchange, true)
     const t0 = terminalsRef.current['scalper-p0']
     if (t0) {
-      void t0.loadSymbol({
+      void t0.ensureSymbol({
         symbol: preset.spotSymbol,
         exchange: preset.spotExchange,
       })
@@ -2070,7 +2086,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
       const peR = snap.chain.find((r) => String(r.strike) === snap.peStrike) ?? snap.chain[0]
       if (ceR?.ce?.symbol) {
         seedPaneDefaultStorage('scalper-p1', ceR.ce.symbol, preset.foExchange, true)
-        void terminalsRef.current['scalper-p1']?.loadSymbol({
+        void terminalsRef.current['scalper-p1']?.ensureSymbol({
           symbol: ceR.ce.symbol,
           exchange: preset.foExchange,
           lotsize: ceR.ce.lotsize ?? preset.defaultLotSize,
@@ -2079,7 +2095,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
       }
       if (peR?.pe?.symbol) {
         seedPaneDefaultStorage('scalper-p2', peR.pe.symbol, preset.foExchange, true)
-        void terminalsRef.current['scalper-p2']?.loadSymbol({
+        void terminalsRef.current['scalper-p2']?.ensureSymbol({
           symbol: peR.pe.symbol,
           exchange: preset.foExchange,
           lotsize: peR.pe.lotsize ?? preset.defaultLotSize,
@@ -2109,7 +2125,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
     const currentKey = paneSymbols['scalper-p1']
     const targetKey = `${exch}:${leg.symbol}`
     if (t1 && currentKey !== targetKey) {
-      void t1.loadSymbol({
+      void t1.ensureSymbol({
         symbol: leg.symbol,
         exchange: exch,
         lotsize: leg.lotsize || activeUnderlying.defaultLotSize,
@@ -2127,7 +2143,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
     const currentKey = paneSymbols['scalper-p2']
     const targetKey = `${exch}:${leg.symbol}`
     if (t2 && currentKey !== targetKey) {
-      void t2.loadSymbol({
+      void t2.ensureSymbol({
         symbol: leg.symbol,
         exchange: exch,
         lotsize: leg.lotsize || activeUnderlying.defaultLotSize,
@@ -2165,10 +2181,28 @@ function ScalperWorkspace({ account }: { account: string | null }) {
     [parsePaneSymbol, peRow, activeUnderlying]
   )
 
-  const ceLotSize = ceRow?.ce?.lotsize || activeUnderlying.defaultLotSize
-  const peLotSize = peRow?.pe?.lotsize || activeUnderlying.defaultLotSize
+  // The panes can hold different underlyings. A SENSEX PE loaded from the
+  // watchlist must use its own 20-unit lot, never the header's NIFTY lot size.
+  const ceInstrument = terminalsRef.current['scalper-p1']?.currentInstrument()
+  const peInstrument = terminalsRef.current['scalper-p2']?.currentInstrument()
+  const ceLotSize = ceInstrument && ceInstrument.symbol === ceActiveSym?.symbol
+    && ceInstrument.exchange === ceActiveSym.exchange
+    ? ceInstrument.lotsize : ceRow?.ce?.lotsize || activeUnderlying.defaultLotSize
+  const peLotSize = peInstrument && peInstrument.symbol === peActiveSym?.symbol
+    && peInstrument.exchange === peActiveSym.exchange
+    ? peInstrument.lotsize : peRow?.pe?.lotsize || activeUnderlying.defaultLotSize
   const ceOrderQty = ceCustomQty ?? ceLots * ceLotSize
   const peOrderQty = peCustomQty ?? peLots * peLotSize
+
+  useEffect(() => {
+    setCeCustomQty(null)
+    setCeQtyText(null)
+  }, [ceActiveSym?.symbol, ceActiveSym?.exchange, ceLotSize])
+
+  useEffect(() => {
+    setPeCustomQty(null)
+    setPeQtyText(null)
+  }, [peActiveSym?.symbol, peActiveSym?.exchange, peLotSize])
 
   // Change CE strike from bottom dropdown -> immediately load into CALL pane (scalper-p1)
   const handleSelectCeStrike = useCallback(
@@ -2193,7 +2227,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
         })
         persistFastCache()
         seedPaneDefaultStorage('scalper-p1', leg.symbol, exch, true)
-        void terminalsRef.current['scalper-p1']?.loadSymbol({
+        void terminalsRef.current['scalper-p1']?.ensureSymbol({
           symbol: leg.symbol,
           exchange: exch,
           lotsize,
@@ -2227,7 +2261,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
         })
         persistFastCache()
         seedPaneDefaultStorage('scalper-p2', leg.symbol, exch, true)
-        void terminalsRef.current['scalper-p2']?.loadSymbol({
+        void terminalsRef.current['scalper-p2']?.ensureSymbol({
           symbol: leg.symbol,
           exchange: exch,
           lotsize,
@@ -2279,7 +2313,8 @@ function ScalperWorkspace({ account }: { account: string | null }) {
       leg: 'CE' | 'PE',
       action: 'BUY' | 'SELL',
       target: { symbol: string; exchange: string } | null,
-      qty: number
+      lots: number,
+      customQty: number | null
     ) => {
       if (!apiKey) {
         showToast.error('API key not ready')
@@ -2287,6 +2322,23 @@ function ScalperWorkspace({ account }: { account: string | null }) {
       }
       if (!target?.symbol) {
         showToast.error(`Select a ${leg} option instrument first`)
+        return
+      }
+      const terminal = terminalsRef.current[leg === 'CE' ? 'scalper-p1' : 'scalper-p2']
+      const instrument = terminal?.currentInstrument()
+      if (!terminal || !instrument || terminal.dataUnavailable()) {
+        showToast.error(`Wait for the ${leg} chart instrument to finish loading`)
+        return
+      }
+      if (instrument.symbol !== target.symbol || instrument.exchange !== target.exchange) {
+        showToast.error(`${leg} instrument changed. Wait for the deck to update and try again.`)
+        return
+      }
+      const lotSize = instrument.lotsize
+      const qty = customQty ?? lots * lotSize
+      if (!Number.isSafeInteger(qty) || qty <= 0 || !Number.isSafeInteger(lotSize)
+        || lotSize <= 0 || qty % lotSize !== 0) {
+        showToast.error(`${leg} quantity must be a positive multiple of ${lotSize} (${lots} lots = ${lots * lotSize} quantity)`)
         return
       }
       const busyKey = `${leg}-${action}`
@@ -2314,7 +2366,8 @@ function ScalperWorkspace({ account }: { account: string | null }) {
           showToast.error(res.message || `Failed to place ${action} ${leg} order`)
         }
       } catch (err) {
-        showToast.error(err instanceof Error ? err.message : 'Order execution failed')
+        const failure = err as { response?: { data?: { message?: string } }; message?: string }
+        showToast.error(failure?.response?.data?.message || failure?.message || 'Order execution failed')
       } finally {
         setOrderBusy((prev) => ({ ...prev, [busyKey]: false }))
       }
@@ -2773,6 +2826,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
                             onSymbolChange={noteSymbol}
                             onIntervalChange={noteChartChanged}
                             onTerminalChange={noteTerminal}
+                            onChartStateChange={noteLoadState}
                             onObjectsChange={noteObjects}
                             onOpenScriptSource={showScriptSource}
                             onAlertsReady={noteAlerts}
@@ -2868,6 +2922,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
                             onSymbolChange={noteSymbol}
                             onIntervalChange={noteChartChanged}
                             onTerminalChange={noteTerminal}
+                            onChartStateChange={noteLoadState}
                             onObjectsChange={noteObjects}
                             onOpenScriptSource={showScriptSource}
                             onAlertsReady={noteAlerts}
@@ -3139,6 +3194,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
                             onSymbolChange={noteSymbol}
                             onIntervalChange={noteChartChanged}
                             onTerminalChange={noteTerminal}
+                            onChartStateChange={noteLoadState}
                             onObjectsChange={noteObjects}
                             onOpenScriptSource={showScriptSource}
                             onAlertsReady={noteAlerts}
@@ -3551,7 +3607,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
             <button
               type="button"
               disabled={orderBusy['CE-BUY']}
-              onClick={() => void executeQuickOrder('CE', 'BUY', ceActiveSym, ceOrderQty)}
+              onClick={() => void executeQuickOrder('CE', 'BUY', ceActiveSym, ceLots, ceCustomQty)}
               style={{
                 borderColor: chartTradeColors.border,
               }}
@@ -3692,7 +3748,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
             <button
               type="button"
               disabled={orderBusy['CE-SELL']}
-              onClick={() => void executeQuickOrder('CE', 'SELL', ceActiveSym, ceOrderQty)}
+              onClick={() => void executeQuickOrder('CE', 'SELL', ceActiveSym, ceLots, ceCustomQty)}
               style={{
                 borderColor: chartTradeColors.border,
               }}
@@ -3748,7 +3804,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
             <button
               type="button"
               disabled={orderBusy['PE-BUY']}
-              onClick={() => void executeQuickOrder('PE', 'BUY', peActiveSym, peOrderQty)}
+              onClick={() => void executeQuickOrder('PE', 'BUY', peActiveSym, peLots, peCustomQty)}
               style={{
                 borderColor: chartTradeColors.border,
               }}
@@ -3889,7 +3945,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
             <button
               type="button"
               disabled={orderBusy['PE-SELL']}
-              onClick={() => void executeQuickOrder('PE', 'SELL', peActiveSym, peOrderQty)}
+              onClick={() => void executeQuickOrder('PE', 'SELL', peActiveSym, peLots, peCustomQty)}
               style={{
                 borderColor: chartTradeColors.border,
               }}

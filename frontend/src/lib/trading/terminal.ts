@@ -44,6 +44,7 @@ import {
   getIndicator,
   getSeriesTransform,
   IndicatorInputError,
+  InvalidationLevel,
   type IPrimitive,
   indicatorDefaults,
   isKnownInterval,
@@ -155,6 +156,9 @@ import {
   renkoV3Options,
 } from './renkoV3Settings'
 import { calculateRenkoV3BoxSize } from './renkoV3Transform'
+import { RenkoV4Run, withRenkoV4Run, type RenkoV4Options } from './renkoV4Transform'
+import { RENKO_V4_DEFAULTS, renkoV4HistoryInterval, renkoV4Options, renkoV4SettingsView } from './renkoV4Settings'
+import { restoreRenkoV4, saveRenkoV4 } from './renkoV4Persistence'
 
 export { dedupeIndicators } from './indicatorTemplates'
 
@@ -175,8 +179,12 @@ const emptyDrawings = (): DrawingsDocument => ({ version: 2, drawings: [] })
 export const symbolMetadataCache = new Map<string, Record<string, unknown>>()
 export const searchCache = new Map<string, SearchRow[]>()
 export const globalBarMemoryCache = new Map<string, { bars: readonly Bar[]; time: number }>()
+// Share cold requests across panes without extending the freshness of cached bars.
+const initialBarRequests = new Map<string, Promise<Bar[]>>()
 
 const FAST_CACHE_STORAGE_KEY = 'openalgo.scalper.fastCache.v1'
+// Saved candles are a preview, never an excuse to skip authoritative refresh.
+const BAR_PREVIEW_RETENTION_MS = 7 * 86400_000
 const INTERVALS_CACHE_KEY = 'openalgo.chart.intervals.v1'
 let fastCachePersistTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -204,7 +212,7 @@ let fastCachePersistTimer: ReturnType<typeof setTimeout> | null = null
           v &&
           Array.isArray(v.bars) &&
           v.bars.length > 0 &&
-          now - (v.time || 0) < 6 * 3600_000
+          now - (v.time || 0) < BAR_PREVIEW_RETENTION_MS
         ) {
           globalBarMemoryCache.set(k, v)
         }
@@ -1272,6 +1280,12 @@ export class TradingTerminal {
   private btMarkersCleared: (() => void) | null = null
   private volume: SeriesApi | null = null
   private volumeMA: SeriesApi | null = null
+  private renkoV4Run: RenkoV4Run | null = null
+  private renkoV4RunKey = ''
+  private renkoV4Trend: SeriesApi | null = null
+  private renkoV4TrendCount = 0
+  private renkoV4SaveTimer: ReturnType<typeof setTimeout> | null = null
+  private renkoV4SavedCount = -1
   private displayedVolume: Bar[] = []
 
   /* Drawing + indicator state. buildChart() throws the chart away on every
@@ -1447,6 +1461,7 @@ export class TradingTerminal {
   private rangeChoice: RangeChoice | null = null
   /** The load in flight, or the last one: what `showInterval` waits on. */
   private loading: Promise<boolean> = Promise.resolve(true)
+  private pendingSymbolKey: string | null = null
   /** The workspace link group this pane belongs to, if sync is on. */
   private link: LinkGroup | null = null
   /** Non-null only while the chart is showing a replayed prefix. */
@@ -1713,6 +1728,14 @@ export class TradingTerminal {
     const visible = document.visibilityState !== 'hidden'
     this.data?.setVisible(visible || this.alertsArmed())
     this.comparisons?.setVisibleHost(visible)
+    if (visible) this.redrawOnFocus()
+    else this.flushRenkoV4()
+  }
+
+  /** Repaint through the canvas owner, which clears both base and cursor layers. */
+  private readonly redrawOnFocus = () => {
+    if (this.destroyed || document.visibilityState === 'hidden') return
+    this.chart?.invalidate(mask => mask.invalidateGlobal(InvalidationLevel.Full))
   }
 
   constructor(opts: TerminalOptions) {
@@ -1983,7 +2006,10 @@ export class TradingTerminal {
     if (!this.price || !this.volume) return
     // Always the raw bars. On a transformed chart type the chart forms the
     // elements from them, so a tick, history paging and replay all speak bars.
+    if (this.ctype === 'renko-v4') this.renkoV4Run?.resumeLive()
     this.price.setData(this.rawBars)
+    this.syncRenkoV4Trend(true)
+    this.scheduleRenkoV4Save()
     if (this.transformed()) this.setTransformedVolume(this.rawBars)
     else this.setVolumeData(this.rawBars)
     this.shownCount = this.shownBars.length
@@ -2075,7 +2101,7 @@ export class TradingTerminal {
     }
 
     this.rawBars = next
-    if (snapshot.reason !== 'prepend') this.writeBackBarCache()
+    if (snapshot.reason !== 'prepend' && snapshot.reason !== 'cache') this.writeBackBarCache()
     if (snapshot.paused || this.replayOwnsDisplay()) return
 
     const key = this.dataKey(request)
@@ -2116,7 +2142,15 @@ export class TradingTerminal {
     // `update` appends or replaces by time on its own, which is exactly the
     // append-or-replace the caller has already applied to `rawBars`.
     this.price.update(bar)
+    this.syncRenkoV4Trend()
+    this.scheduleRenkoV4Save()
     if (this.transformed()) {
+      // Renko bricks have no traded volume. Avoid scanning the complete history
+      // for volume on every tick when its overlay is hidden.
+      if (this.ctype === 'renko-v4' && !this.volumeOn) {
+        this.shownCount = this.shownBars.length
+        return true
+      }
       this.setTransformedVolume(this.rawBars)
       this.shownCount = this.shownBars.length
       this.profileLayer?.refresh()
@@ -2158,6 +2192,32 @@ export class TradingTerminal {
       downColor: theme?.downColor,
       ...this.chart?.primarySeriesInfo()?.style,
     }
+  }
+
+  private syncRenkoV4Trend(reset = false): void {
+    const series = this.renkoV4Trend
+    const run = this.renkoV4Run
+    if (!series || !run || this.ctype !== 'renko-v4') return
+    const points = run.trendPoints()
+    if (reset || points.length < this.renkoV4TrendCount) series.setData(points)
+    else for (let i = this.renkoV4TrendCount; i < points.length; i++) series.update(points[i])
+    this.renkoV4TrendCount = points.length
+  }
+
+  private scheduleRenkoV4Save(): void {
+    if (this.ctype !== 'renko-v4' || !this.renkoV4Run || this.renkoV4SaveTimer !== null
+      || this.preferences !== undefined || this.renkoV4SavedCount === this.renkoV4Run.committedCount)
+      return
+    this.renkoV4SaveTimer = setTimeout(() => this.flushRenkoV4(), 500)
+  }
+
+  private readonly flushRenkoV4 = (): void => {
+    if (this.renkoV4SaveTimer !== null) clearTimeout(this.renkoV4SaveTimer)
+    this.renkoV4SaveTimer = null
+    if (!this.renkoV4Run || this.preferences !== undefined) return
+    const prefix = `${this.sk}-renko-v4-cache:`
+    saveRenkoV4(this.renkoV4Run, `${prefix}${this.renkoV4RunKey}`, prefix)
+    this.renkoV4SavedCount = this.renkoV4Run.committedCount
   }
 
   private volumeAvailable(): boolean {
@@ -2302,7 +2362,7 @@ export class TradingTerminal {
     if (!sym) return []
     const runs = buildChartLegend({
       symbol: formatTradingSymbol(sym.symbol),
-      interval: this.interval,
+      interval: this.ctype === 'renko-v4' ? 'Price' : this.interval,
       exchange: sym.exchange,
       lotsize: sym.lots ? sym.lotsize : null,
       bar:
@@ -2738,7 +2798,7 @@ export class TradingTerminal {
       // ago. A live trading terminal is the case they are for, so this host opts
       // in. The clock reads the exchange's wall time through the chart's
       // configured timezone, which is what a trader is actually watching.
-      axisChrome: { sessionClock: { showOffset: true }, barCountdown: true },
+      axisChrome: { sessionClock: { showOffset: true }, barCountdown: this.ctype !== 'renko-v4' },
       // The library's built-in screenshot command calls its own
       // `downloadScreenshot()`, which knows nothing about this terminal's DOM
       // OHLC readout or its trade panel. Unbind it and claim the same chord for
@@ -2817,20 +2877,45 @@ export class TradingTerminal {
     // sized once per build from the instrument's price, so bricks keep their
     // size through ticks, history refreshes and older pages, unless the trader
     // chose options for this instrument in chart settings.
-    const base = cfg.transform?.(this.boxOf()) ?? null
+    const rawBase = cfg.transform?.(this.boxOf()) ?? null
+    const base = rawBase?.type === 'renko-v4'
+      ? { ...rawBase, options: { ...renkoV4Options(this.tick()), ...rawBase.options } }
+      : rawBase
     this.transformBase = base
-    const priceSeries = (transform: SeriesTransformSpec | null) =>
-      this.chart!.addSeries(cfg.series as SeriesType, {
+    this.renkoV4Trend = null
+    this.renkoV4TrendCount = 0
+    const priceSeries = (transform: SeriesTransformSpec | null) => {
+      const create = () => this.chart!.addSeries(cfg.series as SeriesType, {
         style,
         priceFormat: { type: 'custom', formatter: (p: number) => p.toFixed(dp) },
         ...(transform ? { transform } : {}),
       })
+      if (transform?.type !== 'renko-v4') return create()
+      const key = `${this.transformChoiceKey()}:${JSON.stringify(transform.options)}`
+      if (!this.renkoV4Run || this.renkoV4RunKey !== key) {
+        this.flushRenkoV4()
+        this.renkoV4Run = new RenkoV4Run(transform.options as RenkoV4Options)
+        this.renkoV4RunKey = key
+        this.renkoV4SavedCount = -1
+        if (this.preferences === undefined)
+          restoreRenkoV4(this.renkoV4Run, `${this.sk}-renko-v4-cache:${key}`)
+      }
+      return withRenkoV4Run(this.renkoV4Run, create)
+    }
     try {
       this.price = priceSeries(base ? this.chosenTransform(base) : null)
     } catch {
       // A kept choice this build refuses throws before the series exists. The
       // chart opens on the base instead; the choice goes when one is next saved.
       this.price = priceSeries(base)
+    }
+    if (this.ctype === 'renko-v4') {
+      this.renkoV4Trend = this.chart.addSeries('step', {
+        paneIndex: 0,
+        style: { color: '#26a69a', lineWidth: 2,
+          visible: this.chartSettingsSaved['renkov4.showTrend'] !== false },
+        priceFormat: { type: 'custom', formatter: (p: number) => p.toFixed(dp) },
+      })
     }
     // Tell the engine the instrument's tick. Without it the price scale treats
     // `minMove: 0` as "infer precision from the visible range", so RELIANCE at a
@@ -5016,7 +5101,7 @@ export class TradingTerminal {
             }
       ),
     }))
-    return renkoV3SettingsView(
+    return renkoV4SettingsView(renkoV3SettingsView(
       renkoV2SettingsView(
         priceAxisSettingsView(
           volumeSettingsView(
@@ -5038,7 +5123,7 @@ export class TradingTerminal {
       ),
       this.ctype,
       this.chartSettingsSaved
-    )
+    ), this.ctype, this.chartSettingsSaved)
   }
 
   /**
@@ -5106,6 +5191,7 @@ export class TradingTerminal {
           !key.startsWith('volume.') &&
           !key.startsWith('renkov2.') &&
           !key.startsWith('renkov3.') &&
+          !key.startsWith('renkov4.') &&
           !isPriceAxisSetting(key)
       )
     )
@@ -5137,6 +5223,7 @@ export class TradingTerminal {
       ...PRICE_AXIS_DEFAULTS,
       ...RENKO_V2_DEFAULTS,
       ...RENKO_V3_DEFAULTS,
+      ...RENKO_V4_DEFAULTS,
     }
     for (const kind of ['tpo', 'session-volume-profile'] as const) {
       const normalized = profileValues(kind, merged)
@@ -5169,6 +5256,9 @@ export class TradingTerminal {
       this.setPriceData()
     }
     if (this.ctype === 'renko-v3') {
+      this.buildChart()
+    }
+    if (this.ctype === 'renko-v4') {
       this.buildChart()
     }
     if (isProfileKind(this.ctype)) {
@@ -5226,6 +5316,7 @@ export class TradingTerminal {
               !key.startsWith('volume.') &&
               !key.startsWith('renkov2.') &&
               !key.startsWith('renkov3.') &&
+              !key.startsWith('renkov4.') &&
               !transformSetting(key) &&
               !isPriceAxisSetting(key) &&
               // Pinned once measured, below: pinned now it would hold no range.
@@ -6138,6 +6229,7 @@ export class TradingTerminal {
             onFrame: (state) => {
               if (!member.isCurrent() || !member.active) return
               member.state = state
+              this.syncRenkoV4Trend(true)
               this.refreshDisplayedVolume()
               this.refreshLegend(this.drawnBars(true))
               this.profileLayer?.refresh(true)
@@ -6485,6 +6577,7 @@ export class TradingTerminal {
       startIndex: from,
       subBars: sub ?? undefined,
       onFrame: (state) => {
+        this.syncRenkoV4Trend(true)
         this.refreshDisplayedVolume()
         this.refreshLegend(this.drawnBars(true))
         this.profileLayer?.refresh(true)
@@ -6729,7 +6822,7 @@ export class TradingTerminal {
       typeof e.ltp !== 'number' ||
       !Number.isFinite(e.ltp) ||
       e.ltp <= 0 ||
-      e.ltp >= 10000000 ||
+      (this.ctype !== 'renko-v4' && e.ltp >= 10000000) ||
       Math.round(e.ltp * 100) / 100 === 21474836.48 ||
       Math.round(e.ltp * 100) / 100 === -21474836.48
     )
@@ -6776,12 +6869,20 @@ export class TradingTerminal {
         // prefix. rawBars keeps accumulating either way, so leaving replay finds
         // the session already caught up.
         if (this.replayOwnsDisplay()) {
+          if (this.ctype === 'renko-v4') this.renkoV4Run?.observeLive(u.bar)
+          this.scheduleRenkoV4Save()
           this.cb.onLtp(e.ltp)
           return
         }
         // One bar in, one bar out. Only a transformed chart has to rebuild.
         if (!this.updateLiveBar(u.bar)) this.setPriceData()
       }
+    }
+    // Daily intervals have no CandleBuilder. Renko still observes every price.
+    if (!this.builder && this.ctype === 'renko-v4' && sessionOpen && !this.replayOwnsDisplay()) {
+      const last = this.rawBars.at(-1)
+      if (last) this.updateLiveBar({ ...last, close: e.ltp,
+        high: Math.max(last.high, e.ltp), low: Math.min(last.low, e.ltp) })
     }
     // The legend belongs to the bar on screen. During replay that is the
     // playhead's, written by onReplayChange, not the live one.
@@ -6791,6 +6892,11 @@ export class TradingTerminal {
   }
 
   /* ── live data: WS ticks → candles; depth → bid/ask ───────────────────── */
+  private seedLiveBuilder(): void {
+    const last = this.rawBars.at(-1)
+    if (last) this.builder?.seed(last)
+  }
+
   private connectLive() {
     if (!this.ws || !this.sym) return
     const sec = intervalSeconds(this.interval)
@@ -7159,9 +7265,25 @@ export class TradingTerminal {
   }
 
   loadSymbol(pick: SearchRow, opts: { silent?: boolean; strict?: boolean } = {}): Promise<boolean> {
+    const key = JSON.stringify([pick.symbol, pick.exchange, this.interval, Boolean(pick.expression), Boolean(opts.strict)])
+    if (this.pendingSymbolKey === key) return this.loading
     const run = this.runLoadSymbol(pick, opts)
     this.loading = run
+    this.pendingSymbolKey = key
+    void run.finally(() => {
+      if (this.loading === run) this.pendingSymbolKey = null
+    }).catch(() => {})
     return run
+  }
+
+  /** React selection effects may announce the same instrument several times. */
+  ensureSymbol(pick: SearchRow): Promise<boolean> {
+    if (!this.destroyed && !this.dataUnavailable() && this.price && this.chart &&
+        this.sym?.symbol === pick.symbol && this.sym.exchange === pick.exchange &&
+        this.chartDataKey === this.dataKey({ ...pick, interval: this.interval })) {
+      return Promise.resolve(true)
+    }
+    return this.loadSymbol(pick)
   }
 
   private async runLoadSymbol(
@@ -7173,12 +7295,9 @@ export class TradingTerminal {
     this.lastPick = pick
     this.loadOutcome = null
     this.waitingForSecondsTicks = false
-    const symKey = `${pick.symbol.toUpperCase()}:${(pick.exchange || '').toUpperCase()}`
-    const memKey = `${symKey}:${this.interval}`
-    const isCached = globalBarMemoryCache.has(memKey) && symbolMetadataCache.has(symKey)
-    if (!isCached) {
-      this.cb.onChartState?.({ kind: 'loading', symbol: pick.symbol, interval: this.interval })
-    }
+    // The UI gate suppresses short flashes. Hosts still need the loading event
+    // for warm selections so auxiliary fetches cannot jump ahead of candles.
+    this.cb.onChartState?.({ kind: 'loading', symbol: pick.symbol, interval: this.interval })
     this.historyPending = true
     this.historyFailed = false
     this.syncAlertPause()
@@ -7386,6 +7505,30 @@ export class TradingTerminal {
     this.lastLtp = null
     this.liveBucket = null
     this.noMoreHistory = false
+    let liveStartedFromCache = false
+    // The controller deliberately waits for its authoritative response even
+    // after publishing a cache snapshot. Paint that snapshot here as soon as
+    // metadata is ready, rather than keeping the chart behind the REST await.
+    const preview = await this.cachedBars?.getCachedBars(initialRequest).catch(() => undefined)
+    if (this.destroyed || ticket !== this.loadTicket) return false
+    const previewBars = preview?.filter((bar) =>
+      Number.isFinite(bar.time) && [bar.open, bar.high, bar.low, bar.close].every((price) => Number.isFinite(price) && price > 0) &&
+      bar.high >= Math.max(bar.open, bar.close) && bar.low <= Math.min(bar.open, bar.close) &&
+      isValidIntradaySessionBar(this.sym!.exchange, this.interval, bar.time))
+    if (previewBars?.length) {
+      this.rawBars = previewBars
+      this.lastLtp = previewBars.at(-1)!.close
+      const key = this.dataKey({ symbol: this.sym.symbol, exchange: this.sym.exchange, interval: this.interval })
+      if (!this.chart || this.chartDataKey !== key) {
+        this.chartDataKey = key
+        this.buildChart()
+      } else this.setPriceData()
+      this.connectLive()
+      liveStartedFromCache = true
+      this.cb.onSymbolLoaded(this.sym)
+      this.cb.onLtp(this.lastLtp)
+      this.cb.onChartState?.({ ...CHART_READY, refreshing: true })
+    }
     let bars: readonly Bar[]
     try {
       const request = {
@@ -7397,7 +7540,6 @@ export class TradingTerminal {
       }
       const memKey = `${this.sym.symbol.toUpperCase()}:${(this.sym.exchange || '').toUpperCase()}:${this.interval}`
       const warmEntry = this.interval.endsWith('s') ? undefined : globalBarMemoryCache.get(memKey)
-      const usedStaleWarm = Boolean(warmEntry && Date.now() - warmEntry.time > 2_000)
       let consumedEarlyHistory = false
       const loadFn = async (): Promise<readonly Bar[]> => {
         if (!consumedEarlyHistory && request.symbol === initialRequest.symbol &&
@@ -7405,9 +7547,14 @@ export class TradingTerminal {
           consumedEarlyHistory = true
           const result = await earlyHistory
           if (!result.ok) throw result.error
+          const state = this.data?.getState()
+          if (state?.error && state.status === 'stale') throw state.error
           return result.rows
         }
-        return this.data ? this.data.load(request) : feed.getBars(request)
+        const rows = await (this.data ? this.data.load(request) : feed.getBars(request))
+        const state = this.data?.getState()
+        if (state?.error && state.status === 'stale') throw state.error
+        return rows
       }
       try {
         bars = await loadFn()
@@ -7423,12 +7570,6 @@ export class TradingTerminal {
       if (bars?.length && !warmEntry) {
         globalBarMemoryCache.set(memKey, { bars, time: Date.now() })
         persistFastCache()
-      } else if (usedStaleWarm) {
-        setTimeout(() => {
-          if (!this.destroyed && ticket === this.loadTicket) {
-            this.reconcileNow()
-          }
-        }, 0)
       }
     } catch (e) {
       if (this.destroyed || ticket !== this.loadTicket) return false
@@ -7483,7 +7624,10 @@ export class TradingTerminal {
     this.cb.onSymbolLoaded(this.sym)
 
     // live subscription (swap the previous symbol's stream)
-    this.connectLive()
+    if (liveStartedFromCache) {
+      // Seed corrected OHLC without adding a second socket subscription.
+      this.seedLiveBuilder()
+    } else this.connectLive()
     this.pollBook()
     return true
   }
@@ -7492,6 +7636,13 @@ export class TradingTerminal {
   setInterval(iv: string): string {
     const norm = normalizeCustomInterval(iv) || iv
     if (norm === this.interval) return norm
+    if (this.ctype === 'renko-v4') {
+      const seed = renkoV4HistoryInterval(this.availableIntervals)
+      if (norm !== seed) {
+        this.toast(`Renko V4 forms on price movement. ${seed ?? this.interval} is only its historical seed interval; change brick size in Chart settings.`, '')
+        return this.interval
+      }
+    }
     if (!this.availableIntervals.includes(norm)) {
       if (normalizeCustomInterval(norm)) {
         this.availableIntervals.push(norm)
@@ -7536,9 +7687,10 @@ export class TradingTerminal {
   }
   setChartType(v: string): string {
     if (!CHART_TYPES[v]) return this.ctype
-    const interval = isProfileKind(v) ? this.compatibleProfileInterval(v) : this.interval
+    const interval = v === 'renko-v4' ? renkoV4HistoryInterval(this.availableIntervals)
+      : isProfileKind(v) ? this.compatibleProfileInterval(v) : this.interval
     if (!interval) {
-      this.toast('The broker has no intraday interval compatible with this profile', 'err')
+      this.toast('The broker has no intraday history interval compatible with this chart', 'err')
       return this.ctype
     }
     this.stopReplay()
@@ -7567,6 +7719,11 @@ export class TradingTerminal {
   }
   currentQty(): number {
     return this.qty
+  }
+  /** Instrument metadata owned by this pane, also used by external order controls. */
+  currentInstrument(): SymbolView | null {
+    return this.destroyed || !this.sym ? null
+      : { ...this.sym, productOptions: [...this.sym.productOptions] }
   }
   /**
    * One-Click on or off. Nothing here gates a risk-reducing action: the
@@ -8195,6 +8352,19 @@ export class TradingTerminal {
       },
     })
     const baseCachedBars = withBarCache(this.rest, { ttlMs: 10 * 60_000 })
+    const origCachedBars = baseCachedBars.getCachedBars.bind(baseCachedBars)
+    baseCachedBars.getCachedBars = async (request): Promise<Bar[] | undefined> => {
+      if (!request.noCache && !request.interval.endsWith('s') &&
+          (request.to ?? 0) >= nowSec() - 3600 && (request.to ?? 0) - (request.from ?? 0) >= 3600) {
+        const key = `${request.symbol.toUpperCase()}:${(request.exchange || '').toUpperCase()}:${request.interval}`
+        const hit = globalBarMemoryCache.get(key)
+        if (hit?.bars.length && Date.now() - hit.time < BAR_PREVIEW_RETENTION_MS) {
+          const bars = hit.bars.filter((bar) => bar.time <= (request.to ?? Infinity))
+          if (bars.length) return bars.map((bar) => ({ ...bar }))
+        }
+      }
+      return origCachedBars(request)
+    }
     const origGetBars = baseCachedBars.getBars.bind(baseCachedBars)
     baseCachedBars.getBars = async (request): Promise<Bar[]> => {
       const reqFrom = request.from ?? 0
@@ -8213,8 +8383,8 @@ export class TradingTerminal {
         for (const bar of observed) merged.set(bar.time, bar)
         return [...merged.values()].sort((a, b) => a.time - b.time)
       }
-      const isInitialWindow =
-        !request.noCache && reqTo - reqFrom >= 3600 && reqTo >= nowSec() - 3600
+      const isWideWindow = reqTo - reqFrom >= 3600 && reqTo >= nowSec() - 3600
+      const isInitialWindow = !request.noCache && isWideWindow
       const memKey = `${request.symbol.toUpperCase()}:${(request.exchange || '').toUpperCase()}:${request.interval}`
       if (isInitialWindow) {
         const hit = globalBarMemoryCache.get(memKey)
@@ -8222,7 +8392,19 @@ export class TradingTerminal {
           return [...hit.bars]
         }
       }
-      const fetched = await origGetBars(request)
+      const requestKey = JSON.stringify([this.apiKey, request.symbol, request.exchange, request.interval, reqFrom, reqTo, Boolean(request.noCache)])
+      let pending = isWideWindow ? initialBarRequests.get(requestKey) : undefined
+      if (!pending) {
+        pending = origGetBars(request)
+        if (isWideWindow) {
+          initialBarRequests.set(requestKey, pending)
+          const owner = pending
+          void owner.finally(() => {
+            if (initialBarRequests.get(requestKey) === owner) initialBarRequests.delete(requestKey)
+          }).catch(() => {})
+        }
+      }
+      const fetched = await pending
       if (fetched?.length && isInitialWindow) {
         globalBarMemoryCache.set(memKey, { bars: fetched, time: Date.now() })
         persistFastCache()
@@ -8250,6 +8432,8 @@ export class TradingTerminal {
     })
     this.offData = this.data.subscribe((snapshot) => this.applyDataSnapshot(snapshot))
     document.addEventListener('visibilitychange', this.onVisibilityChange)
+    window.addEventListener('focus', this.redrawOnFocus)
+    window.addEventListener('pagehide', this.flushRenkoV4)
     this.onVisibilityChange()
     this.trade = new OpenAlgoTradeFeed({ baseUrl: '', apiKey: this.apiKey, strategy: STRATEGY })
 
@@ -8401,6 +8585,11 @@ export class TradingTerminal {
       if (interval) this.interval = interval
       else this.ctype = 'candlestick'
     }
+    if (this.ctype === 'renko-v4') {
+      const interval = renkoV4HistoryInterval(this.availableIntervals)
+      if (interval) this.interval = interval
+      else this.ctype = 'candlestick'
+    }
     this.cb.onReady({ intervalGroups: groups, interval: this.interval, chartType: this.ctype })
 
     if (this.initialWorkspacePane) {
@@ -8456,6 +8645,9 @@ export class TradingTerminal {
     } catch {
       /* fall through to the default */
     }
+    // An option pane waits for the chain to resolve its contract. Fetching a
+    // fallback index here wastes a broker slot and then rebuilds the pane twice.
+    if (!loaded && /^oa-trading-scalper-p[12]$/.test(this.sk)) return
     if (!loaded && !this.destroyed && this.loadTicket === 0) {
       try {
         const rows = await this.search('NIFTY', 'NSE_INDEX')
@@ -8501,6 +8693,9 @@ export class TradingTerminal {
     this.offBranding = null
     this.cb.onBrandingChange?.(null)
     document.removeEventListener('visibilitychange', this.onVisibilityChange)
+    window.removeEventListener('focus', this.redrawOnFocus)
+    window.removeEventListener('pagehide', this.flushRenkoV4)
+    this.flushRenkoV4()
     this.offData?.()
     this.offData = null
     this.data?.destroy()
@@ -8543,6 +8738,8 @@ export class TradingTerminal {
       /* already gone */
     }
     this.chart = null
+    this.renkoV4Run = null
+    this.renkoV4Trend = null
     this.ws = null
     this.screenshotExcluded.length = 0
     if (comparisonFailed) throw comparisonError

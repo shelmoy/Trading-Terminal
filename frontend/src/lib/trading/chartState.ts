@@ -20,6 +20,8 @@ export interface ChartStateView {
   interval: string
   /** For empty and error: the cause, already in a trader's words. */
   message?: string
+  /** Candles are visible from cache while the authoritative request continues. */
+  refreshing?: boolean
 }
 
 /**

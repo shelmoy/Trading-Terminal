@@ -7,7 +7,7 @@
  * 3. AlphaTrend line & AlphaTrend Lag line (2 periods delayed) are plotted with ribbon fill
  * 4. BUY & SELL signals match AlphaTrend crossover/crossunder with Kivanc's O1 > K2 & O2 > K1 state filters
  * 5. Markers use tiny labels with text "BUY" and "SELL" at AlphaTrend[2] levels (exact original colors: #0022FC blue & #880e4f maroon)
- * 6. Includes optional Renko step trailing line and real-time Telemetry Dashboard
+ * 6. Includes optional Renko step trailing line
  *
  * Author: KivancOzbilgic / Adapted for OpenAlgo Pure Renko V2
  */
@@ -222,13 +222,6 @@ export default function ({ registerIndicator, sourceValues, sma, rsi, nulls }) {
         key: 'showRenkoStep',
         type: 'boolean',
         label: 'Show Renko Trailing Line?',
-        default: true,
-        group: '2. AlphaTrend Parameters',
-      },
-      {
-        key: 'showDashboard',
-        type: 'boolean',
-        label: 'Show Dashboard Table?',
         default: true,
         group: '2. AlphaTrend Parameters',
       },
@@ -603,124 +596,6 @@ export default function ({ registerIndicator, sourceValues, sma, rsi, nulls }) {
       }
 
       return out
-    },
-    table({ bars, values, settings }) {
-      if (settings.showDashboard === false) return null
-      const n = bars.length
-      if (n === 0) return null
-
-      const lastIdx = n - 1
-      const rDir = values.renkoDir ? values.renkoDir[lastIdx] : 0
-      const rStreak = values.streakCount ? values.streakCount[lastIdx] : 0
-      const rClose = values.renkoClose ? values.renkoClose[lastIdx] : null
-
-      const calcMode = String(settings.calcMode || 'Percentage (%)')
-      const pctSize = Number(settings.pctSize) || 0.04
-      const ptsSize = Number(settings.ptsSize) || 10.0
-
-      const at = values.alphatrend ? values.alphatrend[lastIdx] : null
-      const lag = values.lagged ? values.lagged[lastIdx] : null
-
-      const modeText =
-        calcMode === 'Percentage (%)'
-          ? `${pctSize}%`
-          : calcMode === 'Points'
-            ? `${ptsSize} Pts`
-            : 'ATR'
-
-      const isBullRenko = rDir === 1
-      const renkoStatus = isBullRenko
-        ? `BULLISH (${rStreak})`
-        : `BEARISH (${rStreak})`
-      const renkoBgColor = isBullRenko ? '#2e7d32' : '#d32f2f'
-
-      const isLongAT = at !== null && lag !== null && at > lag
-      const atSignalText = isLongAT ? 'LONG / BUY' : 'SHORT / SELL'
-      const atSignalBg = isLongAT ? '#0022fc' : '#880e4f'
-
-      const atStr = at !== null ? at.toFixed(2) : '--'
-      const rCloseStr = rClose !== null ? rClose.toFixed(2) : '--'
-
-      const isDark =
-        typeof document === 'undefined' ||
-        document.documentElement.classList.contains('dark')
-
-      const headerTitleBg = isDark ? 'rgba(28, 28, 34, 0.96)' : '#f1f5f9'
-      const headerBadgeBg = isDark ? 'rgba(39, 39, 46, 0.96)' : '#e2e8f0'
-      const rowLabelBg = isDark ? 'rgba(18, 18, 22, 0.94)' : 'rgba(255, 255, 255, 0.96)'
-      const rowValueBg = isDark ? 'rgba(22, 22, 27, 0.94)' : 'rgba(248, 250, 252, 0.96)'
-      const headerTitleColor = isDark ? '#ffffff' : '#09090b'
-      const labelColor = isDark ? '#d4d4d8' : '#334155'
-      const valueColor = isDark ? '#ffffff' : '#09090b'
-      const accentAmber = isDark ? '#fbbf24' : '#b45309'
-
-      const renkoStatusText = isBullRenko ? `▲ BULLISH (${rStreak})` : `▼ BEARISH (${rStreak})`
-      const renkoStatusColor = isBullRenko
-        ? isDark
-          ? '#22c55e'
-          : '#15803d'
-        : isDark
-          ? '#f87171'
-          : '#dc2626'
-      const renkoCellBg = isBullRenko
-        ? isDark
-          ? 'rgba(34, 197, 94, 0.16)'
-          : 'rgba(22, 163, 74, 0.14)'
-        : isDark
-          ? 'rgba(248, 113, 113, 0.16)'
-          : 'rgba(220, 38, 38, 0.14)'
-
-      const atText = isLongAT ? '▲ LONG / BUY' : '▼ SHORT / SELL'
-      const atColor = isLongAT
-        ? isDark
-          ? '#38bdf8'
-          : '#0369a1'
-        : isDark
-          ? '#f472b6'
-          : '#be185d'
-      const atCellBg = isLongAT
-        ? isDark
-          ? 'rgba(56, 189, 248, 0.16)'
-          : 'rgba(2, 132, 199, 0.14)'
-        : isDark
-          ? 'rgba(244, 114, 182, 0.16)'
-          : 'rgba(219, 39, 119, 0.14)'
-
-      return {
-        rows: [
-          [
-            { text: '  AlphaTrend + Renko V2', bgColor: headerTitleBg, textColor: headerTitleColor, bold: true, align: 'left', fontSize: 11 },
-            { text: `${modeText} `, bgColor: headerBadgeBg, textColor: accentAmber, bold: true, align: 'right', fontSize: 11 },
-          ],
-          [
-            { text: '  Renko Trend', bgColor: rowLabelBg, textColor: labelColor, align: 'left', fontSize: 11 },
-            { text: `${renkoStatusText} `, bgColor: renkoCellBg, textColor: renkoStatusColor, bold: true, align: 'right', fontSize: 11 },
-          ],
-          [
-            { text: '  AlphaTrend Signal', bgColor: rowLabelBg, textColor: labelColor, align: 'left', fontSize: 11 },
-            { text: `${atText} `, bgColor: atCellBg, textColor: atColor, bold: true, align: 'right', fontSize: 11 },
-          ],
-          [
-            { text: '  AlphaTrend Value', bgColor: rowLabelBg, textColor: labelColor, align: 'left', fontSize: 11 },
-            { text: `${atStr} `, bgColor: rowValueBg, textColor: valueColor, bold: true, align: 'right', fontSize: 11 },
-          ],
-          [
-            { text: '  Renko Brick Level', bgColor: rowLabelBg, textColor: labelColor, align: 'left', fontSize: 11 },
-            { text: `${rCloseStr} `, bgColor: rowValueBg, textColor: accentAmber, bold: true, align: 'right', fontSize: 11 },
-          ],
-        ],
-        options: {
-          position: 'top-right',
-          cellWidth: 'auto',
-          cellHeight: 22,
-          margin: 12,
-          borderColor: isDark ? 'rgba(255, 255, 255, 0.10)' : 'rgba(0, 0, 0, 0.12)',
-          borderWidth: 1,
-          frameColor: isDark ? 'rgba(255, 255, 255, 0.22)' : 'rgba(0, 0, 0, 0.20)',
-          frameWidth: 1,
-          background: isDark ? 'rgba(15, 15, 18, 0.95)' : 'rgba(255, 255, 255, 0.96)',
-        },
-      }
     },
     alerts: [
       {

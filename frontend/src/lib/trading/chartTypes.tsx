@@ -11,6 +11,7 @@ import type { Bar, SeriesTransformSpec } from 'openalgo-charts'
 import 'openalgo-charts/transform'
 import './renkoV2Transform'
 import './renkoV3Transform'
+import './renkoV4Transform'
 import type { ReactNode } from 'react'
 
 export interface ChartTypeDef {
@@ -81,6 +82,13 @@ export const CHART_TYPE_GROUPS: ChartTypeDef[][] = [
       iconKey: 'bricks',
       series: 'candlestick',
       transform: (b) => ({ type: 'renko-v3', options: { boxSize: b } }),
+    },
+    {
+      value: 'renko-v4',
+      label: 'Renko Version 4',
+      iconKey: 'bricks',
+      series: 'candlestick',
+      transform: () => ({ type: 'renko-v4', options: { boxSize: 0 } }),
     },
     {
       value: 'range',
