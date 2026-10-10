@@ -332,6 +332,26 @@ def transform_positions_data(positions_data):
             "average_price": average_price_formatted,
             "ltp": round(position.get("last_price", 0.0), 2),
         }
+        # MCX quantity has already been converted from contracts to OA units.
+        # Cash values from Kite are already rupees and must not be scaled again.
+        day_fields = ("overnight_quantity", "day_buy_quantity", "day_sell_quantity",
+                      "day_buy_value", "day_sell_value", "close_price")
+        if all(field in position for field in day_fields):
+            multiplier = (
+                price_multiplier(position.get("tradingsymbol"), position.get("exchange"))
+                / units_per_contract(position.get("tradingsymbol"), position.get("exchange"))
+                if position.get("exchange") == "MCX" else _to_float(position.get("multiplier"), 1.0)
+            )
+            opening = _to_float(position.get("overnight_quantity"))
+            transformed_position["day_pnl_inputs"] = {
+                "opening_quantity": opening,
+                "opening_value": opening * _to_float(position.get("close_price")) * multiplier,
+                "buy_quantity": _to_float(position.get("day_buy_quantity")),
+                "sell_quantity": _to_float(position.get("day_sell_quantity")),
+                "buy_value": _to_float(position.get("day_buy_value")),
+                "sell_value": _to_float(position.get("day_sell_value")),
+                "multiplier": multiplier,
+            }
         transformed_data.append(transformed_position)
     return transformed_data
 

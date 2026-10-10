@@ -36,6 +36,17 @@ async function fetchCSRFToken(): Promise<string> {
 
 // Crypto exchanges operate 24/7 - no holidays or weekends
 const CRYPTO_EXCHANGES = new Set(['CRYPTO'])
+const calendarFormatter = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Kolkata',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+})
+const calendarDate = () => {
+  const parts = calendarFormatter.formatToParts(new Date())
+  const value = (type: string) => parts.find((part) => part.type === type)?.value ?? ''
+  return `${value('year')}-${value('month')}-${value('day')}`
+}
 
 /**
  * The exchange whose calendar an instrument actually follows.
@@ -57,6 +68,7 @@ function calendarExchange(exchange: string): string {
 }
 
 export function useMarketStatus() {
+  const [calendarDay, setCalendarDay] = useState(calendarDate)
   const [state, setState] = useState<MarketStatusState>({
     timings: [],
     holidays: [],
@@ -65,6 +77,17 @@ export function useMarketStatus() {
   })
 
   useEffect(() => {
+    const update = () => setCalendarDay(calendarDate())
+    const timer = setInterval(update, 1000)
+    window.addEventListener('focus', update)
+    return () => {
+      clearInterval(timer)
+      window.removeEventListener('focus', update)
+    }
+  }, [])
+
+  useEffect(() => {
+    let current = true
     const fetchMarketData = async () => {
       try {
         const csrfToken = await fetchCSRFToken()
@@ -82,7 +105,7 @@ export function useMarketStatus() {
 
         const timingsData = await timingsRes.json()
         const holidaysData = await holidaysRes.json()
-
+        if (!current || calendarDate() !== calendarDay) return
         setState({
           // Use market_status field which contains epoch timestamps for market open checks
           timings: timingsData.status === 'success' ? timingsData.market_status || [] : [],
@@ -91,6 +114,7 @@ export function useMarketStatus() {
           error: null,
         })
       } catch (err) {
+        if (!current) return
         setState((prev) => ({
           ...prev,
           isLoading: false,
@@ -100,7 +124,10 @@ export function useMarketStatus() {
     }
 
     fetchMarketData()
-  }, [])
+    return () => {
+      current = false
+    }
+  }, [calendarDay])
 
   // Check if today is a holiday for a specific exchange
   const isHolidayForExchange = useCallback(
@@ -109,7 +136,7 @@ export function useMarketStatus() {
       // Crypto exchanges have no holidays
       if (CRYPTO_EXCHANGES.has(exchange)) return false
 
-      const today = new Date().toISOString().split('T')[0] // YYYY-MM-DD format
+      const today = calendarDate()
       const todayHoliday = state.holidays.find((h) => h.date === today)
 
       if (!todayHoliday) return false

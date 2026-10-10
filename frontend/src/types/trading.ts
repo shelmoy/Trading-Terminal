@@ -9,6 +9,16 @@ export interface Position {
   pnlpercent: number
   lot_size?: number // contract_value multiplier (e.g. 0.01 for ETHUSD.P)
   today_realized_pnl?: number // Sandbox: today's realized P&L from closed partial trades
+  // Quantities use OpenAlgo units; multiplier converts price × units to money.
+  day_pnl_inputs?: {
+    opening_quantity: number
+    opening_value: number
+    buy_quantity: number
+    sell_quantity: number
+    buy_value: number
+    sell_value: number
+    multiplier: number
+  }
 }
 
 export interface Order {

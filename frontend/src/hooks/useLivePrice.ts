@@ -58,6 +58,8 @@ export interface UseLivePriceResult<T extends PriceableItem> {
   isAnyMarketOpen: boolean
   /** Map of MultiQuotes data for external access if needed */
   multiQuotes: Map<string, QuotesData>
+  /** Receipt time of the last successful quote batch, for day-boundary validation. */
+  multiQuotesFetchedAt: number
   /** Manually refresh MultiQuotes data */
   refreshMultiQuotes: () => Promise<void>
 }
@@ -97,6 +99,7 @@ export function useLivePrice<T extends PriceableItem>(
 
   // State for MultiQuotes fallback data
   const [multiQuotes, setMultiQuotes] = useState<Map<string, QuotesData>>(new Map())
+  const [multiQuotesFetchedAt, setMultiQuotesFetchedAt] = useState(0)
 
   // Track last fetch time for visibility-aware refresh
   const lastFetchRef = useRef<number>(Date.now())
@@ -138,6 +141,7 @@ export function useLivePrice<T extends PriceableItem>(
     if (!apiKey || items.length === 0 || !useMultiQuotesFallback) return
 
     try {
+      const fetchedAt = Date.now()
       const symbolsList = items.map((item) => ({
         symbol: item.symbol,
         exchange: item.exchange,
@@ -154,6 +158,7 @@ export function useLivePrice<T extends PriceableItem>(
           }
         })
         setMultiQuotes(quotesMap)
+        setMultiQuotesFetchedAt(fetchedAt)
       }
     } catch {
       // Silently fail - MultiQuotes is a fallback mechanism
@@ -320,6 +325,7 @@ export function useLivePrice<T extends PriceableItem>(
     isFallbackMode,
     isAnyMarketOpen: anyMarketOpen,
     multiQuotes,
+    multiQuotesFetchedAt,
     refreshMultiQuotes: fetchMultiQuotes,
   }
 }

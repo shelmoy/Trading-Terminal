@@ -10,6 +10,7 @@
  */
 import { type ChartTheme, darkTheme, lightTheme } from 'openalgo-charts'
 import type { AppMode, ThemeMode } from '@/stores/themeStore'
+import { marketPalette } from './marketPalette'
 
 let probe: HTMLSpanElement | null = null
 let ctx: CanvasRenderingContext2D | null = null
@@ -103,8 +104,11 @@ export function isLightTheme(mode: ThemeMode, _appMode?: AppMode): boolean {
 /** Build the canvas theme from the base palette + the app's live token colors. */
 export function buildChartTheme(mode: ThemeMode, appMode: AppMode): ChartTheme {
   const base = isLightTheme(mode, appMode) ? lightTheme : darkTheme
+  const colors = marketPalette(mode)
   return {
     ...base,
+    buy: colors.buy,
+    sell: colors.sell,
     background: token('--background'),
     grid: token('--card'),
     axisText: token('--muted-foreground'),

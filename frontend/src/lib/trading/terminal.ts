@@ -1535,6 +1535,7 @@ export class TradingTerminal {
   /** Serialises agent chart commands. See {@link applyChartCommands}. */
   private chartCommandQueue: Promise<void> = Promise.resolve()
   private destroyed = false
+  private fullTradeButtonColors = false
   private initialWorkspacePane: WorkspacePane | null = null
   private preparingWorkspace = false
   private workspaceTransitionLocked = false
@@ -7738,6 +7739,11 @@ export class TradingTerminal {
   oneClickArmed(): boolean {
     return this.armed
   }
+  /** Presentation only: full palette in Scalper, without changing order arming. */
+  setFullTradeButtonColors(full: boolean): void {
+    this.fullTradeButtonColors = full
+    this.applyTradeColors()
+  }
   /**
    * The Buy and Sell panel says which it is. Armed, the theme's own buy and
    * sell colours: the click is the order. Off, both are pulled towards the
@@ -7747,7 +7753,7 @@ export class TradingTerminal {
    */
   private applyTradeColors(): void {
     if (!this.tradeBtns) return
-    if (this.armed || !this.chartTheme) {
+    if (this.armed || this.fullTradeButtonColors || !this.chartTheme) {
       this.tradeBtns.setColors(undefined, undefined)
       return
     }

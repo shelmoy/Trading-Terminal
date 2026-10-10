@@ -1,6 +1,8 @@
 # Mapping OpenAlgo API Request https://openalgo.in/docs
 # Mapping Kotak Neo Margin API
 
+import math
+
 from broker.kotak.mapping.transform_data import (
     map_order_type,
     map_product_type,
@@ -84,7 +86,13 @@ def parse_margin_response(response_data):
 
         # Extract margin data
         # Kotak returns: avlMrgn, reqdMrgn, ordMrgn, mrgnUsd, rmsVldtd, etc.
-        total_margin_required = float(response_data.get("reqdMrgn", 0))
+        # Missing margin is not a zero-cost order. Let the UI show unavailable.
+        raw_margin = response_data.get("reqdMrgn")
+        if raw_margin is None:
+            return {"status": "error", "message": "Kotak did not return required margin"}
+        total_margin_required = float(raw_margin)
+        if not math.isfinite(total_margin_required) or total_margin_required < 0:
+            return {"status": "error", "message": "Kotak returned invalid required margin"}
 
         # Return standardized format matching OpenAlgo API specification
         return {

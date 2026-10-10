@@ -74,6 +74,12 @@ export interface BasketOrderItem {
   disclosed_quantity?: number
 }
 
+export interface RequiredMarginData {
+  total_margin_required: number
+  span_margin?: number
+  exposure_margin?: number
+}
+
 export interface BasketOrderResult {
   symbol: string
   status: 'success' | 'error'
@@ -142,6 +148,20 @@ export const tradingApi = {
     const response = await apiClient.post<ApiResponse<MarginData>>('/funds', {
       apikey: apiKey,
     })
+    return response.data
+  },
+
+  /** One proposed order at a time: buy and sell estimates must not be netted. */
+  getRequiredMargin: async (
+    apiKey: string,
+    position: Pick<BasketOrderItem, 'symbol' | 'exchange' | 'action' | 'quantity' | 'product'>,
+    signal?: AbortSignal
+  ): Promise<ApiResponse<RequiredMarginData>> => {
+    const response = await apiClient.post<ApiResponse<RequiredMarginData>>(
+      '/margin',
+      { apikey: apiKey, positions: [{ ...position, quantity: String(position.quantity), pricetype: 'MARKET' }] },
+      { signal, timeout: 10000 }
+    )
     return response.data
   },
 

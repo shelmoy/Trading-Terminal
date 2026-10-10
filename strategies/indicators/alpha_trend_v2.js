@@ -7,7 +7,6 @@
  * 3. AlphaTrend line & AlphaTrend Lag line (2 periods delayed) are plotted with ribbon fill
  * 4. BUY & SELL signals match AlphaTrend crossover/crossunder with Kivanc's O1 > K2 & O2 > K1 state filters
  * 5. Markers use tiny labels with text "BUY" and "SELL" at AlphaTrend[2] levels (exact original colors: #0022FC blue & #880e4f maroon)
- * 6. Includes optional Renko step trailing line
  *
  * Author: KivancOzbilgic / Adapted for OpenAlgo Pure Renko V2
  */
@@ -219,13 +218,6 @@ export default function ({ registerIndicator, sourceValues, sma, rsi, nulls }) {
         group: '2. AlphaTrend Parameters',
       },
       {
-        key: 'showRenkoStep',
-        type: 'boolean',
-        label: 'Show Renko Trailing Line?',
-        default: true,
-        group: '2. AlphaTrend Parameters',
-      },
-      {
         key: 'color',
         type: 'color',
         label: 'AlphaTrend Line',
@@ -283,12 +275,6 @@ export default function ({ registerIndicator, sourceValues, sma, rsi, nulls }) {
         colorKey: 'lagColor',
         style: { lineWidth: 3 },
       },
-      {
-        key: 'renkoStep',
-        type: 'step',
-        title: 'Renko Trailing Level',
-        style: { color: '#00897b', lineWidth: 1 },
-      },
     ],
     fills: [
       {
@@ -302,7 +288,6 @@ export default function ({ registerIndicator, sourceValues, sma, rsi, nulls }) {
       const n = bars.length
       const alphatrendArr = new Array(n).fill(null)
       const laggedArr = new Array(n).fill(null)
-      const renkoStepArr = new Array(n).fill(null)
       const buySignalPriceArr = new Array(n).fill(null)
       const sellSignalPriceArr = new Array(n).fill(null)
       const isBuyArr = new Array(n).fill(false)
@@ -312,7 +297,6 @@ export default function ({ registerIndicator, sourceValues, sma, rsi, nulls }) {
         return {
           alphatrend: alphatrendArr,
           lagged: laggedArr,
-          renkoStep: renkoStepArr,
           buySignalPrice: buySignalPriceArr,
           sellSignalPrice: sellSignalPriceArr,
           isBuy: isBuyArr,
@@ -327,7 +311,6 @@ export default function ({ registerIndicator, sourceValues, sma, rsi, nulls }) {
       const coeff = Number(settings.coeff) || 1.0
       const novolumedata = Boolean(settings.novolumedata)
       const showsignalsk = settings.showsignalsk !== false
-      const showRenkoStep = Boolean(settings.showRenkoStep)
 
       const calcMode = String(settings.calcMode || 'Percentage (%)')
       const pctSize = Number(settings.pctSize) || 0.04
@@ -443,9 +426,6 @@ export default function ({ registerIndicator, sourceValues, sma, rsi, nulls }) {
         renkoDirArr[i] = renkoDir
         streakCountArr[i] = streakCount
 
-        if (showRenkoStep) {
-          renkoStepArr[i] = renkoClose
-        }
       }
 
       // ==========================================
@@ -553,7 +533,6 @@ export default function ({ registerIndicator, sourceValues, sma, rsi, nulls }) {
       return {
         alphatrend: alphatrendArr,
         lagged: laggedArr,
-        renkoStep: renkoStepArr,
         buySignalPrice: buySignalPriceArr,
         sellSignalPrice: sellSignalPriceArr,
         isBuy: isBuyArr,

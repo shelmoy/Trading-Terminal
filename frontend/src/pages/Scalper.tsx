@@ -14,7 +14,7 @@
  *   • Dedicated per-pane storage namespace (oa-trading-scalper-p0/p1/p2)
  */
 
-import { Activity, Eye, Link2 as LinkIcon, Maximize2, Minimize2 } from 'lucide-react'
+import { Activity, Eye, Link2 as LinkIcon } from 'lucide-react'
 import { type ChartObjects, createLinkGroup, type LinkGroup } from 'openalgo-charts'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { apiClient } from '@/api/client'
@@ -29,6 +29,8 @@ import {
 } from '@/components/trading/ChartBottomBar'
 import { ChartPane } from '@/components/trading/ChartPane'
 import { ScalperHeader } from '@/components/trading/ScalperHeader'
+import { ScalperPaneHeader } from '@/components/trading/ScalperPaneHeader'
+import { ScalperOrderButton } from '@/components/trading/ScalperOrderButton'
 import { ScalperStrikePicker } from '@/components/trading/ScalperStrikePicker'
 import '@/components/trading/scalper-surfaces.css'
 import { DrawingRail } from '@/components/trading/DrawingRail'
@@ -56,12 +58,18 @@ import {
 import { Switch } from '@/components/ui/switch'
 import { useChartWorkspaceCatalog } from '@/hooks/useChartWorkspaceCatalog'
 import { type PriceableItem, useLivePrice } from '@/hooks/useLivePrice'
+import { useScalperPnlPrices } from '@/hooks/useScalperPnlPrices'
 import { useMarketStatus } from '@/hooks/useMarketStatus'
+import { useMarketData } from '@/hooks/useMarketData'
+import { useOrderEventRefresh } from '@/hooks/useOrderEventRefresh'
 import { useOptionChainLive } from '@/hooks/useOptionChainLive'
 import type { AgentChartCommand } from '@/lib/agent/stream'
 import type { LayoutPreset } from '@/lib/chart/layouts'
 import { clearLog, fetchLog, type LoggedFire } from '@/lib/trading/alertLog'
 import type { ChartStateView } from '@/lib/trading/chartState'
+import { buildDayPnlBook, calculateDayPnl, pnlDay } from '@/lib/trading/dayPnl'
+import { calculateBrokerPnl } from '@/lib/trading/brokerPnl'
+import { resolveScalperStrikes } from '@/lib/trading/scalperStrikes'
 import { historyChord } from '@/lib/trading/chartHistory'
 import { chartMayTakeKey } from '@/lib/trading/drawingKeys'
 import {
@@ -92,7 +100,7 @@ import { cn } from '@/lib/utils'
 import { formatTradingSymbol } from '@/lib/trading/displaySymbol'
 import { useAuthStore } from '@/stores/authStore'
 import { useThemeStore } from '@/stores/themeStore'
-import type { Position } from '@/types/trading'
+import type { Position, Trade } from '@/types/trading'
 import type { OptionChainRow, ScalpingProduct } from '@/types/scalping'
 import { showToast } from '@/utils/toast'
 import type { MagnetMode } from 'openalgo-charts/draw'
@@ -284,6 +292,7 @@ function presetWeights(preset: LayoutPreset): GridWeights {
  */
 function createScalperLinkGroup(): LinkGroup {
   const group = createLinkGroup()
+  group.setOptions({ ...SYNC_DEFAULT, symbol: false })
   // biome-ignore lint/suspicious/noExplicitAny: overriding internal LinkGroup viewport broadcast for safe multi-instrument sync
   const g = group as any
 
@@ -502,8 +511,9 @@ function writeIndexSnapshot(underlyingId: string, snap: IndexSnapshot): void {
     seedPaneDefaultStorage('scalper-p0', preset.spotSymbol, preset.spotExchange, true)
     const snap = readIndexSnapshot(preset.id)
     if (snap && snap.chain.length > 0) {
-      const ceRow = snap.chain.find((r) => String(r.strike) === snap.ceStrike) ?? snap.chain[0]
-      const peRow = snap.chain.find((r) => String(r.strike) === snap.peStrike) ?? snap.chain[0]
+      const defaults = resolveScalperStrikes(snap.chain, snap.atmStrike)
+      const ceRow = snap.chain.find((r) => String(r.strike) === defaults.ce)
+      const peRow = snap.chain.find((r) => String(r.strike) === defaults.pe)
       if (ceRow?.ce?.symbol) {
         seedPaneDefaultStorage('scalper-p1', ceRow.ce.symbol, preset.foExchange, true)
       }
@@ -525,7 +535,8 @@ export default function Scalper() {
 
 function ScalperWorkspace({ account }: { account: string | null }) {
   const workspaceCatalog = useChartWorkspaceCatalog(account)
-  const { mode: themeMode, appMode, toggleAppMode, isTogglingMode } = useThemeStore()
+  const { appMode, toggleAppMode, isTogglingMode } = useThemeStore()
+  const broker = useAuthStore((state) => state.user?.broker ?? '')
 
   // Show/hide standard OpenAlgo top Navbar (collapsed by default so Scalper 915
   // matches the full-screen reference UI, with a 1-click toggle to reveal it).
@@ -552,17 +563,6 @@ function ScalperWorkspace({ account }: { account: string | null }) {
 
   const [sync, setSync] = useState<SyncState>(readSync)
   const [armed, setArmed] = useState<boolean>(readArmed)
-  const chartTradeColors = useMemo(
-    () => ({
-      buy: '#0f766e',
-      buyHover: '#115e59',
-      sell: '#9f5967',
-      sellHover: '#854957',
-      text: '#ffffff',
-      border: themeMode === 'light' ? 'rgba(0,0,0,0.14)' : 'rgba(255,255,255,0.14)',
-    }),
-    [themeMode]
-  )
   const [linkGroup, setLinkGroup] = useState<LinkGroup | null>(null)
 
   const [apiKey, setApiKey] = useState<string | null>(null)
@@ -590,8 +590,14 @@ function ScalperWorkspace({ account }: { account: string | null }) {
   )
   const [chain, setChain] = useState<OptionChainRow[]>(() => initialSnap?.chain ?? [])
   const [atmStrike, setAtmStrike] = useState<number | null>(() => initialSnap?.atmStrike ?? null)
-  const [ceStrike, setCeStrike] = useState<string>(() => initialSnap?.ceStrike ?? '')
-  const [peStrike, setPeStrike] = useState<string>(() => initialSnap?.peStrike ?? '')
+  const [ceStrike, setCeStrike] = useState<string>(() =>
+    resolveScalperStrikes(initialSnap?.chain ?? [], initialSnap?.atmStrike).ce)
+  const [peStrike, setPeStrike] = useState<string>(() =>
+    resolveScalperStrikes(initialSnap?.chain ?? [], initialSnap?.atmStrike).pe)
+  // Only explicit choices from the current index/expiry survive chain refreshes.
+  const manualStrikesRef = useRef<{ context: string; ce: string | null; pe: string | null }>({
+    context: `${underlyingId}:${selectedExpiry}`, ce: null, pe: null,
+  })
   const [ceChainOpen, setCeChainOpen] = useState(false)
   const [peChainOpen, setPeChainOpen] = useState(false)
   const [resolvedCloses, setResolvedCloses] = useState<Record<string, number>>({})
@@ -640,8 +646,26 @@ function ScalperWorkspace({ account }: { account: string | null }) {
 
   // Margin & Live P&L summary in Scalper header
   const [marginText, setMarginText] = useState<string>('—')
-  const [pnlValue, setPnlValue] = useState<number>(0)
+  const [day, setDay] = useState(() => pnlDay())
+  const [tradeSnapshot, setTradeSnapshot] = useState<Trade[]>([])
+  const [pnlSnapshotScope, setPnlSnapshotScope] = useState('')
+  const pnlScope = `${account}:${broker}:${appMode}:${day}`
+  const pnlScopeRef = useRef(pnlScope)
+  pnlScopeRef.current = pnlScope
+  const pnlRefreshRunning = useRef(false)
+  const pnlRefreshAgain = useRef(false)
+  const pnlRefreshLatest = useRef<(() => Promise<void>) | null>(null)
+  useEffect(() => {
+    const updateDay = () => setDay(pnlDay())
+    const clock = setInterval(updateDay, 1000)
+    window.addEventListener('focus', updateDay)
+    return () => {
+      clearInterval(clock)
+      window.removeEventListener('focus', updateDay)
+    }
+  }, [])
   const [positionSnapshot, setPositionSnapshot] = useState<Position[]>([])
+  const [positionSnapshotAt, setPositionSnapshotAt] = useState(0)
   const [orderBusy, setOrderBusy] = useState<Record<string, boolean>>({})
   const [lastOrderMs, setLastOrderMs] = useState<number | null>(null)
 
@@ -683,12 +707,20 @@ function ScalperWorkspace({ account }: { account: string | null }) {
   const [paneLoadStates, setPaneLoadStates] = useState<Record<string, ChartStateView['kind']>>({})
   const noteLoadState = useCallback((paneId: string, state: ChartStateView) => {
     const kind = state.refreshing ? 'loading' : state.kind
-    setPaneLoadStates((prev) => prev[paneId] === kind ? prev : { ...prev, [paneId]: kind })
+    setPaneLoadStates((prev) => (prev[paneId] === kind ? prev : { ...prev, [paneId]: kind }))
   }, [])
   const foregroundLoading = ALL_PANE_IDS.some((id) => {
-    const visible = id === 'scalper-p0' ? visiblePanes.spot : id === 'scalper-p1' ? visiblePanes.ce : visiblePanes.pe
-    return visible && (!maximizedPane || maximizedPane === id) &&
+    const visible =
+      id === 'scalper-p0'
+        ? visiblePanes.spot
+        : id === 'scalper-p1'
+          ? visiblePanes.ce
+          : visiblePanes.pe
+    return (
+      visible &&
+      (!maximizedPane || maximizedPane === id) &&
       (!paneLoadStates[id] || paneLoadStates[id] === 'loading')
+    )
   })
   const bottomBar = useRef<BottomBarControl | null>(null)
   const orderBridge = useRef<ChartOrderBridgeRef['current']>(null)
@@ -790,15 +822,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
       if (terminal) {
         terminalsRef.current[paneId] = terminal
         if (!activeRef.current) activeRef.current = terminal
-        const termInternal = terminal as unknown as {
-          tradeBtns?: { setColors(buy?: string, sell?: string): void } | null
-          applyTradeColors?: () => void
-        }
-        const syncScalperTradeBtns = () => {
-          termInternal.tradeBtns?.setColors('#0f766e', '#9f5967')
-        }
-        termInternal.applyTradeColors = syncScalperTradeBtns
-        syncScalperTradeBtns()
+        terminal.setFullTradeButtonColors(true)
         if (paneId === 'scalper-p1') {
           terminal.setProduct(product)
           terminal.setQty(ceLots)
@@ -1161,25 +1185,22 @@ function ScalperWorkspace({ account }: { account: string | null }) {
       expiriesList: string[],
       rows: OptionChainRow[],
       resolvedAtm: number | null | undefined,
-      foExchOverride?: string
+      foExchOverride?: string,
+      cacheUpdatedAt?: number
     ) => {
       setChain(rows)
-      const atmVal =
-        resolvedAtm != null
-          ? resolvedAtm
-          : rows.length > 0
-            ? rows[Math.floor(rows.length / 2)].strike
-            : null
-      if (atmVal != null) {
-        setAtmStrike(atmVal)
+      const context = `${preset.id}:${expiry}`
+      if (manualStrikesRef.current.context !== context) {
+        manualStrikesRef.current = { context, ce: null, pe: null }
       }
-      if (rows.length === 0) return
-
-      const atmStr = atmVal != null ? String(atmVal) : String(rows[0].strike)
-      const atmRow = rows.find((r) => String(r.strike) === atmStr) ?? rows[0]
-      const targetStrikeStr = String(atmRow.strike)
-      setCeStrike(targetStrikeStr)
-      setPeStrike(targetStrikeStr)
+      const selection = resolveScalperStrikes(rows, resolvedAtm, manualStrikesRef.current)
+      const atmVal = selection.atm
+      setAtmStrike(atmVal)
+      setCeStrike(selection.ce)
+      setPeStrike(selection.pe)
+      if (!rows.length) return
+      const ceTargetRow = rows.find((row) => String(row.strike) === selection.ce)
+      const peTargetRow = rows.find((row) => String(row.strike) === selection.pe)
 
       const foExch = foExchOverride || preset.foExchange
       const foExchUpper = foExch.toUpperCase()
@@ -1208,32 +1229,32 @@ function ScalperWorkspace({ account }: { account: string | null }) {
         selectedExpiry: expiry,
         chain: rows,
         atmStrike: atmVal,
-        ceStrike: targetStrikeStr,
-        peStrike: targetStrikeStr,
-        updatedAt: Date.now(),
+        ceStrike: selection.ce,
+        peStrike: selection.pe,
+        updatedAt: cacheUpdatedAt ?? Date.now(),
       })
 
-      if (atmRow.ce?.symbol) {
-        seedPaneDefaultStorage('scalper-p1', atmRow.ce.symbol, foExch, true)
+      if (ceTargetRow?.ce?.symbol) {
+        seedPaneDefaultStorage('scalper-p1', ceTargetRow.ce.symbol, foExch, true)
         const t1 = terminalsRef.current['scalper-p1']
         if (t1) {
           void t1.ensureSymbol({
-            symbol: atmRow.ce.symbol,
+            symbol: ceTargetRow.ce.symbol,
             exchange: foExch,
-            lotsize: atmRow.ce.lotsize ?? preset.defaultLotSize,
-            tick_size: atmRow.ce.tick_size ?? 0.05,
+            lotsize: ceTargetRow.ce.lotsize ?? preset.defaultLotSize,
+            tick_size: ceTargetRow.ce.tick_size ?? 0.05,
           })
         }
       }
-      if (atmRow.pe?.symbol) {
-        seedPaneDefaultStorage('scalper-p2', atmRow.pe.symbol, foExch, true)
+      if (peTargetRow?.pe?.symbol) {
+        seedPaneDefaultStorage('scalper-p2', peTargetRow.pe.symbol, foExch, true)
         const t2 = terminalsRef.current['scalper-p2']
         if (t2) {
           void t2.ensureSymbol({
-            symbol: atmRow.pe.symbol,
+            symbol: peTargetRow.pe.symbol,
             exchange: foExch,
-            lotsize: atmRow.pe.lotsize ?? preset.defaultLotSize,
-            tick_size: atmRow.pe.tick_size ?? 0.05,
+            lotsize: peTargetRow.pe.lotsize ?? preset.defaultLotSize,
+            tick_size: peTargetRow.pe.tick_size ?? 0.05,
           })
         }
       }
@@ -1256,32 +1277,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
           ? selectedExpiry
           : snap.selectedExpiry || snap.expiries[0]
       if (exp !== selectedExpiry) setSelectedExpiry(exp)
-      setChain(snap.chain)
-      if (snap.atmStrike != null) setAtmStrike(snap.atmStrike)
-      if (snap.ceStrike) setCeStrike(snap.ceStrike)
-      if (snap.peStrike) setPeStrike(snap.peStrike)
-
-      // Immediately trigger 0ms load on SPOT, CE, PE from warm snapshot
-      const ceRowSnap = snap.chain.find((r) => String(r.strike) === snap.ceStrike) ?? snap.chain[0]
-      const peRowSnap = snap.chain.find((r) => String(r.strike) === snap.peStrike) ?? snap.chain[0]
-      if (ceRowSnap?.ce?.symbol) {
-        seedPaneDefaultStorage('scalper-p1', ceRowSnap.ce.symbol, preset.foExchange, true)
-        void terminalsRef.current['scalper-p1']?.ensureSymbol({
-          symbol: ceRowSnap.ce.symbol,
-          exchange: preset.foExchange,
-          lotsize: ceRowSnap.ce.lotsize ?? preset.defaultLotSize,
-          tick_size: ceRowSnap.ce.tick_size ?? 0.05,
-        })
-      }
-      if (peRowSnap?.pe?.symbol) {
-        seedPaneDefaultStorage('scalper-p2', peRowSnap.pe.symbol, preset.foExchange, true)
-        void terminalsRef.current['scalper-p2']?.ensureSymbol({
-          symbol: peRowSnap.pe.symbol,
-          exchange: preset.foExchange,
-          lotsize: peRowSnap.pe.lotsize ?? preset.defaultLotSize,
-          tick_size: peRowSnap.pe.tick_size ?? 0.05,
-        })
-      }
+      applyStrikesToPanes(preset, exp, snap.expiries, snap.chain, snap.atmStrike, undefined, snap.updatedAt)
       loadedUnderlyingKeyRef.current = `${preset.id}:${exp}`
 
       // If snapshot is fresh (< 60s), skip redundant network re-fetch on switch
@@ -1311,20 +1307,10 @@ function ScalperWorkspace({ account }: { account: string | null }) {
         const strikesRes = await scalpingApi.getStrikes(preset.id, preset.foExchange, targetExp, 25)
         if (!alive) return
         const rows = strikesRes.chain ?? []
-        // Only auto-switch strikes if we didn't already load from a warm snapshot for this underlying
-        if (!snap || snap.selectedExpiry !== targetExp || snap.chain.length === 0) {
-          applyStrikesToPanes(
-            preset,
-            targetExp,
-            list,
-            rows,
-            strikesRes.atm_strike,
-            strikesRes.fo_exchange
-          )
-        } else if (rows.length > 0) {
-          setChain(rows)
-          if (strikesRes.atm_strike != null) setAtmStrike(strikesRes.atm_strike)
-        }
+        // Preserve each explicit choice if a response arrives after a picker change.
+        applyStrikesToPanes(
+          preset, targetExp, list, rows, strikesRes.atm_strike, strikesRes.fo_exchange
+        )
       } catch {
         /* ignore */
       }
@@ -1413,40 +1399,41 @@ function ScalperWorkspace({ account }: { account: string | null }) {
     }
   )
 
-  // Subscribe to every open position independently from the index/option-chain
-  // streams. This keeps the header P&L on tick-time updates instead of waiting
-  // for the 10-second positionbook refresh.
-  const pnlPriceableItems = useMemo<PriceableItem[]>(
-    () =>
-      positionSnapshot
-        .filter((position) => Number(position.quantity || 0) !== 0)
-        .map((position) => ({
-          symbol: position.symbol,
-          exchange: position.exchange,
-          ltp: Number(position.ltp || 0),
-          pnl: Number(position.pnl || 0),
-          pnlpercent: Number(position.pnlpercent || 0),
-          quantity: Number(position.quantity || 0),
-          average_price: Number(position.average_price || 0),
-          today_realized_pnl: Number(position.today_realized_pnl || 0),
-          lot_size: Number(position.lot_size ?? 1),
-        })),
-    [positionSnapshot]
+  // The header has its own day ledger. Positions/dock retain their existing P&L.
+  const dayBook = useMemo(
+    () => buildDayPnlBook(positionSnapshot, tradeSnapshot, day),
+    [positionSnapshot, tradeSnapshot, day]
   )
-  const { data: livePnlPositions } = useLivePrice(pnlPriceableItems, {
-    enabled: Boolean(apiKey && pnlPriceableItems.length > 0),
-    staleThreshold: 1500,
-    useMultiQuotesFallback: true,
-    multiQuotesRefreshInterval: 10000,
-    pauseWhenHidden: true,
-  })
-  const headerPnl = useMemo(
-    () =>
-      pnlPriceableItems.length > 0
-        ? livePnlPositions.reduce((total, position) => total + Number(position.pnl || 0), 0)
-        : pnlValue,
-    [livePnlPositions, pnlPriceableItems.length, pnlValue]
+  const pnlPrices = useScalperPnlPrices(
+    dayBook,
+    pnlScope,
+    Boolean(apiKey && appMode === 'analyzer' && pnlSnapshotScope === pnlScope)
   )
+  const brokerPnlSymbols = useMemo(() => positionSnapshot.filter((row) => Number(row.quantity) !== 0)
+    .map(({ symbol, exchange }) => ({ symbol, exchange })), [positionSnapshot])
+  const { data: brokerPnlTicks } = useMarketData({ symbols: brokerPnlSymbols,
+    enabled: Boolean(apiKey && appMode === 'live' && pnlSnapshotScope === pnlScope), mode: 'LTP' })
+  const headerPnl = useMemo(() => {
+    if (pnlSnapshotScope !== pnlScope)
+      return {
+        total: null,
+        realized: null,
+        open: null,
+        message: 'Loading account positions',
+      }
+    if (appMode === 'live') {
+      const marks = new Map<string, number>()
+      for (const [key, tick] of brokerPnlTicks) {
+        if (typeof tick.lastUpdate === 'number' && typeof tick.data.ltp === 'number' &&
+            tick.lastUpdate >= positionSnapshotAt && Date.now() - tick.lastUpdate < 5000 &&
+            Number.isFinite(tick.data.ltp) && tick.data.ltp > 0)
+          marks.set(key, tick.data.ltp)
+      }
+      return calculateBrokerPnl(positionSnapshot, marks)
+    }
+    return calculateDayPnl(dayBook, pnlPrices.marks, pnlPrices.closes)
+  }, [dayBook, pnlPrices.marks, pnlPrices.closes, pnlScope, pnlSnapshotScope, appMode,
+    brokerPnlTicks, positionSnapshot, positionSnapshotAt])
 
   // Prioritize visible candles over daily fallback requests for index labels.
   // Fill dropdown reference prices serially afterward, selected index first.
@@ -1459,7 +1446,10 @@ function ScalperWorkspace({ account }: { account: string | null }) {
     const endDate = fmtDate(new Date())
 
     void (async () => {
-      for (const u of [activeUnderlying, ...UNDERLYINGS.filter((item) => item.id !== activeUnderlying.id)]) {
+      for (const u of [
+        activeUnderlying,
+        ...UNDERLYINGS.filter((item) => item.id !== activeUnderlying.id),
+      ]) {
         if (!alive) return
         const key = `${u.spotExchange}:${u.spotSymbol}`
         const referenceKey = `${endDate}:${key}`
@@ -1662,9 +1652,13 @@ function ScalperWorkspace({ account }: { account: string | null }) {
     for (const symbol of selectedSymbols) {
       const key = `${activeUnderlying.foExchange}:${symbol}`
       // A fresh chart response already contains this option's final close.
-      const chartBars = globalBarMemoryCache.get(`${symbol.toUpperCase()}:${activeUnderlying.foExchange.toUpperCase()}:1m`)
-      const chartClose = chartBars && Date.now() - chartBars.time < 2_000
-        ? Number(chartBars.bars.at(-1)?.close ?? 0) : 0
+      const chartBars = globalBarMemoryCache.get(
+        `${symbol.toUpperCase()}:${activeUnderlying.foExchange.toUpperCase()}:1m`
+      )
+      const chartClose =
+        chartBars && Date.now() - chartBars.time < 2_000
+          ? Number(chartBars.bars.at(-1)?.close ?? 0)
+          : 0
       const cached = chartClose > 0 ? chartClose : optionHistoryCloseCache.get(key)
       if (cached && cached > 0) {
         setOptionHistoryCloses((prev) => (prev[key] === cached ? prev : { ...prev, [key]: cached }))
@@ -2044,17 +2038,20 @@ function ScalperWorkspace({ account }: { account: string | null }) {
     }
   }, [enrichedChain, effectiveAtmStrike])
 
-  // If liveOptionChain resolved before scalpingApi.getStrikes, seed default ATM CE/PE strikes
+  // A live chain may arrive first. Seed only an unselected leg; never move the other leg.
   useEffect(() => {
-    if (!ceStrike && !peStrike && enrichedChain.length > 0 && effectiveAtmStrike != null) {
-      const atmStr = String(effectiveAtmStrike)
-      setCeStrike(atmStr)
-      setPeStrike(atmStr)
+    if (enrichedChain.length > 0 && effectiveAtmStrike != null) {
+      const defaults = resolveScalperStrikes(enrichedChain, effectiveAtmStrike)
+      if (!ceStrike) setCeStrike(defaults.ce)
+      if (!peStrike) setPeStrike(defaults.pe)
     }
   }, [ceStrike, peStrike, enrichedChain.length, effectiveAtmStrike])
 
   // Switch SPOT, CALL (CE), and PUT (PE) charts in 0ms when user switches underlying from Scalper header
   const handleSelectUnderlying = useCallback((preset: UnderlyingPreset) => {
+    manualStrikesRef.current = { context: `${preset.id}:`, ce: null, pe: null }
+    setCeChainOpen(false)
+    setPeChainOpen(false)
     setUnderlyingId(preset.id)
     try {
       localStorage.setItem(SCALPER_UNDERLYING_KEY, preset.id)
@@ -2062,48 +2059,26 @@ function ScalperWorkspace({ account }: { account: string | null }) {
       /* noop */
     }
     seedPaneDefaultStorage('scalper-p0', preset.spotSymbol, preset.spotExchange, true)
-    const t0 = terminalsRef.current['scalper-p0']
-    if (t0) {
-      void t0.ensureSymbol({
-        symbol: preset.spotSymbol,
-        exchange: preset.spotExchange,
-      })
-    }
-
-    // 0ms instant CE + PE switch if IndexSnapshot is already in memory
+    void terminalsRef.current['scalper-p0']?.ensureSymbol({
+      symbol: preset.spotSymbol, exchange: preset.spotExchange,
+    })
     const snap = readIndexSnapshot(preset.id)
     if (snap && snap.expiries.length > 0 && snap.chain.length > 0) {
       const exp = snap.selectedExpiry || snap.expiries[0]
       loadedUnderlyingKeyRef.current = `${preset.id}:${exp}`
       setExpiries(snap.expiries)
       setSelectedExpiry(exp)
-      setChain(snap.chain)
-      if (snap.atmStrike != null) setAtmStrike(snap.atmStrike)
-      setCeStrike(snap.ceStrike)
-      setPeStrike(snap.peStrike)
-
-      const ceR = snap.chain.find((r) => String(r.strike) === snap.ceStrike) ?? snap.chain[0]
-      const peR = snap.chain.find((r) => String(r.strike) === snap.peStrike) ?? snap.chain[0]
-      if (ceR?.ce?.symbol) {
-        seedPaneDefaultStorage('scalper-p1', ceR.ce.symbol, preset.foExchange, true)
-        void terminalsRef.current['scalper-p1']?.ensureSymbol({
-          symbol: ceR.ce.symbol,
-          exchange: preset.foExchange,
-          lotsize: ceR.ce.lotsize ?? preset.defaultLotSize,
-          tick_size: ceR.ce.tick_size ?? 0.05,
-        })
-      }
-      if (peR?.pe?.symbol) {
-        seedPaneDefaultStorage('scalper-p2', peR.pe.symbol, preset.foExchange, true)
-        void terminalsRef.current['scalper-p2']?.ensureSymbol({
-          symbol: peR.pe.symbol,
-          exchange: preset.foExchange,
-          lotsize: peR.pe.lotsize ?? preset.defaultLotSize,
-          tick_size: peR.pe.tick_size ?? 0.05,
-        })
-      }
+      applyStrikesToPanes(preset, exp, snap.expiries, snap.chain, snap.atmStrike, undefined, snap.updatedAt)
+    } else {
+      // Clear the previous index before any asynchronous chain request begins.
+      setExpiries([])
+      setSelectedExpiry('')
+      setChain([])
+      setAtmStrike(null)
+      setCeStrike('')
+      setPeStrike('')
     }
-  }, [])
+  }, [applyStrikesToPanes])
 
   // Resolved CE and PE option row details from enriched live option chain
   const ceRow = useMemo(
@@ -2185,12 +2160,18 @@ function ScalperWorkspace({ account }: { account: string | null }) {
   // watchlist must use its own 20-unit lot, never the header's NIFTY lot size.
   const ceInstrument = terminalsRef.current['scalper-p1']?.currentInstrument()
   const peInstrument = terminalsRef.current['scalper-p2']?.currentInstrument()
-  const ceLotSize = ceInstrument && ceInstrument.symbol === ceActiveSym?.symbol
-    && ceInstrument.exchange === ceActiveSym.exchange
-    ? ceInstrument.lotsize : ceRow?.ce?.lotsize || activeUnderlying.defaultLotSize
-  const peLotSize = peInstrument && peInstrument.symbol === peActiveSym?.symbol
-    && peInstrument.exchange === peActiveSym.exchange
-    ? peInstrument.lotsize : peRow?.pe?.lotsize || activeUnderlying.defaultLotSize
+  const ceLotSize =
+    ceInstrument &&
+    ceInstrument.symbol === ceActiveSym?.symbol &&
+    ceInstrument.exchange === ceActiveSym.exchange
+      ? ceInstrument.lotsize
+      : ceRow?.ce?.lotsize || activeUnderlying.defaultLotSize
+  const peLotSize =
+    peInstrument &&
+    peInstrument.symbol === peActiveSym?.symbol &&
+    peInstrument.exchange === peActiveSym.exchange
+      ? peInstrument.lotsize
+      : peRow?.pe?.lotsize || activeUnderlying.defaultLotSize
   const ceOrderQty = ceCustomQty ?? ceLots * ceLotSize
   const peOrderQty = peCustomQty ?? peLots * peLotSize
 
@@ -2207,6 +2188,9 @@ function ScalperWorkspace({ account }: { account: string | null }) {
   // Change CE strike from bottom dropdown -> immediately load into CALL pane (scalper-p1)
   const handleSelectCeStrike = useCallback(
     (strikeStr: string) => {
+      manualStrikesRef.current = {
+        ...manualStrikesRef.current, context: `${activeUnderlying.id}:${selectedExpiry}`, ce: strikeStr,
+      }
       setCeStrike(strikeStr)
       setCeChainOpen(false)
       const snap = readIndexSnapshot(activeUnderlying.id)
@@ -2235,12 +2219,15 @@ function ScalperWorkspace({ account }: { account: string | null }) {
         })
       }
     },
-    [enrichedChain, chain, activeUnderlying]
+    [enrichedChain, chain, activeUnderlying, selectedExpiry]
   )
 
   // Change PE strike from bottom dropdown -> immediately load into PUT pane (scalper-p2)
   const handleSelectPeStrike = useCallback(
     (strikeStr: string) => {
+      manualStrikesRef.current = {
+        ...manualStrikesRef.current, context: `${activeUnderlying.id}:${selectedExpiry}`, pe: strikeStr,
+      }
       setPeStrike(strikeStr)
       setPeChainOpen(false)
       const snap = readIndexSnapshot(activeUnderlying.id)
@@ -2269,18 +2256,29 @@ function ScalperWorkspace({ account }: { account: string | null }) {
         })
       }
     },
-    [enrichedChain, chain, activeUnderlying]
+    [enrichedChain, chain, activeUnderlying, selectedExpiry]
   )
 
   /* ── Funds & Live P&L Fetch ──────────────────────────────────────────── */
   const refreshFundsAndPnl = useCallback(async () => {
     if (!apiKey) return
+    if (pnlRefreshRunning.current) {
+      pnlRefreshAgain.current = true
+      return
+    }
+    pnlRefreshRunning.current = true
+    const scope = `${account}:${broker}:${appMode}:${pnlDay()}`
     try {
-      const [fundsRes, posRes] = await Promise.all([
+      const [fundsResult, posResult, tradesResult] = await Promise.allSettled([
         tradingApi.getFunds(apiKey),
         tradingApi.getPositions(apiKey),
+        appMode === 'analyzer' ? tradingApi.getTrades(apiKey) : Promise.resolve(null),
       ])
-      if (fundsRes.status === 'success' && fundsRes.data) {
+      if (pnlScopeRef.current !== scope) return
+      const fundsRes = fundsResult.status === 'fulfilled' ? fundsResult.value : null
+      const posRes = posResult.status === 'fulfilled' ? posResult.value : null
+      const tradesRes = tradesResult.status === 'fulfilled' ? tradesResult.value : null
+      if (fundsRes?.status === 'success' && fundsRes.data) {
         const cash = Number(fundsRes.data.availablecash || 0)
         if (cash >= 1_00_00_000) {
           setMarginText(`₹${(cash / 1_00_00_000).toFixed(2)}Cr`)
@@ -2289,23 +2287,39 @@ function ScalperWorkspace({ account }: { account: string | null }) {
         } else {
           setMarginText(`₹${cash.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`)
         }
-      }
-      if (posRes.status === 'success' && Array.isArray(posRes.data)) {
-        const positions = posRes.data as Position[]
-        setPositionSnapshot(positions)
-        const totalPnl = positions.reduce((acc, p) => acc + Number(p.pnl || 0), 0)
-        setPnlValue(totalPnl)
+      } else setMarginText('—')
+      if (
+        posRes?.status === 'success' &&
+        Array.isArray(posRes.data) &&
+        (appMode === 'live' || (tradesRes?.status === 'success' && Array.isArray(tradesRes.data)))
+      ) {
+        setPositionSnapshot(posRes.data)
+        setPositionSnapshotAt(Date.now())
+        setTradeSnapshot(tradesRes?.data ?? [])
+        setPnlSnapshotScope(scope)
       }
     } catch {
-      /* ignore */
+      /* Retain the last successful snapshot within this day and mode. */
+    } finally {
+      pnlRefreshRunning.current = false
+      if (pnlRefreshAgain.current) {
+        pnlRefreshAgain.current = false
+        void pnlRefreshLatest.current?.()
+      }
     }
-  }, [apiKey])
+  }, [apiKey, appMode, account, broker])
+  pnlRefreshLatest.current = refreshFundsAndPnl
 
   useEffect(() => {
     void refreshFundsAndPnl()
     const timer = setInterval(() => void refreshFundsAndPnl(), 10_000)
     return () => clearInterval(timer)
-  }, [refreshFundsAndPnl, appMode])
+  }, [refreshFundsAndPnl, pnlScope])
+  useOrderEventRefresh(refreshFundsAndPnl, {
+    enabled: Boolean(apiKey),
+    delay: 250,
+    events: ['order_event', 'analyzer_update', 'close_position_event'],
+  })
 
   /* ── Ultra-Fast Order Placement (CE / PE) ────────────────────────────── */
   const executeQuickOrder = useCallback(
@@ -2336,9 +2350,16 @@ function ScalperWorkspace({ account }: { account: string | null }) {
       }
       const lotSize = instrument.lotsize
       const qty = customQty ?? lots * lotSize
-      if (!Number.isSafeInteger(qty) || qty <= 0 || !Number.isSafeInteger(lotSize)
-        || lotSize <= 0 || qty % lotSize !== 0) {
-        showToast.error(`${leg} quantity must be a positive multiple of ${lotSize} (${lots} lots = ${lots * lotSize} quantity)`)
+      if (
+        !Number.isSafeInteger(qty) ||
+        qty <= 0 ||
+        !Number.isSafeInteger(lotSize) ||
+        lotSize <= 0 ||
+        qty % lotSize !== 0
+      ) {
+        showToast.error(
+          `${leg} quantity must be a positive multiple of ${lotSize} (${lots} lots = ${lots * lotSize} quantity)`
+        )
         return
       }
       const busyKey = `${leg}-${action}`
@@ -2367,7 +2388,9 @@ function ScalperWorkspace({ account }: { account: string | null }) {
         }
       } catch (err) {
         const failure = err as { response?: { data?: { message?: string } }; message?: string }
-        showToast.error(failure?.response?.data?.message || failure?.message || 'Order execution failed')
+        showToast.error(
+          failure?.response?.data?.message || failure?.message || 'Order execution failed'
+        )
       } finally {
         setOrderBusy((prev) => ({ ...prev, [busyKey]: false }))
       }
@@ -2633,1355 +2656,1243 @@ function ScalperWorkspace({ account }: { account: string | null }) {
 
   return (
     <ChartOrderBridgeContext.Provider value={orderBridge}>
-      {/* Optional full OpenAlgo Navbar (can be toggled with 1 click) */}
-      {showMainNavbar && <Navbar fluid />}
+      <div className="scalper-workspace flex min-h-0 flex-1 flex-col overflow-hidden">
+        {/* Optional full OpenAlgo Navbar (can be toggled with 1 click) */}
+        {showMainNavbar && <Navbar fluid />}
 
-      <ScalperHeader
-        underlying={activeUnderlying}
-        underlyings={UNDERLYINGS}
-        exchange={spotActiveSym?.exchange ?? activeUnderlying.spotExchange}
-        quote={activeIndexQuote}
-        quotes={indexQuotesById}
-        flashes={flashes}
-        expiries={expiries}
-        expiry={selectedExpiry}
-        atmStrike={effectiveAtmStrike}
-        maxPainStrike={maxPainStrike}
-        activeView={
-          showDockBar && dock === 'positions'
-            ? 'positions'
-            : showDockBar && dock === 'orders'
-              ? 'orders'
-              : 'scalper'
-        }
-        optionChainOpen={panel === 'options'}
-        navigationVisible={showMainNavbar}
-        sandbox={appMode === 'analyzer'}
-        switchingMode={isTogglingMode}
-        visiblePanes={visiblePanes}
-        layout={layoutMode}
-        margin={marginText}
-        pnl={headerPnl}
-        exiting={Boolean(orderBusy.exitAll)}
-        onNavigationToggle={() => setShowMainNavbar((v) => !v)}
-        onUnderlyingSelect={(id) => {
-          const choice = UNDERLYINGS.find((u) => u.id === id)
-          if (choice) handleSelectUnderlying(choice)
-        }}
-        onExpirySelect={setSelectedExpiry}
-        onViewSelect={(view) => {
-          if (view === 'scalper') {
-            setShowDockBar(false)
-            setDock(null)
-            return
+        <ScalperHeader
+          underlying={activeUnderlying}
+          underlyings={UNDERLYINGS}
+          exchange={spotActiveSym?.exchange ?? activeUnderlying.spotExchange}
+          quote={activeIndexQuote}
+          quotes={indexQuotesById}
+          flashes={flashes}
+          expiries={expiries}
+          expiry={selectedExpiry}
+          atmStrike={effectiveAtmStrike}
+          maxPainStrike={maxPainStrike}
+          activeView={
+            showDockBar && dock === 'positions'
+              ? 'positions'
+              : showDockBar && dock === 'orders'
+                ? 'orders'
+                : 'scalper'
           }
-          setDock(view)
-          setShowDockBar((v) => (dock === view ? !v : true))
-        }}
-        onOptionChainToggle={() => setPanel((p) => (p === 'options' ? null : 'options'))}
-        onModeToggle={() => void toggleAppMode()}
-        onPaneToggle={togglePaneVisibility}
-        onLayoutSelect={(layout) => {
-          setMaximizedPane(null)
-          setLayoutMode(layout)
-        }}
-        onExitAll={() => void handleExitAll()}
-      />
+          optionChainOpen={panel === 'options'}
+          navigationVisible={showMainNavbar}
+          sandbox={appMode === 'analyzer'}
+          switchingMode={isTogglingMode}
+          visiblePanes={visiblePanes}
+          layout={layoutMode}
+          margin={pnlSnapshotScope === pnlScope ? marginText : '—'}
+          broker={broker}
+          pnl={headerPnl.total}
+          dayPnl={headerPnl}
+          pnlValuationNote={appMode === 'live'
+            ? `${broker.toUpperCase()} position ledger with current broker quotes. Open-position totals include partial exits. Before charges.`
+            : pnlPrices.note}
+          pnlDate={day}
+          exiting={Boolean(orderBusy.exitAll)}
+          onNavigationToggle={() => setShowMainNavbar((v) => !v)}
+          onUnderlyingSelect={(id) => {
+            const choice = UNDERLYINGS.find((u) => u.id === id)
+            if (choice) handleSelectUnderlying(choice)
+          }}
+          onExpirySelect={setSelectedExpiry}
+          onViewSelect={(view) => {
+            if (view === 'scalper') {
+              setShowDockBar(false)
+              setDock(null)
+              return
+            }
+            setDock(view)
+            setShowDockBar((v) => (dock === view ? !v : true))
+          }}
+          onOptionChainToggle={() => setPanel((p) => (p === 'options' ? null : 'options'))}
+          onModeToggle={() => void toggleAppMode()}
+          onPaneToggle={togglePaneVisibility}
+          onLayoutSelect={(layout) => {
+            setMaximizedPane(null)
+            setLayoutMode(layout)
+          }}
+          onExitAll={() => void handleExitAll()}
+        />
 
-      {/* ═══ MAIN WORKSPACE CONTAINER ═════════════════════════════════════ */}
-      <div className="flex flex-1 flex-col overflow-hidden">
-        {/* Shared SDK ChartToolbar Host (portalled from focused ChartPane) */}
-        <div ref={setToolbarHost} className="min-w-0 shrink-0" data-workspace-toolbar />
+        {/* ═══ MAIN WORKSPACE CONTAINER ═════════════════════════════════════ */}
+        <div className="flex flex-1 flex-col overflow-hidden">
+          {/* Shared SDK ChartToolbar Host (portalled from focused ChartPane) */}
+          <div ref={setToolbarHost} className="min-w-0 shrink-0" data-workspace-toolbar />
 
-        <main className="flex min-h-0 flex-1">
-          {/* Left DrawingRail (Original SDK component from Trading.tsx) */}
-          {showRail && apiKey && wsUrl && (
-            <DrawingRail
-              stats={railStats}
-              latched={latched}
-              onPick={pickTool}
-              onUndo={() => act((t) => t.historyPress('undo'))}
-              onRedo={() => act((t) => t.historyPress('redo'))}
-              onDeleteSelected={() => act((t) => t.removeDrawings(false))}
-              onRemoveAll={() => act((t) => t.requestRemoveAllDrawings())}
-              onSelectAll={() => act((t) => t.selectAllDrawings())}
-              onHideSelected={() => act((t) => t.hideSelectedDrawings())}
-              onLockSelected={() => act((t) => t.styleSelectedDrawing({ locked: true }))}
-              onMagnet={(v) => {
-                setMagnet(v)
-                for (const t of Object.values(terminalsRef.current)) t?.setMagnet(v)
-              }}
-              onStay={(v) => {
-                setStay(v)
-                for (const t of Object.values(terminalsRef.current)) t?.setDrawStay(v)
-              }}
-              onShortcut={onDrawKey}
-            />
-          )}
+          <main className="flex min-h-0 flex-1">
+            {/* Left DrawingRail (Original SDK component from Trading.tsx) */}
+            {showRail && apiKey && wsUrl && (
+              <DrawingRail
+                stats={railStats}
+                latched={latched}
+                onPick={pickTool}
+                onUndo={() => act((t) => t.historyPress('undo'))}
+                onRedo={() => act((t) => t.historyPress('redo'))}
+                onDeleteSelected={() => act((t) => t.removeDrawings(false))}
+                onRemoveAll={() => act((t) => t.requestRemoveAllDrawings())}
+                onSelectAll={() => act((t) => t.selectAllDrawings())}
+                onHideSelected={() => act((t) => t.hideSelectedDrawings())}
+                onLockSelected={() => act((t) => t.styleSelectedDrawing({ locked: true }))}
+                onMagnet={(v) => {
+                  setMagnet(v)
+                  for (const t of Object.values(terminalsRef.current)) t?.setMagnet(v)
+                }}
+                onStay={(v) => {
+                  setStay(v)
+                  for (const t of Object.values(terminalsRef.current)) t?.setDrawStay(v)
+                }}
+                onShortcut={onDrawKey}
+              />
+            )}
 
-          {/* Center 3-Pane Chart Grid + ChartBottomBar */}
-          <div className="relative min-h-0 min-w-0 flex-1">
-            {noApiKey ? (
-              <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
-                <p className="text-sm text-muted-foreground">No API key found for charting.</p>
-                <a href="/apikey" className="text-sm font-medium text-primary underline">
-                  Generate an API key
-                </a>
-              </div>
-            ) : apiKey && wsUrl && linkGroup ? (
-              <div className="relative h-full">
-                <div className="absolute inset-x-0 top-0" style={{ bottom: BOTTOM_BAR_PX }}>
-                  <div
-                    className="grid h-full min-h-0 gap-1.5 p-1.5"
-                    style={
-                      maximizedPane
-                        ? {
-                            gridTemplateColumns: '1fr',
-                            gridTemplateRows: '1fr',
-                            gridTemplateAreas: '"max"',
-                          }
-                        : {
-                            gridTemplateColumns: sizedLayout.cols,
-                            gridTemplateRows: sizedLayout.rows,
-                            gridTemplateAreas: activePreset.areas,
-                          }
-                    }
-                  >
-                    {/* ── PANE 0: SPOT (NIFTY 50 / INDEX) ─────────────────── */}
-                    {visiblePanes.spot && (!maximizedPane || maximizedPane === 'scalper-p0') && (
-                      <div
-                        style={{ gridArea: maximizedPane ? 'max' : 'a' }}
-                        className={cn(
-                          'flex flex-col min-h-0 min-w-0 rounded-lg border bg-card overflow-hidden transition-colors',
-                          focusedPane === 'scalper-p0'
-                            ? 'border-indigo-500/80 shadow-[0_0_0_1px_rgba(99,102,241,0.25)]'
-                            : 'border-border/70'
-                        )}
-                      >
-                        {/* Sleek Pane Header Bar */}
+            {/* Center 3-Pane Chart Grid + ChartBottomBar */}
+            <div className="relative min-h-0 min-w-0 flex-1">
+              {noApiKey ? (
+                <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
+                  <p className="text-sm text-muted-foreground">No API key found for charting.</p>
+                  <a href="/apikey" className="text-sm font-medium text-primary underline">
+                    Generate an API key
+                  </a>
+                </div>
+              ) : apiKey && wsUrl && linkGroup ? (
+                <div className="relative h-full">
+                  <div className="absolute inset-x-0 top-0" style={{ bottom: BOTTOM_BAR_PX }}>
+                    <div
+                      className="scalper-chart-grid grid h-full min-h-0"
+                      style={
+                        maximizedPane
+                          ? {
+                              gridTemplateColumns: '1fr',
+                              gridTemplateRows: '1fr',
+                              gridTemplateAreas: '"max"',
+                            }
+                          : {
+                              gridTemplateColumns: sizedLayout.cols,
+                              gridTemplateRows: sizedLayout.rows,
+                              gridTemplateAreas: activePreset.areas,
+                            }
+                      }
+                    >
+                      {/* ── PANE 0: SPOT (NIFTY 50 / INDEX) ─────────────────── */}
+                      {visiblePanes.spot && (!maximizedPane || maximizedPane === 'scalper-p0') && (
                         <div
-                          onClick={() =>
-                            focusPane(terminalsRef.current['scalper-p0'] ?? null, 'scalper-p0')
-                          }
-                          className="flex h-7 shrink-0 cursor-pointer items-center justify-between border-b border-border/60 bg-muted/30 px-2.5 text-[11px]"
+                          style={{ gridArea: maximizedPane ? 'max' : 'a' }}
+                          className="scalper-chart-card flex min-h-0 min-w-0 flex-col overflow-hidden"
+                          data-focused={focusedPane === 'scalper-p0'}
                         >
-                          <div className="flex items-center gap-2">
-                            <span className="font-bold tracking-wide text-indigo-600 dark:text-indigo-400">
-                              SPOT: {spotActiveSym?.symbol ?? activeUnderlying.label}
-                            </span>
-                            <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">
-                              {spotActiveSym?.exchange ?? activeUnderlying.spotExchange}
-                            </span>
-                            {focusedPane === 'scalper-p0' && (
-                              <span className="rounded bg-indigo-500/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300">
-                                ACTIVE
-                              </span>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span
-                              className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_6px_#10b981]"
-                              title="Live WebSocket market stream active"
-                            />
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                setMaximizedPane((m) => (m === 'scalper-p0' ? null : 'scalper-p0'))
-                              }}
-                              className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-                              title={
-                                maximizedPane === 'scalper-p0'
-                                  ? 'Restore 3-pane view'
-                                  : 'Maximize SPOT pane'
-                              }
-                            >
-                              {maximizedPane === 'scalper-p0' ? (
-                                <Minimize2 className="h-3 w-3" />
-                              ) : (
-                                <Maximize2 className="h-3 w-3" />
-                              )}
-                            </button>
-                          </div>
-                        </div>
-
-                        <div className="relative flex-1 min-h-0">
-                          <ChartPane
-                            paneId="scalper-p0"
-                            paneLabel="SPOT Chart"
-                            toolbarHost={toolbarHost}
+                          <ScalperPaneHeader
+                            side="spot"
+                            symbol={spotActiveSym?.symbol ?? activeUnderlying.label}
+                            exchange={spotActiveSym?.exchange ?? activeUnderlying.spotExchange}
                             focused={focusedPane === 'scalper-p0'}
-                            chartSelector={chartSelector}
-                            apiKey={apiKey}
-                            wsUrl={wsUrl}
-                            style={{ height: '100%', border: 'none', borderRadius: 0 }}
-                            sharedTool={tool}
-                            sharedMagnet={magnet}
-                            sharedStay={stay}
-                            sharedLatch={latched}
-                            onReplayStart={startWorkspaceReplay}
-                            workspaceReplay={replaySnapshot}
-                            onBeforeSourceChange={stopWorkspaceReplay}
-                            onFocusPane={focusPane}
-                            onSymbolChange={noteSymbol}
-                            onIntervalChange={noteChartChanged}
-                            onTerminalChange={noteTerminal}
-                            onChartStateChange={noteLoadState}
-                            onObjectsChange={noteObjects}
-                            onOpenScriptSource={showScriptSource}
-                            onAlertsReady={noteAlerts}
-                            onAlertFired={noteAlertFired}
-                            onAlertsChanged={() => setAlertRevision((n) => n + 1)}
-                            onDrawStats={onPaneDrawStats}
-                            onToggleRail={() => setShowRail((v) => !v)}
-                            railVisible={showRail}
-                            linkGroup={linkGroup}
-                            armed={armed}
-                            layoutPicker={workspaceControls}
+                            maximized={maximizedPane === 'scalper-p0'}
+                            state={paneLoadStates['scalper-p0']}
+                            onFocus={() =>
+                              focusPane(terminalsRef.current['scalper-p0'] ?? null, 'scalper-p0')
+                            }
+                            onMaximize={() =>
+                              setMaximizedPane((m) => (m === 'scalper-p0' ? null : 'scalper-p0'))
+                            }
                           />
-                        </div>
-                      </div>
-                    )}
 
-                    {/* ── PANE 1: CALL / CE ───────────────────────────────── */}
-                    {visiblePanes.ce && (!maximizedPane || maximizedPane === 'scalper-p1') && (
-                      <div
-                        style={{ gridArea: maximizedPane ? 'max' : 'b' }}
-                        className={cn(
-                          'flex flex-col min-h-0 min-w-0 rounded-lg border bg-card overflow-hidden transition-colors',
-                          focusedPane === 'scalper-p1'
-                            ? 'border-indigo-500/80 shadow-[0_0_0_1px_rgba(99,102,241,0.25)]'
-                            : 'border-border/70'
-                        )}
-                      >
-                        {/* Sleek Pane Header Bar */}
+                          <div className="relative flex-1 min-h-0">
+                            <ChartPane
+                              paneId="scalper-p0"
+                              paneLabel="SPOT Chart"
+                              toolbarHost={toolbarHost}
+                              focused={focusedPane === 'scalper-p0'}
+                              chartSelector={chartSelector}
+                              apiKey={apiKey}
+                              wsUrl={wsUrl}
+                              style={{ height: '100%', border: 'none', borderRadius: 0 }}
+                              sharedTool={tool}
+                              sharedMagnet={magnet}
+                              sharedStay={stay}
+                              sharedLatch={latched}
+                              onReplayStart={startWorkspaceReplay}
+                              workspaceReplay={replaySnapshot}
+                              onBeforeSourceChange={stopWorkspaceReplay}
+                              onFocusPane={focusPane}
+                              onSymbolChange={noteSymbol}
+                              onIntervalChange={noteChartChanged}
+                              onTerminalChange={noteTerminal}
+                              onChartStateChange={noteLoadState}
+                              onObjectsChange={noteObjects}
+                              onOpenScriptSource={showScriptSource}
+                              onAlertsReady={noteAlerts}
+                              onAlertFired={noteAlertFired}
+                              onAlertsChanged={() => setAlertRevision((n) => n + 1)}
+                              onDrawStats={onPaneDrawStats}
+                              onToggleRail={() => setShowRail((v) => !v)}
+                              railVisible={showRail}
+                              linkGroup={linkGroup}
+                              armed={armed}
+                              layoutPicker={workspaceControls}
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      {/* ── PANE 1: CALL / CE ───────────────────────────────── */}
+                      {visiblePanes.ce && (!maximizedPane || maximizedPane === 'scalper-p1') && (
                         <div
-                          onClick={() =>
-                            focusPane(terminalsRef.current['scalper-p1'] ?? null, 'scalper-p1')
-                          }
-                          className="flex h-7 shrink-0 cursor-pointer items-center justify-between border-b border-border/60 bg-muted/30 px-2.5 text-[11px]"
+                          style={{ gridArea: maximizedPane ? 'max' : 'b' }}
+                          className="scalper-chart-card flex min-h-0 min-w-0 flex-col overflow-hidden"
+                          data-focused={focusedPane === 'scalper-p1'}
                         >
-                          <div className="flex items-center gap-2">
-                            <span className="font-bold tracking-wide text-foreground">
-                              CALL: {formatTradingSymbol(ceActiveSym?.symbol) || 'Select CE'}
-                            </span>
-                            <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">
-                              {ceActiveSym?.exchange ?? activeUnderlying.foExchange}
-                            </span>
-                            {focusedPane === 'scalper-p1' && (
-                              <span className="rounded bg-indigo-500/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300">
-                                ACTIVE
-                              </span>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span
-                              className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_6px_#10b981]"
-                              title="Live WebSocket market stream active"
-                            />
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                setMaximizedPane((m) => (m === 'scalper-p1' ? null : 'scalper-p1'))
-                              }}
-                              className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-                              title={
-                                maximizedPane === 'scalper-p1'
-                                  ? 'Restore 3-pane view'
-                                  : 'Maximize CALL pane'
-                              }
-                            >
-                              {maximizedPane === 'scalper-p1' ? (
-                                <Minimize2 className="h-3 w-3" />
-                              ) : (
-                                <Maximize2 className="h-3 w-3" />
-                              )}
-                            </button>
-                          </div>
-                        </div>
-
-                        <div className="relative flex-1 min-h-0">
-                          <ChartPane
-                            paneId="scalper-p1"
-                            paneLabel="CALL (CE) Chart"
-                            toolbarHost={toolbarHost}
+                          <ScalperPaneHeader
+                            side="ce"
+                            symbol={formatTradingSymbol(ceActiveSym?.symbol) || 'Select CE'}
+                            exchange={ceActiveSym?.exchange ?? activeUnderlying.foExchange}
                             focused={focusedPane === 'scalper-p1'}
-                            chartSelector={chartSelector}
-                            apiKey={apiKey}
-                            wsUrl={wsUrl}
-                            style={{ height: '100%', border: 'none', borderRadius: 0 }}
-                            sharedTool={tool}
-                            sharedMagnet={magnet}
-                            sharedStay={stay}
-                            sharedLatch={latched}
-                            onReplayStart={startWorkspaceReplay}
-                            workspaceReplay={replaySnapshot}
-                            onBeforeSourceChange={stopWorkspaceReplay}
-                            onFocusPane={focusPane}
-                            onSymbolChange={noteSymbol}
-                            onIntervalChange={noteChartChanged}
-                            onTerminalChange={noteTerminal}
-                            onChartStateChange={noteLoadState}
-                            onObjectsChange={noteObjects}
-                            onOpenScriptSource={showScriptSource}
-                            onAlertsReady={noteAlerts}
-                            onAlertFired={noteAlertFired}
-                            onAlertsChanged={() => setAlertRevision((n) => n + 1)}
-                            onDrawStats={onPaneDrawStats}
-                            onToggleRail={() => setShowRail((v) => !v)}
-                            railVisible={showRail}
-                            linkGroup={linkGroup}
-                            armed={armed}
-                            externalQty={ceLots}
-                            onQtyChange={(_, nextLots) => {
-                              setCeCustomQty(null)
-                              setCeLots(Math.max(1, nextLots))
-                            }}
-                            defaultProduct={product}
-                            onProductChange={(_, nextProd) => {
-                              if (nextProd === 'NRML' || nextProd === 'MIS') {
-                                setProduct(nextProd)
-                              }
-                            }}
-                            onTradeQtyClick={() => {
-                              setCeChartQtyFocused(true)
-                              setTimeout(() => ceChartQtyInputRef.current?.select(), 0)
-                            }}
-                            layoutPicker={workspaceControls}
-                            defaultVolumeVisible={false}
+                            maximized={maximizedPane === 'scalper-p1'}
+                            state={paneLoadStates['scalper-p1']}
+                            onFocus={() =>
+                              focusPane(terminalsRef.current['scalper-p1'] ?? null, 'scalper-p1')
+                            }
+                            onMaximize={() =>
+                              setMaximizedPane((m) => (m === 'scalper-p1' ? null : 'scalper-p1'))
+                            }
                           />
 
-                          {/* Editable Middle Lot/Qty Box between On-Chart SELL and BUY buttons */}
-                          <div
-                            style={{
-                              position: 'absolute',
-                              // BuySellButtons uses margin 16/52 and scale .8:
-                              // SELL=59.2px, qty starts at 76.2px and is 32px wide.
-                              // Keep the editor exactly over that canvas chip.
-                              left: '76px',
-                              top: '52px',
-                              width: '32px',
-                              height: '34px',
-                              zIndex: 12,
-                            }}
-                            onClick={(e) => e.stopPropagation()}
-                            onMouseDown={(e) => e.stopPropagation()}
-                            onWheel={(e) => {
-                              e.preventDefault()
-                              e.stopPropagation()
-                              const delta = e.deltaY < 0 ? 1 : -1
-                              setCeCustomQty(null)
-                              setCeLots((l) => Math.max(1, l + delta))
-                            }}
-                            title={`Click to edit CE Lots / Quantity (${ceLots}L = ${ceOrderQty} Qty · ${product})`}
-                          >
-                            <input
-                              ref={ceChartQtyInputRef}
-                              type="text"
-                              inputMode="numeric"
-                              aria-label="Edit CE Chart Lots"
-                              value={
-                                ceChartQtyFocused ? (ceLotsText ?? String(ceLots)) : `${ceLots}L`
-                              }
-                              onFocus={(e) => {
+                          <div className="relative flex-1 min-h-0">
+                            <ChartPane
+                              paneId="scalper-p1"
+                              paneLabel="CALL (CE) Chart"
+                              toolbarHost={toolbarHost}
+                              focused={focusedPane === 'scalper-p1'}
+                              chartSelector={chartSelector}
+                              apiKey={apiKey}
+                              wsUrl={wsUrl}
+                              style={{ height: '100%', border: 'none', borderRadius: 0 }}
+                              sharedTool={tool}
+                              sharedMagnet={magnet}
+                              sharedStay={stay}
+                              sharedLatch={latched}
+                              onReplayStart={startWorkspaceReplay}
+                              workspaceReplay={replaySnapshot}
+                              onBeforeSourceChange={stopWorkspaceReplay}
+                              onFocusPane={focusPane}
+                              onSymbolChange={noteSymbol}
+                              onIntervalChange={noteChartChanged}
+                              onTerminalChange={noteTerminal}
+                              onChartStateChange={noteLoadState}
+                              onObjectsChange={noteObjects}
+                              onOpenScriptSource={showScriptSource}
+                              onAlertsReady={noteAlerts}
+                              onAlertFired={noteAlertFired}
+                              onAlertsChanged={() => setAlertRevision((n) => n + 1)}
+                              onDrawStats={onPaneDrawStats}
+                              onToggleRail={() => setShowRail((v) => !v)}
+                              railVisible={showRail}
+                              linkGroup={linkGroup}
+                              armed={armed}
+                              externalQty={ceLots}
+                              onQtyChange={(_, nextLots) => {
+                                setCeCustomQty(null)
+                                setCeLots(Math.max(1, nextLots))
+                              }}
+                              defaultProduct={product}
+                              onProductChange={(_, nextProd) => {
+                                if (nextProd === 'NRML' || nextProd === 'MIS') {
+                                  setProduct(nextProd)
+                                }
+                              }}
+                              onTradeQtyClick={() => {
                                 setCeChartQtyFocused(true)
-                                setCeLotsText(String(ceLots))
-                                e.currentTarget.select()
+                                setTimeout(() => ceChartQtyInputRef.current?.select(), 0)
                               }}
-                              onChange={(e) => {
-                                const raw = e.target.value.replace(/[^0-9]/g, '')
-                                setCeLotsText(raw)
-                                const num = parseInt(raw, 10)
-                                if (Number.isFinite(num) && num >= 1) {
-                                  setCeCustomQty(null)
-                                  setCeLots(num)
-                                }
-                              }}
-                              onBlur={() => {
-                                const num = parseInt(ceLotsText ?? '', 10)
-                                const safe =
-                                  Number.isFinite(num) && num >= 1 ? num : Math.max(1, ceLots)
-                                setCeLots(safe)
-                                setCeLotsText(null)
-                                setTimeout(() => setCeChartQtyFocused(false), 140)
-                              }}
-                              onKeyDown={(e) => {
-                                e.stopPropagation()
-                                if (e.key === 'Enter' || e.key === 'Escape') {
-                                  e.currentTarget.blur()
-                                } else if (e.key === 'ArrowUp') {
-                                  e.preventDefault()
-                                  setCeCustomQty(null)
-                                  setCeLots((l) => {
-                                    const next = l + 1
-                                    setCeLotsText(String(next))
-                                    return next
-                                  })
-                                } else if (e.key === 'ArrowDown') {
-                                  e.preventDefault()
-                                  setCeCustomQty(null)
-                                  setCeLots((l) => {
-                                    const next = Math.max(1, l - 1)
-                                    setCeLotsText(String(next))
-                                    return next
-                                  })
-                                }
-                              }}
-                              className={cn(
-                                'h-full w-full cursor-text select-all rounded-[4px] border text-center font-mono text-[10px] font-bold transition-colors focus:outline-none',
-                                ceChartQtyFocused
-                                  ? 'border-[#10a37f] bg-white text-[#0d0d0d] ring-1 ring-[#10a37f]/50 dark:bg-[#171717] dark:text-white'
-                                  : 'border-black/15 bg-white/95 text-[#0d0d0d] hover:border-black/30 hover:bg-[#f4f4f4] dark:border-white/15 dark:bg-[#171717]/90 dark:text-[#ececec] dark:hover:border-white/35 dark:hover:bg-[#242424]'
-                              )}
+                              layoutPicker={workspaceControls}
+                              defaultVolumeVisible={false}
                             />
-                          </div>
 
-                          {/* Quick Lot & Qty Editor Bar right underneath [SELL] [Lots] [BUY] when focused */}
-                          {false && ceChartQtyFocused && (
+                            {/* Editable Middle Lot/Qty Box between On-Chart SELL and BUY buttons */}
                             <div
                               style={{
                                 position: 'absolute',
-                              left: '114px',
-                              top: '52px',
-                                zIndex: 20,
-                              }}
-                              onMouseDown={(e) => {
-                                e.preventDefault()
-                                e.stopPropagation()
+                                // BuySellButtons uses margin 16/52 and scale .8:
+                                // SELL=59.2px, qty starts at 76.2px and is 32px wide.
+                                // Keep the editor exactly over that canvas chip.
+                                left: '76px',
+                                top: '52px',
+                                width: '32px',
+                                height: '34px',
+                                zIndex: 12,
                               }}
                               onClick={(e) => e.stopPropagation()}
-                              className="flex items-center gap-1.5 rounded-md border border-border bg-popover/95 px-2 py-1 text-[11px] font-mono text-popover-foreground shadow-lg backdrop-blur-md"
+                              onMouseDown={(e) => e.stopPropagation()}
+                              onWheel={(e) => {
+                                e.preventDefault()
+                                e.stopPropagation()
+                                const delta = e.deltaY < 0 ? 1 : -1
+                                setCeCustomQty(null)
+                                setCeLots((l) => Math.max(1, l + delta))
+                              }}
+                              title={`Click to edit CE Lots / Quantity (${ceLots}L = ${ceOrderQty} Qty · ${product})`}
                             >
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setCeCustomQty(null)
-                                  setCeLots((l) => {
-                                    const next = Math.max(1, l - 1)
-                                    setCeLotsText(String(next))
-                                    return next
-                                  })
+                              <input
+                                ref={ceChartQtyInputRef}
+                                type="text"
+                                inputMode="numeric"
+                                aria-label="Edit CE Chart Lots"
+                                value={
+                                  ceChartQtyFocused ? (ceLotsText ?? String(ceLots)) : `${ceLots}L`
+                                }
+                                onFocus={(e) => {
+                                  setCeChartQtyFocused(true)
+                                  setCeLotsText(String(ceLots))
+                                  e.currentTarget.select()
                                 }}
-                                className="flex h-5 w-5 items-center justify-center rounded border border-border/70 bg-muted/50 font-bold hover:bg-muted"
-                              >
-                                −
-                              </button>
-                              <span className="text-[10px] text-muted-foreground">
-                                {ceLots}L ={' '}
-                                <strong className="text-foreground">{ceOrderQty}</strong> Q
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setCeCustomQty(null)
-                                  setCeLots((l) => {
-                                    const next = l + 1
-                                    setCeLotsText(String(next))
-                                    return next
-                                  })
+                                onChange={(e) => {
+                                  const raw = e.target.value.replace(/[^0-9]/g, '')
+                                  setCeLotsText(raw)
+                                  const num = parseInt(raw, 10)
+                                  if (Number.isFinite(num) && num >= 1) {
+                                    setCeCustomQty(null)
+                                    setCeLots(num)
+                                  }
                                 }}
-                                className="flex h-5 w-5 items-center justify-center rounded border border-border/70 bg-muted/50 font-bold hover:bg-muted"
+                                onBlur={() => {
+                                  const num = parseInt(ceLotsText ?? '', 10)
+                                  const safe =
+                                    Number.isFinite(num) && num >= 1 ? num : Math.max(1, ceLots)
+                                  setCeLots(safe)
+                                  setCeLotsText(null)
+                                  setTimeout(() => setCeChartQtyFocused(false), 140)
+                                }}
+                                onKeyDown={(e) => {
+                                  e.stopPropagation()
+                                  if (e.key === 'Enter' || e.key === 'Escape') {
+                                    e.currentTarget.blur()
+                                  } else if (e.key === 'ArrowUp') {
+                                    e.preventDefault()
+                                    setCeCustomQty(null)
+                                    setCeLots((l) => {
+                                      const next = l + 1
+                                      setCeLotsText(String(next))
+                                      return next
+                                    })
+                                  } else if (e.key === 'ArrowDown') {
+                                    e.preventDefault()
+                                    setCeCustomQty(null)
+                                    setCeLots((l) => {
+                                      const next = Math.max(1, l - 1)
+                                      setCeLotsText(String(next))
+                                      return next
+                                    })
+                                  }
+                                }}
+                                className={cn(
+                                  'h-full w-full cursor-text select-all rounded-[4px] border text-center font-mono text-[10px] font-bold transition-colors focus:outline-none',
+                                  ceChartQtyFocused
+                                    ? 'border-[#10a37f] bg-white text-[#0d0d0d] ring-1 ring-[#10a37f]/50 dark:bg-[#171717] dark:text-white'
+                                    : 'border-black/15 bg-white/95 text-[#0d0d0d] hover:border-black/30 hover:bg-[#f4f4f4] dark:border-white/15 dark:bg-[#171717]/90 dark:text-[#ececec] dark:hover:border-white/35 dark:hover:bg-[#242424]'
+                                )}
+                              />
+                            </div>
+
+                            {/* Quick Lot & Qty Editor Bar right underneath [SELL] [Lots] [BUY] when focused */}
+                            {false && ceChartQtyFocused && (
+                              <div
+                                style={{
+                                  position: 'absolute',
+                                  left: '114px',
+                                  top: '52px',
+                                  zIndex: 20,
+                                }}
+                                onMouseDown={(e) => {
+                                  e.preventDefault()
+                                  e.stopPropagation()
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                                className="flex items-center gap-1.5 rounded-md border border-border bg-popover/95 px-2 py-1 text-[11px] font-mono text-popover-foreground shadow-lg backdrop-blur-md"
                               >
-                                +
-                              </button>
-                              <div className="mx-0.5 h-3.5 w-px bg-border" />
-                              {[1, 2, 5, 10].map((presetLot) => (
                                 <button
-                                  key={presetLot}
                                   type="button"
                                   onClick={() => {
                                     setCeCustomQty(null)
-                                    setCeLots(presetLot)
-                                    setCeLotsText(String(presetLot))
-                                    setCeChartQtyFocused(false)
+                                    setCeLots((l) => {
+                                      const next = Math.max(1, l - 1)
+                                      setCeLotsText(String(next))
+                                      return next
+                                    })
                                   }}
-                                  className={cn(
-                                    'rounded px-1.5 py-0.5 text-[10px] font-semibold transition-colors',
-                                    ceLots === presetLot
-                                      ? 'bg-primary text-primary-foreground'
-                                      : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground'
-                                  )}
+                                  className="flex h-5 w-5 items-center justify-center rounded border border-border/70 bg-muted/50 font-bold hover:bg-muted"
                                 >
-                                  {presetLot}L
+                                  −
                                 </button>
-                              ))}
-                              <span className="ml-0.5 rounded bg-[#10a37f]/15 px-1 py-0.5 text-[9px] font-bold text-[#0d8a6a] dark:text-[#34d399]">
-                                {product}
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* ── PANE 2: PUT / PE ────────────────────────────────── */}
-                    {visiblePanes.pe && (!maximizedPane || maximizedPane === 'scalper-p2') && (
-                      <div
-                        style={{ gridArea: maximizedPane ? 'max' : 'c' }}
-                        className={cn(
-                          'flex flex-col min-h-0 min-w-0 rounded-lg border bg-card overflow-hidden transition-colors',
-                          focusedPane === 'scalper-p2'
-                            ? 'border-indigo-500/80 shadow-[0_0_0_1px_rgba(99,102,241,0.25)]'
-                            : 'border-border/70'
-                        )}
-                      >
-                        {/* Sleek Pane Header Bar */}
-                        <div
-                          onClick={() =>
-                            focusPane(terminalsRef.current['scalper-p2'] ?? null, 'scalper-p2')
-                          }
-                          className="flex h-7 shrink-0 cursor-pointer items-center justify-between border-b border-border/60 bg-muted/30 px-2.5 text-[11px]"
-                        >
-                          <div className="flex items-center gap-2">
-                            <span className="font-bold tracking-wide text-foreground">
-                              PUT: {formatTradingSymbol(peActiveSym?.symbol) || 'Select PE'}
-                            </span>
-                            <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">
-                              {peActiveSym?.exchange ?? activeUnderlying.foExchange}
-                            </span>
-                            {focusedPane === 'scalper-p2' && (
-                              <span className="rounded bg-indigo-500/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300">
-                                ACTIVE
-                              </span>
+                                <span className="text-[10px] text-muted-foreground">
+                                  {ceLots}L ={' '}
+                                  <strong className="text-foreground">{ceOrderQty}</strong> Q
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setCeCustomQty(null)
+                                    setCeLots((l) => {
+                                      const next = l + 1
+                                      setCeLotsText(String(next))
+                                      return next
+                                    })
+                                  }}
+                                  className="flex h-5 w-5 items-center justify-center rounded border border-border/70 bg-muted/50 font-bold hover:bg-muted"
+                                >
+                                  +
+                                </button>
+                                <div className="mx-0.5 h-3.5 w-px bg-border" />
+                                {[1, 2, 5, 10].map((presetLot) => (
+                                  <button
+                                    key={presetLot}
+                                    type="button"
+                                    onClick={() => {
+                                      setCeCustomQty(null)
+                                      setCeLots(presetLot)
+                                      setCeLotsText(String(presetLot))
+                                      setCeChartQtyFocused(false)
+                                    }}
+                                    className={cn(
+                                      'rounded px-1.5 py-0.5 text-[10px] font-semibold transition-colors',
+                                      ceLots === presetLot
+                                        ? 'bg-primary text-primary-foreground'
+                                        : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground'
+                                    )}
+                                  >
+                                    {presetLot}L
+                                  </button>
+                                ))}
+                                <span className="ml-0.5 rounded bg-[#10a37f]/15 px-1 py-0.5 text-[9px] font-bold text-[#0d8a6a] dark:text-[#34d399]">
+                                  {product}
+                                </span>
+                              </div>
                             )}
                           </div>
-                          <div className="flex items-center gap-2">
-                            <span
-                              className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_6px_#10b981]"
-                              title="Live WebSocket market stream active"
-                            />
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                setMaximizedPane((m) => (m === 'scalper-p2' ? null : 'scalper-p2'))
-                              }}
-                              className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-                              title={
-                                maximizedPane === 'scalper-p2'
-                                  ? 'Restore 3-pane view'
-                                  : 'Maximize PUT pane'
-                              }
-                            >
-                              {maximizedPane === 'scalper-p2' ? (
-                                <Minimize2 className="h-3 w-3" />
-                              ) : (
-                                <Maximize2 className="h-3 w-3" />
-                              )}
-                            </button>
-                          </div>
                         </div>
+                      )}
 
-                        <div className="relative flex-1 min-h-0">
-                          <ChartPane
-                            paneId="scalper-p2"
-                            paneLabel="PUT (PE) Chart"
-                            toolbarHost={toolbarHost}
+                      {/* ── PANE 2: PUT / PE ────────────────────────────────── */}
+                      {visiblePanes.pe && (!maximizedPane || maximizedPane === 'scalper-p2') && (
+                        <div
+                          style={{ gridArea: maximizedPane ? 'max' : 'c' }}
+                          className="scalper-chart-card flex min-h-0 min-w-0 flex-col overflow-hidden"
+                          data-focused={focusedPane === 'scalper-p2'}
+                        >
+                          <ScalperPaneHeader
+                            side="pe"
+                            symbol={formatTradingSymbol(peActiveSym?.symbol) || 'Select PE'}
+                            exchange={peActiveSym?.exchange ?? activeUnderlying.foExchange}
                             focused={focusedPane === 'scalper-p2'}
-                            chartSelector={chartSelector}
-                            apiKey={apiKey}
-                            wsUrl={wsUrl}
-                            style={{ height: '100%', border: 'none', borderRadius: 0 }}
-                            sharedTool={tool}
-                            sharedMagnet={magnet}
-                            sharedStay={stay}
-                            sharedLatch={latched}
-                            onReplayStart={startWorkspaceReplay}
-                            workspaceReplay={replaySnapshot}
-                            onBeforeSourceChange={stopWorkspaceReplay}
-                            onFocusPane={focusPane}
-                            onSymbolChange={noteSymbol}
-                            onIntervalChange={noteChartChanged}
-                            onTerminalChange={noteTerminal}
-                            onChartStateChange={noteLoadState}
-                            onObjectsChange={noteObjects}
-                            onOpenScriptSource={showScriptSource}
-                            onAlertsReady={noteAlerts}
-                            onAlertFired={noteAlertFired}
-                            onAlertsChanged={() => setAlertRevision((n) => n + 1)}
-                            onDrawStats={onPaneDrawStats}
-                            onToggleRail={() => setShowRail((v) => !v)}
-                            railVisible={showRail}
-                            linkGroup={linkGroup}
-                            armed={armed}
-                            externalQty={peLots}
-                            onQtyChange={(_, nextLots) => {
-                              setPeCustomQty(null)
-                              setPeLots(Math.max(1, nextLots))
-                            }}
-                            defaultProduct={product}
-                            onProductChange={(_, nextProd) => {
-                              if (nextProd === 'NRML' || nextProd === 'MIS') {
-                                setProduct(nextProd)
-                              }
-                            }}
-                            onTradeQtyClick={() => {
-                              setPeChartQtyFocused(true)
-                              setTimeout(() => peChartQtyInputRef.current?.select(), 0)
-                            }}
-                            layoutPicker={workspaceControls}
-                            defaultVolumeVisible={false}
+                            maximized={maximizedPane === 'scalper-p2'}
+                            state={paneLoadStates['scalper-p2']}
+                            onFocus={() =>
+                              focusPane(terminalsRef.current['scalper-p2'] ?? null, 'scalper-p2')
+                            }
+                            onMaximize={() =>
+                              setMaximizedPane((m) => (m === 'scalper-p2' ? null : 'scalper-p2'))
+                            }
                           />
 
-                          {/* Editable Middle Lot/Qty Box between On-Chart SELL and BUY buttons */}
-                          <div
-                            style={{
-                              position: 'absolute',
-                              // Keep the PE editor aligned with the same
-                              // on-chart SELL / quantity / BUY geometry.
-                              left: '76px',
-                              top: '52px',
-                              width: '32px',
-                              height: '34px',
-                              zIndex: 12,
-                            }}
-                            onClick={(e) => e.stopPropagation()}
-                            onMouseDown={(e) => e.stopPropagation()}
-                            onWheel={(e) => {
-                              e.preventDefault()
-                              e.stopPropagation()
-                              const delta = e.deltaY < 0 ? 1 : -1
-                              setPeCustomQty(null)
-                              setPeLots((l) => Math.max(1, l + delta))
-                            }}
-                            title={`Click to edit PE Lots / Quantity (${peLots}L = ${peOrderQty} Qty · ${product})`}
-                          >
-                            <input
-                              ref={peChartQtyInputRef}
-                              type="text"
-                              inputMode="numeric"
-                              aria-label="Edit PE Chart Lots"
-                              value={
-                                peChartQtyFocused ? (peLotsText ?? String(peLots)) : `${peLots}L`
-                              }
-                              onFocus={(e) => {
+                          <div className="relative flex-1 min-h-0">
+                            <ChartPane
+                              paneId="scalper-p2"
+                              paneLabel="PUT (PE) Chart"
+                              toolbarHost={toolbarHost}
+                              focused={focusedPane === 'scalper-p2'}
+                              chartSelector={chartSelector}
+                              apiKey={apiKey}
+                              wsUrl={wsUrl}
+                              style={{ height: '100%', border: 'none', borderRadius: 0 }}
+                              sharedTool={tool}
+                              sharedMagnet={magnet}
+                              sharedStay={stay}
+                              sharedLatch={latched}
+                              onReplayStart={startWorkspaceReplay}
+                              workspaceReplay={replaySnapshot}
+                              onBeforeSourceChange={stopWorkspaceReplay}
+                              onFocusPane={focusPane}
+                              onSymbolChange={noteSymbol}
+                              onIntervalChange={noteChartChanged}
+                              onTerminalChange={noteTerminal}
+                              onChartStateChange={noteLoadState}
+                              onObjectsChange={noteObjects}
+                              onOpenScriptSource={showScriptSource}
+                              onAlertsReady={noteAlerts}
+                              onAlertFired={noteAlertFired}
+                              onAlertsChanged={() => setAlertRevision((n) => n + 1)}
+                              onDrawStats={onPaneDrawStats}
+                              onToggleRail={() => setShowRail((v) => !v)}
+                              railVisible={showRail}
+                              linkGroup={linkGroup}
+                              armed={armed}
+                              externalQty={peLots}
+                              onQtyChange={(_, nextLots) => {
+                                setPeCustomQty(null)
+                                setPeLots(Math.max(1, nextLots))
+                              }}
+                              defaultProduct={product}
+                              onProductChange={(_, nextProd) => {
+                                if (nextProd === 'NRML' || nextProd === 'MIS') {
+                                  setProduct(nextProd)
+                                }
+                              }}
+                              onTradeQtyClick={() => {
                                 setPeChartQtyFocused(true)
-                                setPeLotsText(String(peLots))
-                                e.currentTarget.select()
+                                setTimeout(() => peChartQtyInputRef.current?.select(), 0)
                               }}
-                              onChange={(e) => {
-                                const raw = e.target.value.replace(/[^0-9]/g, '')
-                                setPeLotsText(raw)
-                                const num = parseInt(raw, 10)
-                                if (Number.isFinite(num) && num >= 1) {
-                                  setPeCustomQty(null)
-                                  setPeLots(num)
-                                }
-                              }}
-                              onBlur={() => {
-                                const num = parseInt(peLotsText ?? '', 10)
-                                const safe =
-                                  Number.isFinite(num) && num >= 1 ? num : Math.max(1, peLots)
-                                setPeLots(safe)
-                                setPeLotsText(null)
-                                setTimeout(() => setPeChartQtyFocused(false), 140)
-                              }}
-                              onKeyDown={(e) => {
-                                e.stopPropagation()
-                                if (e.key === 'Enter' || e.key === 'Escape') {
-                                  e.currentTarget.blur()
-                                } else if (e.key === 'ArrowUp') {
-                                  e.preventDefault()
-                                  setPeCustomQty(null)
-                                  setPeLots((l) => {
-                                    const next = l + 1
-                                    setPeLotsText(String(next))
-                                    return next
-                                  })
-                                } else if (e.key === 'ArrowDown') {
-                                  e.preventDefault()
-                                  setPeCustomQty(null)
-                                  setPeLots((l) => {
-                                    const next = Math.max(1, l - 1)
-                                    setPeLotsText(String(next))
-                                    return next
-                                  })
-                                }
-                              }}
-                              className={cn(
-                                'h-full w-full cursor-text select-all rounded-[4px] border text-center font-mono text-[10px] font-bold transition-colors focus:outline-none',
-                                peChartQtyFocused
-                                  ? 'border-[#ef5350] bg-white text-[#0d0d0d] ring-1 ring-[#ef5350]/50 dark:bg-[#171717] dark:text-white'
-                                  : 'border-black/15 bg-white/95 text-[#0d0d0d] hover:border-black/30 hover:bg-[#f4f4f4] dark:border-white/15 dark:bg-[#171717]/90 dark:text-[#ececec] dark:hover:border-white/35 dark:hover:bg-[#242424]'
-                              )}
+                              layoutPicker={workspaceControls}
+                              defaultVolumeVisible={false}
                             />
-                          </div>
 
-                          {/* Quick Lot & Qty Editor Bar right underneath [SELL] [Lots] [BUY] when focused */}
-                          {false && peChartQtyFocused && (
+                            {/* Editable Middle Lot/Qty Box between On-Chart SELL and BUY buttons */}
                             <div
                               style={{
                                 position: 'absolute',
-                              left: '114px',
-                              top: '52px',
-                                zIndex: 20,
-                              }}
-                              onMouseDown={(e) => {
-                                e.preventDefault()
-                                e.stopPropagation()
+                                // Keep the PE editor aligned with the same
+                                // on-chart SELL / quantity / BUY geometry.
+                                left: '76px',
+                                top: '52px',
+                                width: '32px',
+                                height: '34px',
+                                zIndex: 12,
                               }}
                               onClick={(e) => e.stopPropagation()}
-                              className="flex items-center gap-1.5 rounded-md border border-border bg-popover/95 px-2 py-1 text-[11px] font-mono text-popover-foreground shadow-lg backdrop-blur-md"
+                              onMouseDown={(e) => e.stopPropagation()}
+                              onWheel={(e) => {
+                                e.preventDefault()
+                                e.stopPropagation()
+                                const delta = e.deltaY < 0 ? 1 : -1
+                                setPeCustomQty(null)
+                                setPeLots((l) => Math.max(1, l + delta))
+                              }}
+                              title={`Click to edit PE Lots / Quantity (${peLots}L = ${peOrderQty} Qty · ${product})`}
                             >
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setPeCustomQty(null)
-                                  setPeLots((l) => {
-                                    const next = Math.max(1, l - 1)
-                                    setPeLotsText(String(next))
-                                    return next
-                                  })
+                              <input
+                                ref={peChartQtyInputRef}
+                                type="text"
+                                inputMode="numeric"
+                                aria-label="Edit PE Chart Lots"
+                                value={
+                                  peChartQtyFocused ? (peLotsText ?? String(peLots)) : `${peLots}L`
+                                }
+                                onFocus={(e) => {
+                                  setPeChartQtyFocused(true)
+                                  setPeLotsText(String(peLots))
+                                  e.currentTarget.select()
                                 }}
-                                className="flex h-5 w-5 items-center justify-center rounded border border-border/70 bg-muted/50 font-bold hover:bg-muted"
-                              >
-                                −
-                              </button>
-                              <span className="text-[10px] text-muted-foreground">
-                                {peLots}L ={' '}
-                                <strong className="text-foreground">{peOrderQty}</strong> Q
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setPeCustomQty(null)
-                                  setPeLots((l) => {
-                                    const next = l + 1
-                                    setPeLotsText(String(next))
-                                    return next
-                                  })
+                                onChange={(e) => {
+                                  const raw = e.target.value.replace(/[^0-9]/g, '')
+                                  setPeLotsText(raw)
+                                  const num = parseInt(raw, 10)
+                                  if (Number.isFinite(num) && num >= 1) {
+                                    setPeCustomQty(null)
+                                    setPeLots(num)
+                                  }
                                 }}
-                                className="flex h-5 w-5 items-center justify-center rounded border border-border/70 bg-muted/50 font-bold hover:bg-muted"
+                                onBlur={() => {
+                                  const num = parseInt(peLotsText ?? '', 10)
+                                  const safe =
+                                    Number.isFinite(num) && num >= 1 ? num : Math.max(1, peLots)
+                                  setPeLots(safe)
+                                  setPeLotsText(null)
+                                  setTimeout(() => setPeChartQtyFocused(false), 140)
+                                }}
+                                onKeyDown={(e) => {
+                                  e.stopPropagation()
+                                  if (e.key === 'Enter' || e.key === 'Escape') {
+                                    e.currentTarget.blur()
+                                  } else if (e.key === 'ArrowUp') {
+                                    e.preventDefault()
+                                    setPeCustomQty(null)
+                                    setPeLots((l) => {
+                                      const next = l + 1
+                                      setPeLotsText(String(next))
+                                      return next
+                                    })
+                                  } else if (e.key === 'ArrowDown') {
+                                    e.preventDefault()
+                                    setPeCustomQty(null)
+                                    setPeLots((l) => {
+                                      const next = Math.max(1, l - 1)
+                                      setPeLotsText(String(next))
+                                      return next
+                                    })
+                                  }
+                                }}
+                                className={cn(
+                                  'h-full w-full cursor-text select-all rounded-[4px] border text-center font-mono text-[10px] font-bold transition-colors focus:outline-none',
+                                  peChartQtyFocused
+                                    ? 'border-[#ef5350] bg-white text-[#0d0d0d] ring-1 ring-[#ef5350]/50 dark:bg-[#171717] dark:text-white'
+                                    : 'border-black/15 bg-white/95 text-[#0d0d0d] hover:border-black/30 hover:bg-[#f4f4f4] dark:border-white/15 dark:bg-[#171717]/90 dark:text-[#ececec] dark:hover:border-white/35 dark:hover:bg-[#242424]'
+                                )}
+                              />
+                            </div>
+
+                            {/* Quick Lot & Qty Editor Bar right underneath [SELL] [Lots] [BUY] when focused */}
+                            {false && peChartQtyFocused && (
+                              <div
+                                style={{
+                                  position: 'absolute',
+                                  left: '114px',
+                                  top: '52px',
+                                  zIndex: 20,
+                                }}
+                                onMouseDown={(e) => {
+                                  e.preventDefault()
+                                  e.stopPropagation()
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                                className="flex items-center gap-1.5 rounded-md border border-border bg-popover/95 px-2 py-1 text-[11px] font-mono text-popover-foreground shadow-lg backdrop-blur-md"
                               >
-                                +
-                              </button>
-                              <div className="mx-0.5 h-3.5 w-px bg-border" />
-                              {[1, 2, 5, 10].map((presetLot) => (
                                 <button
-                                  key={presetLot}
                                   type="button"
                                   onClick={() => {
                                     setPeCustomQty(null)
-                                    setPeLots(presetLot)
-                                    setPeLotsText(String(presetLot))
-                                    setPeChartQtyFocused(false)
+                                    setPeLots((l) => {
+                                      const next = Math.max(1, l - 1)
+                                      setPeLotsText(String(next))
+                                      return next
+                                    })
                                   }}
-                                  className={cn(
-                                    'rounded px-1.5 py-0.5 text-[10px] font-semibold transition-colors',
-                                    peLots === presetLot
-                                      ? 'bg-primary text-primary-foreground'
-                                      : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground'
-                                  )}
+                                  className="flex h-5 w-5 items-center justify-center rounded border border-border/70 bg-muted/50 font-bold hover:bg-muted"
                                 >
-                                  {presetLot}L
+                                  −
                                 </button>
-                              ))}
-                              <span className="ml-0.5 rounded bg-[#10a37f]/15 px-1 py-0.5 text-[9px] font-bold text-[#0d8a6a] dark:text-[#34d399]">
-                                {product}
-                              </span>
-                            </div>
-                          )}
+                                <span className="text-[10px] text-muted-foreground">
+                                  {peLots}L ={' '}
+                                  <strong className="text-foreground">{peOrderQty}</strong> Q
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setPeCustomQty(null)
+                                    setPeLots((l) => {
+                                      const next = l + 1
+                                      setPeLotsText(String(next))
+                                      return next
+                                    })
+                                  }}
+                                  className="flex h-5 w-5 items-center justify-center rounded border border-border/70 bg-muted/50 font-bold hover:bg-muted"
+                                >
+                                  +
+                                </button>
+                                <div className="mx-0.5 h-3.5 w-px bg-border" />
+                                {[1, 2, 5, 10].map((presetLot) => (
+                                  <button
+                                    key={presetLot}
+                                    type="button"
+                                    onClick={() => {
+                                      setPeCustomQty(null)
+                                      setPeLots(presetLot)
+                                      setPeLotsText(String(presetLot))
+                                      setPeChartQtyFocused(false)
+                                    }}
+                                    className={cn(
+                                      'rounded px-1.5 py-0.5 text-[10px] font-semibold transition-colors',
+                                      peLots === presetLot
+                                        ? 'bg-primary text-primary-foreground'
+                                        : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground'
+                                    )}
+                                  >
+                                    {presetLot}L
+                                  </button>
+                                ))}
+                                <span className="ml-0.5 rounded bg-[#10a37f]/15 px-1 py-0.5 text-[9px] font-bold text-[#0d8a6a] dark:text-[#34d399]">
+                                  {product}
+                                </span>
+                              </div>
+                            )}
+                          </div>
                         </div>
-                      </div>
+                      )}
+                    </div>
+
+                    {/* Draggable Grid Dividers between SPOT, CE and PE */}
+                    {!maximizedPane && activePreset.cells.length > 1 && (
+                      <GridDividers
+                        key={activePreset.id}
+                        cells={parseAreas(activePreset.areas)}
+                        weights={gridWeights}
+                        onChange={(weights) => setLiveWeights({ id: activePreset.id, weights })}
+                        onCommit={keepGridWeights}
+                        onReset={() => keepGridWeights(presetWeights(activePreset))}
+                      />
                     )}
+
+                    {/* Workspace Replay Bar */}
+                    <WorkspaceReplayBar
+                      snapshot={replaySnapshot}
+                      error={replayError}
+                      ownerLabel={
+                        replaySnapshot.ownerId
+                          ? (paneSymbols[replaySnapshot.ownerId] ?? replaySnapshot.ownerId)
+                          : undefined
+                      }
+                      onScopeChange={(scope) => replayCoordinator.current?.setScope(scope)}
+                      onPlay={(speed) => replayCoordinator.current?.play(speed)}
+                      onPause={() => replayCoordinator.current?.pause()}
+                      onStep={() => replayCoordinator.current?.step()}
+                      onStepBack={() => replayCoordinator.current?.stepBack()}
+                      onSeek={(index) => replayCoordinator.current?.seek(index)}
+                      onStop={requestReplayExit}
+                      confirmExit={confirmReplayExit}
+                      onCancelExit={() => setConfirmReplayExit(false)}
+                      onConfirmExit={stopWorkspaceReplay}
+                      pick={replayPick}
+                      interval={
+                        replaySnapshot.ownerId
+                          ? terminalsRef.current[replaySnapshot.ownerId]?.currentInterval()
+                          : undefined
+                      }
+                    />
                   </div>
 
-                  {/* Draggable Grid Dividers between SPOT, CE and PE */}
-                  {!maximizedPane && activePreset.cells.length > 1 && (
-                    <GridDividers
-                      key={activePreset.id}
-                      cells={parseAreas(activePreset.areas)}
-                      weights={gridWeights}
-                      onChange={(weights) => setLiveWeights({ id: activePreset.id, weights })}
-                      onCommit={keepGridWeights}
-                      onReset={() => keepGridWeights(presetWeights(activePreset))}
-                    />
-                  )}
-
-                  {/* Workspace Replay Bar */}
-                  <WorkspaceReplayBar
-                    snapshot={replaySnapshot}
-                    error={replayError}
-                    ownerLabel={
-                      replaySnapshot.ownerId
-                        ? (paneSymbols[replaySnapshot.ownerId] ?? replaySnapshot.ownerId)
-                        : undefined
+                  {/* Original SDK ChartBottomBar */}
+                  <ChartBottomBar
+                    pane={panelTarget}
+                    panes={() =>
+                      Object.values(terminalsRef.current).filter(
+                        (terminal): terminal is TradingTerminal => terminal !== null
+                      )
                     }
-                    onScopeChange={(scope) => replayCoordinator.current?.setScope(scope)}
-                    onPlay={(speed) => replayCoordinator.current?.play(speed)}
-                    onPause={() => replayCoordinator.current?.pause()}
-                    onStep={() => replayCoordinator.current?.step()}
-                    onStepBack={() => replayCoordinator.current?.stepBack()}
-                    onSeek={(index) => replayCoordinator.current?.seek(index)}
-                    onStop={requestReplayExit}
-                    confirmExit={confirmReplayExit}
-                    onCancelExit={() => setConfirmReplayExit(false)}
-                    onConfirmExit={stopWorkspaceReplay}
-                    pick={replayPick}
-                    interval={
-                      replaySnapshot.ownerId
-                        ? terminalsRef.current[replaySnapshot.ownerId]?.currentInterval()
-                        : undefined
-                    }
+                    focusKey={focusedPane}
+                    control={bottomBar}
                   />
                 </div>
+              ) : (
+                <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                  Loading Scalper 915 terminal…
+                </div>
+              )}
+            </div>
 
-                {/* Original SDK ChartBottomBar */}
-                <ChartBottomBar
-                  pane={panelTarget}
-                  panes={() =>
-                    Object.values(terminalsRef.current).filter(
-                      (terminal): terminal is TradingTerminal => terminal !== null
-                    )
-                  }
-                  focusKey={focusedPane}
-                  control={bottomBar}
+            {/* ── Right Side Panels (All Original SDK Panels from Trading.tsx) ─ */}
+            {apiKey && wsUrl && panel === 'watchlist' && (
+              <Suspense fallback={null}>
+                <WatchlistPanel
+                  apiKey={apiKey}
+                  onPick={sendToSmartPane}
+                  search={searchFromFocusedPane}
+                  activeSymbol={paneSymbols[focusedPane] ?? null}
                 />
-              </div>
-            ) : (
-              <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                Loading Scalper 915 terminal…
-              </div>
+              </Suspense>
             )}
-          </div>
-
-          {/* ── Right Side Panels (All Original SDK Panels from Trading.tsx) ─ */}
-          {apiKey && wsUrl && panel === 'watchlist' && (
-            <Suspense fallback={null}>
-              <WatchlistPanel
-                apiKey={apiKey}
-                onPick={sendToSmartPane}
-                search={searchFromFocusedPane}
-                activeSymbol={paneSymbols[focusedPane] ?? null}
-              />
-            </Suspense>
-          )}
-          {apiKey && wsUrl && panel === 'options' && (
-            <Suspense fallback={null}>
-              <OptionChainPanel
-                apiKey={apiKey}
-                onPick={sendToSmartPane}
-                activeSymbol={paneSymbols[focusedPane] ?? null}
-              />
-            </Suspense>
-          )}
-          {apiKey && wsUrl && panel === 'agent' && (
-            <Suspense fallback={null}>
-              <AgentPanel
-                getChartContext={readChartContext}
-                onChartCommand={applyChartCommands}
-                onCaptureChart={captureChart}
-              />
-            </Suspense>
-          )}
-          {apiKey && wsUrl && panel === 'alerts' && (
-            <Suspense fallback={null}>
-              <AlertsPanel
-                view={paneAlerts[alertsPaneId] ?? null}
-                log={alertLog}
-                paneLabel={alertsPaneLabel}
-                onEdit={openAlertEditor}
-                onClearLog={clearAlertLog}
-                revision={alertRevision}
-              />
-            </Suspense>
-          )}
-          {apiKey && wsUrl && panel === 'objects' && (
-            <ObjectsPanel model={paneObjects[objectsPaneId] ?? null} paneLabel={objectsPaneLabel} />
-          )}
-          {apiKey && wsUrl && panel === 'data' && (
-            <Suspense fallback={null}>
-              <DataWindowPanel
-                chart={
-                  paneObjects[objectsPaneId]
-                    ? (terminalsRef.current[objectsPaneId]?.liveChart() ?? null)
-                    : null
-                }
+            {apiKey && wsUrl && panel === 'options' && (
+              <Suspense fallback={null}>
+                <OptionChainPanel
+                  apiKey={apiKey}
+                  onPick={sendToSmartPane}
+                  activeSymbol={paneSymbols[focusedPane] ?? null}
+                />
+              </Suspense>
+            )}
+            {apiKey && wsUrl && panel === 'agent' && (
+              <Suspense fallback={null}>
+                <AgentPanel
+                  getChartContext={readChartContext}
+                  onChartCommand={applyChartCommands}
+                  onCaptureChart={captureChart}
+                />
+              </Suspense>
+            )}
+            {apiKey && wsUrl && panel === 'alerts' && (
+              <Suspense fallback={null}>
+                <AlertsPanel
+                  view={paneAlerts[alertsPaneId] ?? null}
+                  log={alertLog}
+                  paneLabel={alertsPaneLabel}
+                  onEdit={openAlertEditor}
+                  onClearLog={clearAlertLog}
+                  revision={alertRevision}
+                />
+              </Suspense>
+            )}
+            {apiKey && wsUrl && panel === 'objects' && (
+              <ObjectsPanel
+                model={paneObjects[objectsPaneId] ?? null}
                 paneLabel={objectsPaneLabel}
               />
-            </Suspense>
-          )}
-          {apiKey && wsUrl && panel === 'strategies' && (
-            <Suspense fallback={null}>
-              <StrategiesPanel getChartContext={readChartContext} />
-            </Suspense>
-          )}
-          {apiKey && wsUrl && panel === 'backtest' && (
-            <BacktestPanel
-              apiKey={apiKey}
-              getChartContext={readChartContext}
-              chartRevision={chartRevision}
-              onMarkChart={(markers, owner) => {
-                const marked = backtestMarked.current
-                const target = markers.length > 0 ? panelTarget() : (marked ?? panelTarget())
-                if (marked && marked !== target) marked.setBacktestMarkers([])
-                const ok =
-                  target?.setBacktestMarkers(
-                    markers as never,
-                    owner
-                      ? { indicatorId: idForScript(owner.file), onCleared: owner.onCleared }
+            )}
+            {apiKey && wsUrl && panel === 'data' && (
+              <Suspense fallback={null}>
+                <DataWindowPanel
+                  chart={
+                    paneObjects[objectsPaneId]
+                      ? (terminalsRef.current[objectsPaneId]?.liveChart() ?? null)
                       : null
-                  ) ?? false
-                backtestMarked.current = ok && markers.length > 0 ? target : null
-                return ok
-              }}
-              runFile={backtestFile}
-              onRan={() => setBacktestFile(null)}
-            />
-          )}
-          {apiKey && wsUrl && panel === 'scripts' && (
-            <Suspense fallback={null}>
-              <ScriptPanel
-                onAddToChart={(indicatorId) => {
-                  const target = panelTarget()
-                  if (!target) return false
-                  void target.addIndicatorById(indicatorId)
-                  return true
+                  }
+                  paneLabel={objectsPaneLabel}
+                />
+              </Suspense>
+            )}
+            {apiKey && wsUrl && panel === 'strategies' && (
+              <Suspense fallback={null}>
+                <StrategiesPanel getChartContext={readChartContext} />
+              </Suspense>
+            )}
+            {apiKey && wsUrl && panel === 'backtest' && (
+              <BacktestPanel
+                apiKey={apiKey}
+                getChartContext={readChartContext}
+                chartRevision={chartRevision}
+                onMarkChart={(markers, owner) => {
+                  const marked = backtestMarked.current
+                  const target = markers.length > 0 ? panelTarget() : (marked ?? panelTarget())
+                  if (marked && marked !== target) marked.setBacktestMarkers([])
+                  const ok =
+                    target?.setBacktestMarkers(
+                      markers as never,
+                      owner
+                        ? { indicatorId: idForScript(owner.file), onCleared: owner.onCleared }
+                        : null
+                    ) ?? false
+                  backtestMarked.current = ok && markers.length > 0 ? target : null
+                  return ok
                 }}
-                openFile={scriptSource}
-                onOpened={() => setScriptSource(null)}
-                onBacktest={(file) => {
-                  const pane = panelTarget()
-                  if (!pane) return false
-                  void pane.addIndicatorById(idForScript(file))
-                  setBacktestFile(file)
-                  setPanel('backtest')
-                  return true
-                }}
+                runFile={backtestFile}
+                onRan={() => setBacktestFile(null)}
               />
-            </Suspense>
-          )}
-
-          {/* Original SDK RightRail */}
-          {apiKey && wsUrl && <RightRail active={panel} onSelect={setPanel} />}
-        </main>
-
-        {/* Original SDK Bottom TradingDock (Orders, Positions, Trades, GTT) */}
-        {apiKey && wsUrl && showDockBar && (
-          <TradingDock
-            tab={dock}
-            onTabChange={(next) => {
-              setDock(next)
-              if (!next) setShowDockBar(false)
-            }}
-            apiKey={apiKey}
-            onPick={sendToSmartPane}
-            activeSymbol={paneSymbols[focusedPane] ?? null}
-            tradingLocked={tradingLocked}
-            bridge={orderBridge}
-          />
-        )}
-
-        {/* ═══ SCALPER FAST EXECUTION FOOTER BAR (OpenAI Light & Dark UI Style + Option Chain + In-Between Editable Lots/Qty) ═══ */}
-        <footer className="scalper-execution-bar">
-          {/* Left: CALL (CE) OpenAI UI Option Chain + [ BUY CE ] [ − Lots/Qty + ] [ SELL CE ] */}
-          <div className="scalper-order-cluster" data-option-side="CE">
-            {/* CE Strike Live Option Chain Selector (OpenAI UI Capsule when Closed & Open) */}
-            <ScalperStrikePicker
-              side="CE"
-              choices={enrichedChain.map((row) => ({
-                strike: row.strike,
-                symbol: row.ce?.symbol || '',
-                price: row.ce?.ltp,
-                openInterest: row.ce?.oi,
-                label: row.ce?.tag,
-                direction: row.ce?.symbol ? flashes[row.ce.symbol] : undefined,
-              }))}
-              value={ceStrike}
-              atmStrike={effectiveAtmStrike}
-              expiry={selectedExpiry}
-              open={ceChainOpen}
-              onOpenChange={setCeChainOpen}
-              onSelect={handleSelectCeStrike}
-              loading={isOptionChainLoading}
-              streaming={isOptionChainStreaming}
-              marketOpen={isMarketOpen(activeUnderlying.spotExchange)}
-              onRefresh={() => {
-                void refetchOptionChain()
-              }}
-              onFullChain={() => setPanel('options')}
-            />
-
-            {/* BUY CE Button — Solid Green (#16a34a / hover #15803d) in both Light & Dark Mode matching PlaceOrderDialog */}
-            <button
-              type="button"
-              disabled={orderBusy['CE-BUY']}
-              onClick={() => void executeQuickOrder('CE', 'BUY', ceActiveSym, ceLots, ceCustomQty)}
-              style={{
-                borderColor: chartTradeColors.border,
-              }}
-              className="scalper-action-button"
-              data-action="buy"
-            >
-              BUY CE
-            </button>
-
-            {/* CE Editable Lot & Quantity Control (OpenAI UI — Positioned IN BETWEEN BUY CE and SELL CE) */}
-            <div
-              className="scalper-quantity-control"
-              onWheel={(e) => {
-                e.preventDefault()
-                const delta = e.deltaY < 0 ? 1 : -1
-                setCeCustomQty(null)
-                setCeLots((l) => Math.max(1, l + delta))
-              }}
-              title="Edit CE Lots (L) or Quantity (Q) directly between Buy & Sell"
-            >
-              <button
-                type="button"
-                onClick={() => {
-                  setCeCustomQty(null)
-                  setCeLotsText(null)
-                  setCeQtyText(null)
-                  setCeLots((l) => Math.max(1, l - 1))
-                }}
-                className="scalper-step-button"
-                title="Decrease 1 CE lot"
-              >
-                −
-              </button>
-
-              {/* Direct Editable Lots Input */}
-              <div className="flex items-center gap-0.5">
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  aria-label="CE Lots"
-                  value={ceLotsText ?? String(ceLots)}
-                  onFocus={(e) => {
-                    setCeLotsText(String(ceLots))
-                    e.currentTarget.select()
+            )}
+            {apiKey && wsUrl && panel === 'scripts' && (
+              <Suspense fallback={null}>
+                <ScriptPanel
+                  onAddToChart={(indicatorId) => {
+                    const target = panelTarget()
+                    if (!target) return false
+                    void target.addIndicatorById(indicatorId)
+                    return true
                   }}
-                  onChange={(e) => {
-                    const raw = e.target.value.replace(/[^0-9]/g, '')
-                    setCeLotsText(raw)
-                    const num = parseInt(raw, 10)
-                    if (Number.isFinite(num) && num >= 1) {
-                      setCeCustomQty(null)
-                      setCeLots(num)
-                    }
+                  openFile={scriptSource}
+                  onOpened={() => setScriptSource(null)}
+                  onBacktest={(file) => {
+                    const pane = panelTarget()
+                    if (!pane) return false
+                    void pane.addIndicatorById(idForScript(file))
+                    setBacktestFile(file)
+                    setPanel('backtest')
+                    return true
                   }}
-                  onBlur={() => {
-                    const num = parseInt(ceLotsText ?? '', 10)
-                    const safe = Number.isFinite(num) && num >= 1 ? num : Math.max(1, ceLots)
-                    setCeLots(safe)
-                    setCeLotsText(null)
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') e.currentTarget.blur()
-                    else if (e.key === 'ArrowUp') {
-                      e.preventDefault()
-                      setCeCustomQty(null)
-                      setCeLots((l) => {
-                        const next = l + 1
-                        setCeLotsText(String(next))
-                        return next
-                      })
-                    } else if (e.key === 'ArrowDown') {
-                      e.preventDefault()
-                      setCeCustomQty(null)
-                      setCeLots((l) => {
-                        const next = Math.max(1, l - 1)
-                        setCeLotsText(String(next))
-                        return next
-                      })
-                    }
-                  }}
-                  className="scalper-lots-input"
                 />
-                <span className="scalper-quantity-unit">L</span>
-              </div>
-
-              {/* Direct Editable Quantity Input */}
-              <div className="scalper-total-quantity">
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  aria-label="CE Quantity"
-                  value={ceQtyText ?? String(ceOrderQty)}
-                  onFocus={(e) => {
-                    setCeQtyText(String(ceOrderQty))
-                    e.currentTarget.select()
-                  }}
-                  onChange={(e) => {
-                    const raw = e.target.value.replace(/[^0-9]/g, '')
-                    setCeQtyText(raw)
-                    const num = parseInt(raw, 10)
-                    if (Number.isFinite(num) && num >= 1) {
-                      setCeCustomQty(num)
-                      setCeLots(Math.max(1, Math.round(num / ceLotSize)))
-                    }
-                  }}
-                  onBlur={() => {
-                    const num = parseInt(ceQtyText ?? '', 10)
-                    if (Number.isFinite(num) && num >= 1) {
-                      setCeCustomQty(num)
-                      setCeLots(Math.max(1, Math.round(num / ceLotSize)))
-                    }
-                    setCeQtyText(null)
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') e.currentTarget.blur()
-                  }}
-                  className="scalper-qty-input"
-                />
-                <span>Q</span>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setCeCustomQty(null)
-                  setCeLotsText(null)
-                  setCeQtyText(null)
-                  setCeLots((l) => l + 1)
-                }}
-                className="scalper-step-button"
-                title="Increase 1 CE lot"
-              >
-                +
-              </button>
-            </div>
-
-            {/* SELL CE Button — Solid Red (#dc2626 / hover #b91c1c) in both Light & Dark Mode matching PlaceOrderDialog */}
-            <button
-              type="button"
-              disabled={orderBusy['CE-SELL']}
-              onClick={() => void executeQuickOrder('CE', 'SELL', ceActiveSym, ceLots, ceCustomQty)}
-              style={{
-                borderColor: chartTradeColors.border,
-              }}
-              className="scalper-action-button"
-              data-action="sell"
-            >
-              SELL CE
-            </button>
-          </div>
-
-          {/* Center: OpenAI UI Product Mode (Defaults to NRML) + Sandbox/Live Pill + Latency + Dock Toggle */}
-          <div className="scalper-deck-center">
-            <button
-              type="button"
-              onClick={() => setProduct((p) => (p === 'NRML' ? 'MIS' : 'NRML'))}
-              className="scalper-deck-control"
-              title="Default order product (NRML). Click to toggle NRML / MIS"
-            >
-              {product} • {armed ? '1-CLICK' : 'TICKET'}
-            </button>
-
-            <span
-              className="scalper-deck-mode"
-              data-sandbox={appMode === 'analyzer' ? 'true' : undefined}
-            >
-              {appMode === 'analyzer' ? 'SANDBOX' : 'LIVE'}
-            </span>
-
-            {lastOrderMs !== null && (
-              <span className="scalper-deck-latency">
-                <Activity className="h-3 w-3" />
-                {lastOrderMs}ms
-              </span>
+              </Suspense>
             )}
 
-            <button
-              type="button"
-              onClick={() => {
-                if (!dock) setDock('positions')
-                setShowDockBar((v) => !v)
-              }}
-              className="scalper-deck-control"
-              title="Show or hide the full Positions / Orders / Trades dock"
-            >
-              <Eye className="h-3 w-3" />
-              {showDockBar ? 'Hide Dock ▾' : 'Show Dock ▴'}
-            </button>
-          </div>
+            {/* Original SDK RightRail */}
+            {apiKey && wsUrl && <RightRail active={panel} onSelect={setPanel} />}
+          </main>
 
-          {/* Right: [ BUY PE ] [ − Lots/Qty + ] [ SELL PE ] + PUT (PE) OpenAI UI Option Chain */}
-          <div className="scalper-order-cluster" data-option-side="PE">
-            {/* BUY PE Button — Solid Green (#16a34a / hover #15803d) in both Light & Dark Mode matching PlaceOrderDialog */}
-            <button
-              type="button"
-              disabled={orderBusy['PE-BUY']}
-              onClick={() => void executeQuickOrder('PE', 'BUY', peActiveSym, peLots, peCustomQty)}
-              style={{
-                borderColor: chartTradeColors.border,
+          {/* Original SDK Bottom TradingDock (Orders, Positions, Trades, GTT) */}
+          {apiKey && wsUrl && showDockBar && (
+            <TradingDock
+              tab={dock}
+              onTabChange={(next) => {
+                setDock(next)
+                if (!next) setShowDockBar(false)
               }}
-              className="scalper-action-button"
-              data-action="buy"
-            >
-              BUY PE
-            </button>
+              apiKey={apiKey}
+              onPick={sendToSmartPane}
+              activeSymbol={paneSymbols[focusedPane] ?? null}
+              tradingLocked={tradingLocked}
+              bridge={orderBridge}
+            />
+          )}
 
-            {/* PE Editable Lot & Quantity Control (OpenAI UI — Positioned IN BETWEEN BUY PE and SELL PE) */}
-            <div
-              className="scalper-quantity-control"
-              onWheel={(e) => {
-                e.preventDefault()
-                const delta = e.deltaY < 0 ? 1 : -1
-                setPeCustomQty(null)
-                setPeLots((l) => Math.max(1, l + delta))
-              }}
-              title="Edit PE Lots (L) or Quantity (Q) directly between Buy & Sell"
-            >
+          {/* Contract selection and order execution */}
+          <footer className="scalper-execution-bar">
+            {/* CALL contract and execution controls */}
+            <div className="scalper-order-cluster" data-option-side="CE">
+              {/* Call contract selector */}
+              <ScalperStrikePicker
+                side="CE"
+                choices={enrichedChain.map((row) => ({
+                  strike: row.strike,
+                  symbol: row.ce?.symbol || '',
+                  price: row.ce?.ltp,
+                  openInterest: row.ce?.oi,
+                  label: row.ce?.tag,
+                  direction: row.ce?.symbol ? flashes[row.ce.symbol] : undefined,
+                }))}
+                value={ceStrike}
+                atmStrike={effectiveAtmStrike}
+                expiry={selectedExpiry}
+                open={ceChainOpen}
+                onOpenChange={setCeChainOpen}
+                onSelect={handleSelectCeStrike}
+                loading={isOptionChainLoading}
+                streaming={isOptionChainStreaming}
+                marketOpen={isMarketOpen(activeUnderlying.spotExchange)}
+                onRefresh={() => {
+                  void refetchOptionChain()
+                }}
+                onFullChain={() => setPanel('options')}
+              />
+
+              {/* Call market order actions */}
+              <ScalperOrderButton
+                side="CE" action="BUY" apiKey={apiKey}
+                scope={`${account}:${broker}:${appMode}`} sandbox={appMode === 'analyzer'}
+                contract={ceActiveSym} quantity={ceOrderQty} product={product}
+                disabled={orderBusy['CE-BUY']}
+                onClick={() =>
+                  void executeQuickOrder('CE', 'BUY', ceActiveSym, ceLots, ceCustomQty)
+                }
+              />
+
+              {/* Editable call size */}
+              <div
+                className="scalper-quantity-control"
+                onWheel={(e) => {
+                  e.preventDefault()
+                  const delta = e.deltaY < 0 ? 1 : -1
+                  setCeCustomQty(null)
+                  setCeLots((l) => Math.max(1, l + delta))
+                }}
+                title="Edit CE Lots (L) or Quantity (Q) directly between Buy & Sell"
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCeCustomQty(null)
+                    setCeLotsText(null)
+                    setCeQtyText(null)
+                    setCeLots((l) => Math.max(1, l - 1))
+                  }}
+                  className="scalper-step-button"
+                  title="Decrease 1 CE lot"
+                >
+                  −
+                </button>
+
+                {/* Direct Editable Lots Input */}
+                <div className="flex items-center gap-0.5">
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    aria-label="CE Lots"
+                    value={ceLotsText ?? String(ceLots)}
+                    onFocus={(e) => {
+                      setCeLotsText(String(ceLots))
+                      e.currentTarget.select()
+                    }}
+                    onChange={(e) => {
+                      const raw = e.target.value.replace(/[^0-9]/g, '')
+                      setCeLotsText(raw)
+                      const num = parseInt(raw, 10)
+                      if (Number.isFinite(num) && num >= 1) {
+                        setCeCustomQty(null)
+                        setCeLots(num)
+                      }
+                    }}
+                    onBlur={() => {
+                      const num = parseInt(ceLotsText ?? '', 10)
+                      const safe = Number.isFinite(num) && num >= 1 ? num : Math.max(1, ceLots)
+                      setCeLots(safe)
+                      setCeLotsText(null)
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') e.currentTarget.blur()
+                      else if (e.key === 'ArrowUp') {
+                        e.preventDefault()
+                        setCeCustomQty(null)
+                        setCeLots((l) => {
+                          const next = l + 1
+                          setCeLotsText(String(next))
+                          return next
+                        })
+                      } else if (e.key === 'ArrowDown') {
+                        e.preventDefault()
+                        setCeCustomQty(null)
+                        setCeLots((l) => {
+                          const next = Math.max(1, l - 1)
+                          setCeLotsText(String(next))
+                          return next
+                        })
+                      }
+                    }}
+                    className="scalper-lots-input"
+                  />
+                  <span className="scalper-quantity-unit">lots</span>
+                </div>
+
+                {/* Direct Editable Quantity Input */}
+                <div className="scalper-total-quantity">
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    aria-label="CE Quantity"
+                    value={ceQtyText ?? String(ceOrderQty)}
+                    onFocus={(e) => {
+                      setCeQtyText(String(ceOrderQty))
+                      e.currentTarget.select()
+                    }}
+                    onChange={(e) => {
+                      const raw = e.target.value.replace(/[^0-9]/g, '')
+                      setCeQtyText(raw)
+                      const num = parseInt(raw, 10)
+                      if (Number.isFinite(num) && num >= 1) {
+                        setCeCustomQty(num)
+                        setCeLots(Math.max(1, Math.round(num / ceLotSize)))
+                      }
+                    }}
+                    onBlur={() => {
+                      const num = parseInt(ceQtyText ?? '', 10)
+                      if (Number.isFinite(num) && num >= 1) {
+                        setCeCustomQty(num)
+                        setCeLots(Math.max(1, Math.round(num / ceLotSize)))
+                      }
+                      setCeQtyText(null)
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') e.currentTarget.blur()
+                    }}
+                    className="scalper-qty-input"
+                  />
+                  <span>qty</span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCeCustomQty(null)
+                    setCeLotsText(null)
+                    setCeQtyText(null)
+                    setCeLots((l) => l + 1)
+                  }}
+                  className="scalper-step-button"
+                  title="Increase 1 CE lot"
+                >
+                  +
+                </button>
+              </div>
+
+              <ScalperOrderButton
+                side="CE" action="SELL" apiKey={apiKey}
+                scope={`${account}:${broker}:${appMode}`} sandbox={appMode === 'analyzer'}
+                contract={ceActiveSym} quantity={ceOrderQty} product={product}
+                disabled={orderBusy['CE-SELL']}
+                onClick={() =>
+                  void executeQuickOrder('CE', 'SELL', ceActiveSym, ceLots, ceCustomQty)
+                }
+              />
+            </div>
+
+            {/* Center: OpenAI UI Product Mode (Defaults to NRML) + Sandbox/Live Pill + Latency + Dock Toggle */}
+            <div className="scalper-deck-center">
               <button
                 type="button"
-                onClick={() => {
-                  setPeCustomQty(null)
-                  setPeLotsText(null)
-                  setPeQtyText(null)
-                  setPeLots((l) => Math.max(1, l - 1))
-                }}
-                className="scalper-step-button"
-                title="Decrease 1 PE lot"
+                onClick={() => setProduct((p) => (p === 'NRML' ? 'MIS' : 'NRML'))}
+                className="scalper-deck-control"
+                title="Default order product (NRML). Click to toggle NRML / MIS"
               >
-                −
+                {product} • {armed ? '1-CLICK' : 'TICKET'}
               </button>
 
-              {/* Direct Editable Lots Input */}
-              <div className="flex items-center gap-0.5">
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  aria-label="PE Lots"
-                  value={peLotsText ?? String(peLots)}
-                  onFocus={(e) => {
-                    setPeLotsText(String(peLots))
-                    e.currentTarget.select()
-                  }}
-                  onChange={(e) => {
-                    const raw = e.target.value.replace(/[^0-9]/g, '')
-                    setPeLotsText(raw)
-                    const num = parseInt(raw, 10)
-                    if (Number.isFinite(num) && num >= 1) {
-                      setPeCustomQty(null)
-                      setPeLots(num)
-                    }
-                  }}
-                  onBlur={() => {
-                    const num = parseInt(peLotsText ?? '', 10)
-                    const safe = Number.isFinite(num) && num >= 1 ? num : Math.max(1, peLots)
-                    setPeLots(safe)
-                    setPeLotsText(null)
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') e.currentTarget.blur()
-                    else if (e.key === 'ArrowUp') {
-                      e.preventDefault()
-                      setPeCustomQty(null)
-                      setPeLots((l) => {
-                        const next = l + 1
-                        setPeLotsText(String(next))
-                        return next
-                      })
-                    } else if (e.key === 'ArrowDown') {
-                      e.preventDefault()
-                      setPeCustomQty(null)
-                      setPeLots((l) => {
-                        const next = Math.max(1, l - 1)
-                        setPeLotsText(String(next))
-                        return next
-                      })
-                    }
-                  }}
-                  className="scalper-lots-input"
-                />
-                <span className="scalper-quantity-unit">L</span>
-              </div>
+              <span
+                className="scalper-deck-mode"
+                data-sandbox={appMode === 'analyzer' ? 'true' : undefined}
+              >
+                {appMode === 'analyzer' ? 'SANDBOX' : 'LIVE'}
+              </span>
 
-              {/* Direct Editable Quantity Input */}
-              <div className="scalper-total-quantity">
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  aria-label="PE Quantity"
-                  value={peQtyText ?? String(peOrderQty)}
-                  onFocus={(e) => {
-                    setPeQtyText(String(peOrderQty))
-                    e.currentTarget.select()
-                  }}
-                  onChange={(e) => {
-                    const raw = e.target.value.replace(/[^0-9]/g, '')
-                    setPeQtyText(raw)
-                    const num = parseInt(raw, 10)
-                    if (Number.isFinite(num) && num >= 1) {
-                      setPeCustomQty(num)
-                      setPeLots(Math.max(1, Math.round(num / peLotSize)))
-                    }
-                  }}
-                  onBlur={() => {
-                    const num = parseInt(peQtyText ?? '', 10)
-                    if (Number.isFinite(num) && num >= 1) {
-                      setPeCustomQty(num)
-                      setPeLots(Math.max(1, Math.round(num / peLotSize)))
-                    }
-                    setPeQtyText(null)
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') e.currentTarget.blur()
-                  }}
-                  className="scalper-qty-input"
-                />
-                <span>Q</span>
-              </div>
+              {lastOrderMs !== null && (
+                <span className="scalper-deck-latency">
+                  <Activity className="h-3 w-3" />
+                  {lastOrderMs}ms
+                </span>
+              )}
 
               <button
                 type="button"
                 onClick={() => {
-                  setPeCustomQty(null)
-                  setPeLotsText(null)
-                  setPeQtyText(null)
-                  setPeLots((l) => l + 1)
+                  if (!dock) setDock('positions')
+                  setShowDockBar((v) => !v)
                 }}
-                className="scalper-step-button"
-                title="Increase 1 PE lot"
+                className="scalper-deck-control"
+                title="Show or hide the full Positions / Orders / Trades dock"
               >
-                +
+                <Eye className="h-3 w-3" />
+                {showDockBar ? 'Hide Dock ▾' : 'Show Dock ▴'}
               </button>
             </div>
 
-            {/* SELL PE Button — Solid Red (#dc2626 / hover #b91c1c) in both Light & Dark Mode matching PlaceOrderDialog */}
-            <button
-              type="button"
-              disabled={orderBusy['PE-SELL']}
-              onClick={() => void executeQuickOrder('PE', 'SELL', peActiveSym, peLots, peCustomQty)}
-              style={{
-                borderColor: chartTradeColors.border,
-              }}
-              className="scalper-action-button"
-              data-action="sell"
-            >
-              SELL PE
-            </button>
+            {/* PUT contract and execution controls */}
+            <div className="scalper-order-cluster" data-option-side="PE">
+              {/* Put contract selector */}
+              <ScalperStrikePicker
+                side="PE"
+                choices={enrichedChain.map((row) => ({
+                  strike: row.strike,
+                  symbol: row.pe?.symbol || '',
+                  price: row.pe?.ltp,
+                  openInterest: row.pe?.oi,
+                  label: row.pe?.tag,
+                  direction: row.pe?.symbol ? flashes[row.pe.symbol] : undefined,
+                }))}
+                value={peStrike}
+                atmStrike={effectiveAtmStrike}
+                expiry={selectedExpiry}
+                open={peChainOpen}
+                onOpenChange={setPeChainOpen}
+                onSelect={handleSelectPeStrike}
+                loading={isOptionChainLoading}
+                streaming={isOptionChainStreaming}
+                marketOpen={isMarketOpen(activeUnderlying.spotExchange)}
+                onRefresh={() => {
+                  void refetchOptionChain()
+                }}
+                onFullChain={() => setPanel('options')}
+              />
+              {/* Put market order actions */}
+              <ScalperOrderButton
+                side="PE" action="BUY" apiKey={apiKey}
+                scope={`${account}:${broker}:${appMode}`} sandbox={appMode === 'analyzer'}
+                contract={peActiveSym} quantity={peOrderQty} product={product}
+                disabled={orderBusy['PE-BUY']}
+                onClick={() =>
+                  void executeQuickOrder('PE', 'BUY', peActiveSym, peLots, peCustomQty)
+                }
+              />
 
-            {/* PE Strike Live Option Chain Selector (OpenAI UI Capsule when Closed & Open) */}
-            <ScalperStrikePicker
-              side="PE"
-              choices={enrichedChain.map((row) => ({
-                strike: row.strike,
-                symbol: row.pe?.symbol || '',
-                price: row.pe?.ltp,
-                openInterest: row.pe?.oi,
-                label: row.pe?.tag,
-                direction: row.pe?.symbol ? flashes[row.pe.symbol] : undefined,
-              }))}
-              value={peStrike}
-              atmStrike={effectiveAtmStrike}
-              expiry={selectedExpiry}
-              open={peChainOpen}
-              onOpenChange={setPeChainOpen}
-              onSelect={handleSelectPeStrike}
-              loading={isOptionChainLoading}
-              streaming={isOptionChainStreaming}
-              marketOpen={isMarketOpen(activeUnderlying.spotExchange)}
-              onRefresh={() => {
-                void refetchOptionChain()
-              }}
-              onFullChain={() => setPanel('options')}
-            />
-          </div>
-        </footer>
+              {/* Editable put size */}
+              <div
+                className="scalper-quantity-control"
+                onWheel={(e) => {
+                  e.preventDefault()
+                  const delta = e.deltaY < 0 ? 1 : -1
+                  setPeCustomQty(null)
+                  setPeLots((l) => Math.max(1, l + delta))
+                }}
+                title="Edit PE Lots (L) or Quantity (Q) directly between Buy & Sell"
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPeCustomQty(null)
+                    setPeLotsText(null)
+                    setPeQtyText(null)
+                    setPeLots((l) => Math.max(1, l - 1))
+                  }}
+                  className="scalper-step-button"
+                  title="Decrease 1 PE lot"
+                >
+                  −
+                </button>
+
+                {/* Direct Editable Lots Input */}
+                <div className="flex items-center gap-0.5">
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    aria-label="PE Lots"
+                    value={peLotsText ?? String(peLots)}
+                    onFocus={(e) => {
+                      setPeLotsText(String(peLots))
+                      e.currentTarget.select()
+                    }}
+                    onChange={(e) => {
+                      const raw = e.target.value.replace(/[^0-9]/g, '')
+                      setPeLotsText(raw)
+                      const num = parseInt(raw, 10)
+                      if (Number.isFinite(num) && num >= 1) {
+                        setPeCustomQty(null)
+                        setPeLots(num)
+                      }
+                    }}
+                    onBlur={() => {
+                      const num = parseInt(peLotsText ?? '', 10)
+                      const safe = Number.isFinite(num) && num >= 1 ? num : Math.max(1, peLots)
+                      setPeLots(safe)
+                      setPeLotsText(null)
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') e.currentTarget.blur()
+                      else if (e.key === 'ArrowUp') {
+                        e.preventDefault()
+                        setPeCustomQty(null)
+                        setPeLots((l) => {
+                          const next = l + 1
+                          setPeLotsText(String(next))
+                          return next
+                        })
+                      } else if (e.key === 'ArrowDown') {
+                        e.preventDefault()
+                        setPeCustomQty(null)
+                        setPeLots((l) => {
+                          const next = Math.max(1, l - 1)
+                          setPeLotsText(String(next))
+                          return next
+                        })
+                      }
+                    }}
+                    className="scalper-lots-input"
+                  />
+                  <span className="scalper-quantity-unit">lots</span>
+                </div>
+
+                {/* Direct Editable Quantity Input */}
+                <div className="scalper-total-quantity">
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    aria-label="PE Quantity"
+                    value={peQtyText ?? String(peOrderQty)}
+                    onFocus={(e) => {
+                      setPeQtyText(String(peOrderQty))
+                      e.currentTarget.select()
+                    }}
+                    onChange={(e) => {
+                      const raw = e.target.value.replace(/[^0-9]/g, '')
+                      setPeQtyText(raw)
+                      const num = parseInt(raw, 10)
+                      if (Number.isFinite(num) && num >= 1) {
+                        setPeCustomQty(num)
+                        setPeLots(Math.max(1, Math.round(num / peLotSize)))
+                      }
+                    }}
+                    onBlur={() => {
+                      const num = parseInt(peQtyText ?? '', 10)
+                      if (Number.isFinite(num) && num >= 1) {
+                        setPeCustomQty(num)
+                        setPeLots(Math.max(1, Math.round(num / peLotSize)))
+                      }
+                      setPeQtyText(null)
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') e.currentTarget.blur()
+                    }}
+                    className="scalper-qty-input"
+                  />
+                  <span>qty</span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPeCustomQty(null)
+                    setPeLotsText(null)
+                    setPeQtyText(null)
+                    setPeLots((l) => l + 1)
+                  }}
+                  className="scalper-step-button"
+                  title="Increase 1 PE lot"
+                >
+                  +
+                </button>
+              </div>
+
+              <ScalperOrderButton
+                side="PE" action="SELL" apiKey={apiKey}
+                scope={`${account}:${broker}:${appMode}`} sandbox={appMode === 'analyzer'}
+                contract={peActiveSym} quantity={peOrderQty} product={product}
+                disabled={orderBusy['PE-SELL']}
+                onClick={() =>
+                  void executeQuickOrder('PE', 'SELL', peActiveSym, peLots, peCustomQty)
+                }
+              />
+            </div>
+          </footer>
+        </div>
       </div>
     </ChartOrderBridgeContext.Provider>
   )

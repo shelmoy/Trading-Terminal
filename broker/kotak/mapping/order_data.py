@@ -398,6 +398,21 @@ def transform_positions_data(positions_data):
         # market, since it only computes an unrealized P&L when average_price is
         # above zero - so a carried-forward holding showed no cost and no P&L.
         factor = _price_factor(position)
+        # Preserve the broker's day ledger independently of its entry-cost average.
+        # Carry amounts are valued at the prior settlement; today's amounts are
+        # actual executions. Nested values retain precision in positionbook_service.
+        day_fields = ("cfBuyQty", "cfSellQty", "cfBuyAmt", "cfSellAmt",
+                      "flBuyQty", "flSellQty", "buyAmt", "sellAmt")
+        if all(field in position for field in day_fields):
+            transformed_position["day_pnl_inputs"] = {
+                "opening_quantity": _number(position, "cfBuyQty") - _number(position, "cfSellQty"),
+                "opening_value": _number(position, "cfBuyAmt") - _number(position, "cfSellAmt"),
+                "buy_quantity": _number(position, "flBuyQty"),
+                "sell_quantity": _number(position, "flSellQty"),
+                "buy_value": _number(position, "buyAmt"),
+                "sell_value": _number(position, "sellAmt"),
+                "multiplier": factor,
+            }
         cf_buy_amt, cf_sell_amt, carried_valuation = _carry_forward_amounts(position, factor)
         total_buy_amt = cf_buy_amt + _number(position, "buyAmt")
         total_sell_amt = cf_sell_amt + _number(position, "sellAmt")

@@ -21,6 +21,7 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu'
+import type { DayPnlSummary } from '@/lib/trading/dayPnl'
 
 interface IndexChoice {
   id: string
@@ -53,7 +54,11 @@ interface Props {
   visiblePanes: { spot: boolean; ce: boolean; pe: boolean }
   layout: 'split' | 'cols3'
   margin: string
-  pnl: number
+  broker: string
+  pnl: number | null
+  dayPnl: DayPnlSummary
+  pnlDate: string
+  pnlValuationNote: string
   exiting: boolean
   onNavigationToggle(): void
   onUnderlyingSelect(id: string): void
@@ -71,6 +76,10 @@ const price = (value: number) =>
     ? value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
     : '—'
 const signed = (value: number) => `${value >= 0 ? '+' : '−'}${Math.abs(value).toFixed(2)}`
+const moneyPnl = (value: number | null) =>
+  value == null
+    ? '—'
+    : `${value >= 0 ? '+' : '−'}₹${Math.abs(value).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
 const views = [
   { id: 'scalper', label: 'Scalper', Icon: Zap },
@@ -107,7 +116,8 @@ export function ScalperHeader(props: Props) {
     exiting,
   } = props
   const changeTone = quote.change == null ? undefined : quote.change >= 0 ? 'up' : 'down'
-  const pnlText = `${pnl >= 0 ? '+' : '−'}₹${Math.abs(pnl).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  const pnlText = moneyPnl(pnl)
+  const pnlTone = pnl == null ? undefined : pnl >= 0 ? 'up' : 'down'
   const changeText =
     quote.change != null && quote.changePct != null
       ? `${signed(quote.change)} (${signed(quote.changePct)}%)`
@@ -412,11 +422,14 @@ export function ScalperHeader(props: Props) {
             <button
               type="button"
               className="scalper-pnl-summary"
-              aria-label={`Account summary. P&L ${pnlText}. Available margin ${margin}`}
-              title="Account summary"
+              aria-label={`${sandbox ? 'Day' : props.broker} P&L ${pnlText}. ${props.dayPnl.message ?? props.pnlValuationNote}`}
+              title={
+                props.dayPnl.message ??
+                props.pnlValuationNote
+              }
             >
-              <small>P&amp;L</small>
-              <strong data-tone={pnl >= 0 ? 'up' : 'down'}>{pnlText}</strong>
+              <small>{sandbox ? 'Day' : props.broker || 'Broker'} P&amp;L</small>
+              <strong data-tone={pnlTone}>{pnlText}</strong>
               <ChevronDown size={10} />
             </button>
           </DropdownMenuTrigger>
@@ -426,15 +439,27 @@ export function ScalperHeader(props: Props) {
             className="scalper-header-menu scalper-account-menu"
           >
             <div className="scalper-menu-caption">
-              {sandbox ? 'Sandbox account' : 'Live account'}
+              {sandbox ? 'Sandbox' : `${props.broker.toUpperCase()} · Live`} · {props.pnlDate} · IST
             </div>
             <div className="scalper-account-detail">
               <span>Available margin</span>
               <strong>{margin}</strong>
             </div>
             <div className="scalper-account-detail">
-              <span>P&amp;L</span>
-              <strong data-tone={pnl >= 0 ? 'up' : 'down'}>{pnlText}</strong>
+              <span>{sandbox ? 'Realized today' : 'Closed positions'}</span>
+              <strong>{moneyPnl(sandbox ? props.dayPnl.realized : props.dayPnl.positionTotals?.closed ?? null)}</strong>
+            </div>
+            <div className="scalper-account-detail">
+              <span>{sandbox ? 'Open positions today' : 'Open positions incl. exits'}</span>
+              <strong>{moneyPnl(sandbox ? props.dayPnl.open : props.dayPnl.positionTotals?.open ?? null)}</strong>
+            </div>
+            <DropdownMenuSeparator />
+            <div className="scalper-account-detail">
+              <span>{sandbox ? 'Day total' : 'Broker position total'}</span>
+              <strong data-tone={pnlTone}>{pnlText}</strong>
+            </div>
+            <div className="scalper-menu-caption">
+              {props.dayPnl.message ?? props.pnlValuationNote}
             </div>
           </DropdownMenuContent>
         </DropdownMenu>
