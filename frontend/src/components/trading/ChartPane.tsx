@@ -1,19 +1,8 @@
-// ChevronDown survives for the context menu's submenu arrow only. The
-// toolbar buttons carry no caret: a chevron on every control is dead
-// weight when the whole row opens menus, and it reads as a dated form
-// control. Reserve the glyph for where it distinguishes something.
-import {
-  ArrowRight,
-  ChevronDown,
-  ClipboardPaste,
-  Copy,
-  RefreshCw,
-  Scissors,
-  Search,
-  Settings,
-  SlidersHorizontal,
-  Trash2,
-} from 'lucide-react'
+// Lucide survives for the context menu's cut glyph only, which the engine's
+// chrome set has no picture for; it is drawn at the engine's line weight.
+// Everything else in the toolbar and the menus is the engine's chrome set.
+import { ArrowRight, Scissors } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 import type { ChartObjects, LinkGroup } from 'openalgo-charts'
 import type { MagnetMode } from 'openalgo-charts/draw'
 import type { WorkspacePane } from 'openalgo-charts/workspace'
@@ -28,8 +17,6 @@ import {
   useRef,
   useState,
 } from 'react'
-import { GridIcon, PencilIcon, VolumeIcon } from '@/components/chart/menuIcons'
-import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -38,6 +25,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
+import type { DataExportOptions } from '@/lib/trading/chartDataExport'
 import {
   type ChartStateGate,
   type ChartStateView,
@@ -51,6 +39,56 @@ import {
   isBoxChartType,
 } from '@/lib/trading/chartTypes'
 import { MOD_KEY } from '@/lib/trading/drawingKeys'
+import { ChromeIcon, chromeStroke, lineStroke24 } from '@/lib/trading/glyphs'
+
+/**
+ * The snapshot glyph: a rounded body, a softened hump and an open lens ring, on
+ * the engine's 16 unit grid at its line. The engine's own camera is square
+ * cornered with a dot for a lens, which reads as a box at 16px.
+ */
+function CameraIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={chromeStroke(16)}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+    >
+      <path d="M3.5 4.5h1.6l.9-1.3c.2-.3.5-.45.85-.45h2.3c.35 0 .65.15.85.45l.9 1.3h1.6a1.75 1.75 0 0 1 1.75 1.75v5.25a1.75 1.75 0 0 1-1.75 1.75h-9A1.75 1.75 0 0 1 1.75 11.5V6.25A1.75 1.75 0 0 1 3.5 4.5z" />
+      <circle cx="8" cy="8.6" r="2.4" />
+    </svg>
+  )
+}
+
+/**
+ * The Indicators glyph: a derived series read against a level. Kept over the
+ * engine's formula glyph at the user's request, because traders already know
+ * this mark; it is drawn at the toolbar's line weight so the set still reads as
+ * one. The dashed rule and the dot survive 16px.
+ */
+function IndicatorIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={lineStroke24(16)}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+    >
+      <path d="M3 12h18" strokeDasharray="2.5 2.6" opacity={0.55} />
+      <path d="M3 17.5c2.2 0 2.4-9 5-9s2.6 8 5 8 2.6-9 5-9 2.6 4.5 3 5" />
+      <circle cx="13" cy="12" r="1.6" fill="currentColor" stroke="none" />
+    </svg>
+  )
+}
+
 import { normalizeCustomInterval, type IntervalGroup } from '@/lib/trading/intervals'
 import { lotInfoText } from '@/lib/trading/legend'
 import { isProfileKind } from '@/lib/trading/profileSettings'
@@ -71,7 +109,6 @@ import {
   type TerminalContextMenu,
   TradingTerminal,
 } from '@/lib/trading/terminal'
-import type { DataExportOptions } from '@/lib/trading/chartDataExport'
 import type { WorkspaceReplaySnapshot } from '@/lib/trading/workspaceReplay'
 import { cn } from '@/lib/utils'
 import { formatTradingSymbol } from '@/lib/trading/displaySymbol'
@@ -83,7 +120,6 @@ import { ChartToolbar } from './ChartToolbar'
 import { ComparisonMenu } from './ComparisonMenu'
 import { DrawingStyleBar } from './DrawingStyleBar'
 import { DrawingTextDialog, type TextRequest } from './DrawingTextDialog'
-import { PriceScaleMenu } from './PriceScaleMenu'
 import { ChartOrderBridgeContext } from './dock/chartOrderBridge'
 import {
   type ChartOrderAction,
@@ -94,8 +130,19 @@ import {
   stillHeld,
 } from './dock/chartOrderRows'
 import { cancelDockOrder, closeDockPosition } from './dock/orderActions'
+import { PriceScaleMenu } from './PriceScaleMenu'
 import { QuickIntervalBox, useQuickEntry, useSeedBuffer } from './QuickEntry'
 import { Tip } from './Tip'
+import {
+  MenuChevron,
+  TB_BTN,
+  TB_COUNT,
+  TB_ICON,
+  TB_LABEL_2XL,
+  TB_LABEL_WIDE,
+  TB_ON,
+  ToolbarDivider,
+} from './toolbarStyles'
 
 // The forms a chart opens on request: none is needed to paint it. Mounted only
 // while open, so their code is fetched on the first opening rather than with
@@ -122,134 +169,6 @@ const PlaceOrderDialog = lazy(() =>
 const SymbolSearchDialog = lazy(() =>
   import('./SymbolSearchDialog').then((m) => ({ default: m.SymbolSearchDialog }))
 )
-
-/** Camera (screenshot) glyph. */
-/** Hand-drawn to sit at the same 1.7 stroke as the camera beside them. */
-function DownloadIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.7}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
-      aria-hidden="true"
-    >
-      <path d="M12 3v11m0 0 4-4m-4 4-4-4" />
-      <path d="M4 17v3h16v-3" />
-    </svg>
-  )
-}
-
-function CopyIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.7}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
-      aria-hidden="true"
-    >
-      <rect x="8" y="8" width="12" height="12" rx="2" />
-      <path d="M16 5.5H6A1.5 1.5 0 0 0 4.5 7v10" />
-    </svg>
-  )
-}
-
-function CameraIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.7}
-      className={className}
-      aria-hidden="true"
-    >
-      <path d="M4 8.5h3l1.2-2h7.6L18 8.5h2A1.5 1.5 0 0 1 21.5 10v8A1.5 1.5 0 0 1 20 19.5H4A1.5 1.5 0 0 1 2.5 18v-8A1.5 1.5 0 0 1 4 8.5Z" />
-      <circle cx="12" cy="13.5" r="3.2" />
-    </svg>
-  )
-}
-
-const glyph = {
-  fill: 'none' as const,
-  stroke: 'currentColor',
-  strokeWidth: 1.7,
-  strokeLinecap: 'round' as const,
-  strokeLinejoin: 'round' as const,
-}
-
-/**
- * An oscillator crossing its threshold: a signal line weaving over and under a
- * dashed level, with the crossing marked.
- *
- * The old glyph was a bare zig-zag, which is the generic "chart" mark this
- * toolbar already uses for the chart-type button and the legend. This one says
- * what an indicator IS here rather than that a chart exists: a derived series
- * read against a level. The dashed rule and the dot survive 16px, which a
- * busier picture of a whole sub-pane would not.
- */
-function IndicatorIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" {...glyph} className={className} aria-hidden="true">
-      <path d="M3 12h18" strokeDasharray="2.5 2.6" opacity={0.55} />
-      <path d="M3 17.5c2.2 0 2.4-9 5-9s2.6 8 5 8 2.6-9 5-9 2.6 4.5 3 5" />
-      <circle cx="13" cy="12" r="1.6" fill="currentColor" stroke="none" />
-    </svg>
-  )
-}
-
-/**
- * Rewind: two triangles pointing back to a bar.
- *
- * It was a circular arrow, which is the universal glyph for "reload" and reads
- * as though the button refetches the chart. Replay winds the session back and
- * plays it forward, so a transport control is the honest picture. Filled rather
- * than stroked, so it stays legible at 16px where two thin outlined triangles
- * turn to mush.
- */
-function ReplayIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" className={className} fill="currentColor" aria-hidden="true">
-      <path d="M11.5 6.4v11.2a.7.7 0 0 1-1.1.6l-7.1-5.6a.7.7 0 0 1 0-1.2l7.1-5.6a.7.7 0 0 1 1.1.6Z" />
-      <path d="M20.5 6.4v11.2a.7.7 0 0 1-1.1.6l-7.1-5.6a.7.7 0 0 1 0-1.2l7.1-5.6a.7.7 0 0 1 1.1.6Z" />
-    </svg>
-  )
-}
-
-/** Curved arrow back. Mirrored for redo, so the pair reads as one control. */
-function UndoIcon({ className, flip }: { className?: string; flip?: boolean }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      className={className}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.8}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-      style={flip ? { transform: 'scaleX(-1)' } : undefined}
-    >
-      <path d="M9 14 4 9l5-5" />
-      <path d="M4 9h10a6 6 0 0 1 0 12h-3" />
-    </svg>
-  )
-}
-
-function FullscreenIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" {...glyph} className={className} aria-hidden="true">
-      <path d="M13 4h7v7M11 20H4v-7M20 4l-7 7M4 20l7-7" />
-    </svg>
-  )
-}
 
 function ledClass(state: string): string {
   if (state === 'live' || state === 'open')
@@ -1109,7 +1028,7 @@ export function ChartPane({
     const id = d.id
     const rows: {
       label: string
-      icon: typeof Copy
+      icon: React.ReactNode
       shortcut?: string
       keys?: string
       danger?: boolean
@@ -1120,21 +1039,21 @@ export function ChartPane({
       rows.push(
         {
           label: 'Copy',
-          icon: Copy,
+          icon: <ChromeIcon id="copy" size={14} />,
           shortcut: `${MOD_KEY}+C`,
           keys: `${mod}+C`,
           run: () => void t.copyDrawings(id),
         },
         {
           label: 'Cut',
-          icon: Scissors,
+          icon: <Scissors className="h-3.5 w-3.5" strokeWidth={lineStroke24(14)} />,
           shortcut: `${MOD_KEY}+X`,
           keys: `${mod}+X`,
           run: () => void t.cutDrawings(id),
         },
         {
           label: 'Delete drawing',
-          icon: Trash2,
+          icon: <ChromeIcon id="trash" size={14} />,
           shortcut: 'Del',
           keys: 'Delete',
           run: () => t.removeDrawing(id),
@@ -1144,7 +1063,7 @@ export function ChartPane({
       if (d.paste)
         rows.push({
           label: 'Paste',
-          icon: ClipboardPaste,
+          icon: <ChromeIcon id="paste" size={14} />,
           shortcut: `${MOD_KEY}+V`,
           keys: `${mod}+V`,
           run: () => void t.pasteDrawings(),
@@ -1152,7 +1071,7 @@ export function ChartPane({
       if (d.removable > 0)
         rows.push({
           label: `Remove all drawings (${d.removable})`,
-          icon: Trash2,
+          icon: <ChromeIcon id="trash" size={14} />,
           danger: true,
           run: () => t.requestRemoveAllDrawings(),
         })
@@ -1240,7 +1159,13 @@ export function ChartPane({
       style={style}
       className={cn(
         'relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border bg-card outline-none focus-visible:ring-2 focus-visible:ring-primary',
-        toolbarHost !== undefined && focused && 'border-primary'
+        // The frame says which chart the shared toolbar drives, so it only
+        // speaks when there is more than one chart: the accent edge plus a
+        // soft outer ring, which holds on a near-white accent in dark mode as
+        // well as on the violet. A lone chart keeps its quiet border.
+        toolbarHost !== undefined &&
+          focused &&
+          '[&:not(:only-child)]:border-primary/80 [&:not(:only-child)]:ring-2 [&:not(:only-child)]:ring-primary/25'
       )}
       onFocusCapture={(event) => {
         if (transitionLocked || (event.target as Element).closest('[data-workspace-control]'))
@@ -1269,12 +1194,19 @@ export function ChartPane({
           aria-label="Chart controls"
           data-toolbar-pane={paneId}
           inert={transitionLocked ? true : undefined}
-          className="flex flex-nowrap items-center gap-1.5 no-scrollbar overflow-x-auto border-b bg-background/60 px-2 py-1.5"
+          // Borderless controls on one band. In the page's row the band and
+          // its hairline belong to the page, which also holds the controls
+          // either side of this one; on its own (full screen) it carries them.
+          className={cn(
+            'flex h-10 min-w-0 flex-nowrap items-center gap-0.5 no-scrollbar overflow-x-auto px-1',
+            (toolbarHost === undefined || fullscreen) && 'oa-terminal-band border-b'
+          )}
         >
           {!fullscreen && chartSelector && (
             <div className="sticky left-0 z-10 shrink-0 bg-background pr-1">{chartSelector}</div>
           )}
-          {/* Symbol pill — opens the search modal for this pane */}
+          {/* Symbol: a search glyph in a soft square, then the instrument in
+            the row's strongest type. The square is what says it is a field. */}
           <Tip
             tip={{
               title: 'Symbol search',
@@ -1282,27 +1214,29 @@ export function ChartPane({
               sub: 'Find an instrument, or build an expression such as NIFTY/BANKNIFTY',
             }}
           >
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 shrink-0 gap-2 font-medium"
+            <button
+              type="button"
+              className={cn(TB_BTN, 'gap-1.5 pl-0.5 pr-1.5 text-foreground')}
               onClick={() => {
                 setSearchSeed(null)
                 setSearchOpen(true)
               }}
             >
-              <Search className="h-3.5 w-3.5 opacity-60" />
-              <span className="max-w-[15rem] truncate" title={sym?.symbol ?? undefined}>
+              <span className="flex h-6 w-6 items-center justify-center rounded-md bg-foreground/[0.07] text-muted-foreground">
+                <ChromeIcon id="search" size={14} />
+              </span>
+              <span className="max-w-[10rem] truncate text-sm font-semibold tracking-tight">
                 {formatTradingSymbol(sym?.symbol) || 'Search symbol'}
               </span>
               {sym && (
-                <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                <span className="rounded bg-foreground/[0.07] px-1 py-0.5 text-[10px] font-medium leading-none text-muted-foreground">
                   {sym.exchange}
                 </span>
               )}
-            </Button>
+            </button>
           </Tip>
 
+          <ToolbarDivider />
           {/* Timeframe */}
           <DropdownMenu>
             <Tip
@@ -1313,14 +1247,14 @@ export function ChartPane({
               }}
             >
               <DropdownMenuTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-8 min-w-12 shrink-0 gap-1 font-medium"
+                <button
+                  type="button"
+                  className={cn(TB_BTN, 'min-w-9 gap-1 font-semibold text-foreground')}
                   aria-label={`Interval ${interval}`}
                 >
-                  {interval || '—'}
-                </Button>
+                  {interval || '-'}
+                  <MenuChevron />
+                </button>
               </DropdownMenuTrigger>
             </Tip>
             <DropdownMenuContent container={menuHost} align="start" className="w-64">
@@ -1335,8 +1269,8 @@ export function ChartPane({
                         key={iv}
                         onSelect={() => changeInterval(iv)}
                         className={cn(
-                          'justify-center rounded border text-xs',
-                          iv === interval && 'border-primary bg-primary/10 text-primary'
+                          'justify-center rounded text-xs',
+                          iv === interval && 'bg-primary/15 font-semibold text-primary'
                         )}
                       >
                         {iv}
@@ -1379,18 +1313,19 @@ export function ChartPane({
             </DropdownMenuContent>
           </DropdownMenu>
 
+          <ToolbarDivider />
           {/* Chart type */}
           <DropdownMenu>
             <Tip tip={{ title: 'Chart type', sub: chartTypeDef.label }}>
               <DropdownMenuTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-8 shrink-0 gap-1"
+                <button
+                  type="button"
+                  className={cn(TB_BTN, 'gap-1 px-1.5')}
                   aria-label={`Chart type: ${chartTypeDef.label}`}
                 >
                   <span className="h-4 w-4">{chartTypeIcon(chartTypeDef.iconKey)}</span>
-                </Button>
+                  <MenuChevron />
+                </button>
               </DropdownMenuTrigger>
             </Tip>
             <DropdownMenuContent container={menuHost} align="start" className="w-60">
@@ -1423,10 +1358,9 @@ export function ChartPane({
                 sub: 'Box size, reversal and colours',
               }}
             >
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-8 w-8 shrink-0 p-0"
+              <button
+                type="button"
+                className={cn(TB_BTN, TB_ICON)}
                 aria-label={`${chartTypeDef.label} settings`}
                 onClick={() => {
                   const type = chartType
@@ -1439,31 +1373,33 @@ export function ChartPane({
                     })
                 }}
               >
-                <SlidersHorizontal className="h-4 w-4" />
-              </Button>
+                <ChromeIcon id="settings" />
+              </button>
             </Tip>
           )}
 
+          <ToolbarDivider />
+
           {/* Product. Always exactly two options (MIS|CNC for equity, MIS|NRML
             for derivatives), so a segmented control spends double the width to
-            show one you are not using — this toggles and names the other. */}
+            show one you are not using; this toggles and names the other. */}
           {sym && !sym.quoteOnly && sym.productOptions.length > 0 && (
             <Tip tip={{ title: `Product ${sym.product}`, sub: `Click for ${nextProduct}` }}>
               <button
                 type="button"
                 onClick={() => changeProduct(nextProduct)}
                 aria-label={`Product ${sym.product}, click for ${nextProduct}`}
-                className="h-8 shrink-0 whitespace-nowrap rounded-md bg-primary px-2.5 text-xs font-semibold text-primary-foreground transition-opacity hover:opacity-90"
+                className={cn(TB_BTN, TB_ON, 'px-2.5 text-xs font-semibold tracking-wide')}
               >
                 {sym.product}
               </button>
             </Tip>
           )}
 
-          {/* Quantity */}
-          <div className="flex shrink-0 items-center gap-1">
+          {/* Quantity: the one field in the row keeps a fill, so it reads as editable. */}
+          <div className="flex shrink-0 items-center gap-1.5 pl-1">
             <label
-              className="whitespace-nowrap text-[11px] text-muted-foreground"
+              className="whitespace-nowrap text-[11px] font-medium text-muted-foreground"
               htmlFor={`qty-${paneId}`}
             >
               {sym?.lots ? 'Lots' : 'Qty'}
@@ -1474,18 +1410,19 @@ export function ChartPane({
               min={1}
               value={qty}
               onChange={(e) => changeQty(Number(e.target.value))}
-              className="h-8 w-16 text-sm"
+              className="h-7 w-16 rounded-md border-transparent bg-foreground/[0.06] px-2 text-[13px] font-medium tabular-nums shadow-none hover:bg-foreground/[0.09] focus-visible:border-ring dark:bg-foreground/[0.07]"
             />
           </div>
+
+          <ToolbarDivider />
 
           {/* Indicators. A dialog rather than a dropdown: 105 built-ins in a
             264px column was a scroll race, with no way to jump to a category
             and no memory of what you reach for daily. */}
           <Tip tip={{ title: 'Indicators', sub: 'Add studies and saved scripts to this chart' }}>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 shrink-0 gap-1"
+            <button
+              type="button"
+              className={TB_BTN}
               aria-label="Indicators"
               onClick={() => {
                 setPickerOpen(true)
@@ -1493,24 +1430,21 @@ export function ChartPane({
               }}
             >
               <IndicatorIcon className="h-4 w-4" />
-              <span className="hidden sm:inline">Indicators</span>
-              {indicators.length > 0 && (
-                <span className="rounded bg-primary/15 px-1 text-[10px] font-medium text-primary">
-                  {indicators.length}
-                </span>
-              )}
-            </Button>
+              <span className={TB_LABEL_2XL}>Indicators</span>
+              {indicators.length > 0 && <span className={TB_COUNT}>{indicators.length}</span>}
+            </button>
           </Tip>
 
           <Tip tip={{ title: 'Alerts', sub: 'Create and manage price alerts for this chart' }}>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 shrink-0"
+            <button
+              type="button"
+              className={TB_BTN}
+              aria-label="Alerts"
               onClick={() => void terminalRef.current?.openAlerts()}
             >
-              Alerts
-            </Button>
+              <ChromeIcon id="bell" />
+              <span className={TB_LABEL_WIDE}>Alerts</span>
+            </button>
           </Tip>
 
           <ComparisonMenu
@@ -1548,15 +1482,14 @@ export function ChartPane({
               sub: 'Play the session back bar by bar from a bar you pick',
             }}
           >
-            <Button
-              variant="outline"
-              size="sm"
+            <button
+              type="button"
               aria-label="Replay"
               className={cn(
-                'h-8 shrink-0 gap-1',
+                TB_BTN,
                 (workspaceReplay
                   ? workspaceReplay.phase !== 'idle'
-                  : replay || picking || replayLoading) && 'border-primary text-primary'
+                  : replay || picking || replayLoading) && TB_ON
               )}
               onClick={() => {
                 if (onReplayStart) {
@@ -1569,77 +1502,79 @@ export function ChartPane({
                 else terminalRef.current?.startReplay()
               }}
             >
-              <ReplayIcon className="h-4 w-4" />
-              <span className="hidden sm:inline">Replay</span>
-            </Button>
+              <ChromeIcon id="replay" />
+              <span className={TB_LABEL_2XL}>Replay</span>
+            </button>
           </Tip>
 
           {/* Workspace controls share the selected chart's row, but they are not
             about this chart: they are the grid, its templates and whether a
-            click anywhere in it sends an order. They sat between Alerts and
-            Compare, which put two scopes in one run of buttons and left Compare
-            stranded on the far side of the One-Click badge from the two
-            controls it belongs with. Their own group, after everything that
-            acts on this chart, with the divider saying so. */}
+            click anywhere in it sends an order. Their own groups, after
+            everything that acts on this chart, with the dividers saying so. */}
           {!fullscreen && layoutPicker}
 
           {/* Undo / redo for the chart. Also on the drawing rail, and deliberately
             here as well: the rail can be hidden, and these two are reached far
             more often than the tool that made the shape. Both stay mounted and
-            go disabled rather than disappearing, so the toolbar does not reflow
+            go dimmed rather than disappearing, so the toolbar does not reflow
             as you draw. They walk the chart's changes (drawings, studies,
             panes, scales, chart type, interval), and the labels say "chart
             change" so that, next to a Replay button and an order panel, they
             cannot read as taking back an order. */}
-          <div className="mx-0.5 h-5 w-px shrink-0 bg-border" aria-hidden="true" />
+          <ToolbarDivider />
           {/* Wrapped, so the label still shows while the button is disabled: a
               disabled button takes no pointer events of its own. */}
-          <Tip tip={{ title: 'Undo chart change', chord: `${MOD_KEY}+Z`, sub: 'Orders are never undone' }}>
+          <Tip
+            tip={{
+              title: 'Undo chart change',
+              chord: `${MOD_KEY}+Z`,
+              sub: 'Orders are never undone',
+            }}
+          >
             <span className="inline-flex shrink-0">
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 shrink-0"
+              <button
+                type="button"
+                className={cn(TB_BTN, TB_ICON)}
                 onClick={() => terminalRef.current?.historyPress('undo')}
                 disabled={!history.canUndo}
                 aria-label="Undo chart change"
               >
-                <UndoIcon className="h-[17px] w-[17px]" />
-              </Button>
+                <ChromeIcon id="undo" />
+              </button>
             </span>
           </Tip>
           <Tip tip={{ title: 'Redo chart change', chord: `${MOD_KEY}+Y` }}>
             <span className="inline-flex shrink-0">
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 shrink-0"
+              <button
+                type="button"
+                className={cn(TB_BTN, TB_ICON)}
                 onClick={() => terminalRef.current?.historyPress('redo')}
                 disabled={!history.canRedo}
                 aria-label="Redo chart change"
               >
-                <UndoIcon className="h-[17px] w-[17px]" flip />
-              </Button>
+                <ChromeIcon id="redo" />
+              </button>
             </span>
           </Tip>
 
-          {/* Right side: connection LED + actions */}
-          <div className="ml-auto flex shrink-0 items-center gap-1.5">
+          {/* Right side: the feed, then the view actions. */}
+          <div className="ml-auto flex shrink-0 items-center gap-0.5 pl-2">
             {branding && (
               <a
                 href={branding.href}
                 target="_blank"
                 rel="noopener noreferrer"
                 aria-label={branding.label}
-                className="inline-flex min-h-11 items-center whitespace-nowrap px-2 text-[11px] text-muted-foreground hover:text-foreground hover:underline sm:min-h-0 sm:px-0"
+                className="inline-flex min-h-11 items-center whitespace-nowrap px-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground sm:min-h-0"
               >
                 {branding.label}
               </a>
             )}
             <span
-              className={cn('inline-block h-2.5 w-2.5 rounded-full', ledClass(wsState))}
+              className={cn('mx-1 inline-block h-2 w-2 shrink-0 rounded-full', ledClass(wsState))}
               title={`WebSocket ${wsState}`}
             />
+            <ToolbarDivider />
             {/* Full screen chart (additive) */}
             <Tip
               tip={
@@ -1648,15 +1583,14 @@ export function ChartPane({
                   : { title: 'Full screen chart', sub: 'This chart alone, with its toolbar' }
               }
             >
-              <Button
-                variant="ghost"
-                size="icon"
-                className={cn('h-8 w-8', fullscreen && 'text-primary')}
+              <button
+                type="button"
+                className={cn(TB_BTN, TB_ICON, fullscreen && TB_ON)}
                 onClick={toggleFullscreen}
                 aria-label="Toggle full screen chart"
               >
-                <FullscreenIcon className="h-[17px] w-[17px]" />
-              </Button>
+                <ChromeIcon id={fullscreen ? 'fullscreen-exit' : 'fullscreen'} />
+              </button>
             </Tip>
             {/* Positioned, so the menu below anchors to the camera and not to
               whatever ancestor happens to be relative. */}
@@ -1669,10 +1603,9 @@ export function ChartPane({
                   sub: 'Save or copy an image, or download the data. Shift-click saves the image.',
                 }}
               >
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className={cn('h-8 w-8', snapOpen && 'text-primary')}
+                <button
+                  type="button"
+                  className={cn(TB_BTN, TB_ICON, snapOpen && TB_ON)}
                   ref={snapBtnRef}
                   onClick={(e) => {
                     // Shift skips the menu and saves, for anyone who only ever saves.
@@ -1685,8 +1618,8 @@ export function ChartPane({
                   }}
                   aria-label="Chart snapshot"
                 >
-                  <CameraIcon className="h-[17px] w-[17px]" />
-                </Button>
+                  <CameraIcon className="h-4 w-4" />
+                </button>
               </Tip>
               {snapOpen && (
                 <>
@@ -1709,7 +1642,7 @@ export function ChartPane({
                         void terminalRef.current?.screenshot()
                       }}
                     >
-                      <DownloadIcon className="h-3.5 w-3.5 opacity-70" />
+                      <ChromeIcon id="download" size={14} className="opacity-70" />
                       Download image
                     </button>
                     <button
@@ -1735,7 +1668,7 @@ export function ChartPane({
                         if (terminal) setDataExport(terminal.dataExportChoices())
                       }}
                     >
-                      <DownloadIcon className="h-3.5 w-3.5 opacity-70" />
+                      <ChromeIcon id="download" size={14} className="opacity-70" />
                       Download CSV
                     </button>
                     <button
@@ -1746,7 +1679,7 @@ export function ChartPane({
                         void terminalRef.current?.copyScreenshot()
                       }}
                     >
-                      <CopyIcon className="h-3.5 w-3.5 opacity-70" />
+                      <ChromeIcon id="copy" size={14} className="opacity-70" />
                       Copy image
                     </button>
                   </div>
@@ -2163,7 +2096,7 @@ export function ChartPane({
                         if (id) run(() => terminalRef.current?.openIndicatorSettings(id))
                       }}
                     >
-                      <Settings className="h-3.5 w-3.5 opacity-70" />
+                      <ChromeIcon id="settings" size={14} className="opacity-70" />
                       <span className="truncate">{ctx.study.study.name} settings...</span>
                     </button>
                     <button
@@ -2183,7 +2116,7 @@ export function ChartPane({
                         if (id) run(() => terminalRef.current?.removeIndicatorById(id))
                       }}
                     >
-                      <Trash2 className="h-3.5 w-3.5 opacity-70" />
+                      <ChromeIcon id="trash" size={14} className="opacity-70" />
                       <span className="truncate">Remove {ctx.study.study.name}</span>
                     </button>
                   </>
@@ -2354,7 +2287,7 @@ export function ChartPane({
                 aria-keyshortcuts={r.keys}
                 onClick={() => run(r.run)}
               >
-                <r.icon className="h-3.5 w-3.5 opacity-70" />
+                <span className="inline-flex opacity-70">{r.icon}</span>
                 <span className="flex-1">{r.label}</span>
                 {r.shortcut && <span className="text-xs text-muted-foreground">{r.shortcut}</span>}
               </button>
@@ -2370,7 +2303,7 @@ export function ChartPane({
               className={ctxRow}
               onClick={() => run(() => terminalRef.current?.resetScale())}
             >
-              <RefreshCw className="h-3.5 w-3.5 opacity-70" />
+              <ChromeIcon id="refresh" size={14} className="opacity-70" />
               Reset chart view
             </button>
             {/* Settings sits on the chart it configures rather than in the
@@ -2385,7 +2318,7 @@ export function ChartPane({
                 })
               }
             >
-              <Settings className="h-3.5 w-3.5 opacity-70" />
+              <ChromeIcon id="settings" size={14} className="opacity-70" />
               Chart settings...
             </button>
             {/* The alerts list, the same one the toolbar's Alerts opens. */}
@@ -2394,12 +2327,12 @@ export function ChartPane({
               className={ctxRow}
               onClick={() => run(() => void terminalRef.current?.openAlerts())}
             >
-              <span className="w-3.5" aria-hidden="true" />
+              <ChromeIcon id="bell" size={14} className="opacity-70" />
               Alerts...
             </button>
             {onToggleRail && (
               <button type="button" className={ctxRow} onClick={() => run(onToggleRail)}>
-                <PencilIcon className="h-3.5 w-3.5 opacity-70" />
+                <ChromeIcon id="brush" size={14} className="opacity-70" />
                 {railVisible ? 'Hide drawing tools' : 'Show drawing tools'}
               </button>
             )}
@@ -2415,7 +2348,7 @@ export function ChartPane({
                   })
                 }
               >
-                <VolumeIcon className="h-3.5 w-3.5 opacity-70" />
+                <ChromeIcon id="chart-column" size={14} className="opacity-70" />
                 {volumeOn ? 'Hide volume' : 'Show volume'}
               </button>
             )}
@@ -2434,9 +2367,9 @@ export function ChartPane({
                 }}
                 aria-expanded={gridSub}
               >
-                <GridIcon className="h-3.5 w-3.5 opacity-70" />
+                <ChromeIcon id="grid" size={14} className="opacity-70" />
                 Grid
-                <ChevronDown className="ml-auto h-3.5 w-3.5 -rotate-90 opacity-60" />
+                <ChromeIcon id="chevron-right" size={14} className="ml-auto opacity-60" />
               </button>
               {gridSub && (
                 <div

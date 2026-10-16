@@ -18,10 +18,10 @@ import type {
   IndicatorBarSource,
   IndicatorInputCondition,
   IndicatorState,
-  SeriesTransformSpec,
   LinkGroup,
   SeriesMarker,
   SeriesMarkers,
+  SeriesTransformSpec,
 } from 'openalgo-charts'
 import {
   AlertController,
@@ -97,6 +97,15 @@ import type { AlertFacts } from './alertMessage'
 import { fillAlertMessage } from './alertMessage'
 import { askToNotify } from './alertNotify'
 import { mergeAlertRuntime } from './alertRuntime'
+import { csvOptions, type DataExportOptions } from './chartDataExport'
+import { chartMotionOptions } from './chartMotion'
+import { CHART_READY, type ChartStateView, chartLoadFailed, chartNoData } from './chartState'
+import {
+  type ComparisonScale,
+  comparisonScaleOf,
+  isComparisonScale,
+  storedComparisonMode,
+} from './comparisonScale'
 import { ExpressionFeed, isChartExpression, resolveLeg } from './expressionFeed'
 import {
   type IndicatorTemplateMode,
@@ -104,16 +113,14 @@ import {
   readStoredIndicators,
   type StoredIndicatorRecord,
 } from './indicatorTemplates'
-import { chartMotionOptions } from './chartMotion'
-import { CHART_READY, type ChartStateView, chartLoadFailed, chartNoData } from './chartState'
 import { openInterestCapability } from './openInterest'
 import {
   isPriceAxisSetting,
   PRICE_AXIS_DEFAULTS,
-  PriceAxisController,
   type PriceAxisCommand,
-  pinOnceMeasured,
+  PriceAxisController,
   type PriceAxisMenu,
+  pinOnceMeasured,
   priceAxisPatch,
   priceAxisSettingsView,
   priceAxisShortcuts,
@@ -127,14 +134,7 @@ import {
   isTradingSessionOpenForCandles,
   isValidIntradaySessionBar,
 } from './sessionHours'
-import { csvOptions, type DataExportOptions } from './chartDataExport'
 import { TerminalComparisons } from './terminalComparisons'
-import {
-  type ComparisonScale,
-  comparisonScaleOf,
-  isComparisonScale,
-  storedComparisonMode,
-} from './comparisonScale'
 import type { PreparedReplayMember } from './workspaceReplay'
 import {
   createWorkspacePanePreferences,
@@ -419,15 +419,8 @@ import {
   describeDrawings,
   isAgentDrawingId,
 } from './chartContract'
-import { CurrentDrawingSource, profileObjectProvider } from './chartObjectsAdapter'
-import {
-  applyChartDialogMetrics,
-  buildChartTheme,
-  mutedTradeColors,
-  resolveCssColor,
-  volumeColor,
-} from './chartTheme'
 import { type HistoryDirection, TerminalHistory } from './chartHistory'
+import { CurrentDrawingSource, profileObjectProvider } from './chartObjectsAdapter'
 import {
   foldedStudyIds,
   panesToFold,
@@ -435,6 +428,14 @@ import {
   type StudyMenu,
   studyMenuAt,
 } from './chartPaneActions'
+import {
+  applyChartDialogMetrics,
+  buildChartTheme,
+  mutedTradeColors,
+  quietVolumeStyle,
+  resolveCssColor,
+  volumeColor,
+} from './chartTheme'
 import { CHART_TYPES, volumeUnderElements } from './chartTypes'
 import { COMPARISON_PALETTE } from './comparisonColors'
 import {
@@ -2190,11 +2191,12 @@ export class TradingTerminal {
 
   private volumeCandleStyle(): SeriesStyle {
     const theme = this.chart?.theme()
-    return {
+    const style: SeriesStyle = {
       upColor: theme?.upColor,
       downColor: theme?.downColor,
       ...this.chart?.primarySeriesInfo()?.style,
     }
+    return theme ? quietVolumeStyle(style, theme.background) : style
   }
 
   private syncRenkoV4Trend(reset = false): void {
@@ -2819,6 +2821,13 @@ export class TradingTerminal {
       // pane under the pointer instead, and a second press puts the stack back.
       // Reset stays on the toolbar button, the right-click menu and Home.
       doubleClick: 'maximize',
+      // The wheel zooms about the latest bar, which stays at the right edge while
+      // history compresses or opens out beside it; Ctrl or Cmd with the wheel
+      // zooms about the pointer. The engine's default holds the bar under the
+      // pointer instead, so a zoom out with the pointer in the middle or over the
+      // empty space past the last bar pushed the bars left and the gap beside
+      // the latest one kept widening.
+      zoomAnchor: 'right',
       shortcuts: {
         disabledCommands: ['screenshot', 'toggleGridVert', 'toggleGridHorz'],
         customShortcuts: [
@@ -8342,7 +8351,26 @@ export class TradingTerminal {
     } catch (error) {
       if (this.initialWorkspacePane) this.destroy()
       throw error
+    } finally {
+      this.settleReady()
     }
+  }
+
+  private settleReady: () => void = () => {}
+  private readonly ready = new Promise<void>((resolve) => {
+    this.settleReady = resolve
+  })
+
+  /**
+   * Settles once `init` has finished, whether or not it succeeded.
+   *
+   * The pane is handed to the page before its data feed exists and before it
+   * has loaded its remembered instrument. A symbol loaded from outside before
+   * this settles is either refused for want of a feed or overtaken by that
+   * first load, so a caller that is not reacting to a click waits for it.
+   */
+  whenReady(): Promise<void> {
+    return this.ready
   }
 
   private async initialize(): Promise<void> {
