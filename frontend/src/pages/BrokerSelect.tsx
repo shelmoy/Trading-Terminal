@@ -29,6 +29,7 @@ const allBrokers = [
   { id: 'definedge', name: 'Definedge', authType: 'totp' },
   { id: 'firstock', name: 'Firstock', authType: 'totp' },
   { id: 'flattrade', name: 'Flattrade', authType: 'oauth' },
+  { id: 'fyers', name: 'FYERS', authType: 'oauth' },
   { id: 'motilal', name: 'Motilal Oswal', authType: 'totp' },
   { id: 'groww', name: 'Groww', authType: 'totp' },
   { id: 'hdfcsecurities', name: 'HDFC Securities', authType: 'oauth' },
@@ -125,6 +126,11 @@ export default function BrokerSelect() {
       return
     }
 
+    if (selectedBroker === 'fyers' && brokerConfig.broker_name !== 'fyers') {
+      setError('Configure your FYERS App ID, secret and /fyers/callback redirect URL in Profile before connecting FYERS.')
+      return
+    }
+
     setIsSubmitting(true)
     let loginUrl = ''
 
@@ -187,6 +193,17 @@ export default function BrokerSelect() {
       case 'zerodha':
         loginUrl = `https://kite.trade/connect/login?api_key=${broker_api_key}`
         break
+
+      case 'fyers': {
+        const params = new URLSearchParams({
+          client_id: broker_api_key,
+          redirect_uri: redirect_url,
+          response_type: 'code',
+          state: generateRandomState(),
+        })
+        loginUrl = `https://api-t1.fyers.in/api/v3/generate-authcode?${params}`
+        break
+      }
 
       case 'arrow':
         // Arrow hosted login; redirects back to /arrow/callback with request-token.

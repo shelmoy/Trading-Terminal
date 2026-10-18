@@ -6,10 +6,9 @@
  * - Adaptive ATR Deadband dynamically scaled by Kaufman's Efficiency Ratio (Kaufman ER + EMA smoothing)
  * - Trailing stepping trendline that filters chop and locks onto directional swings
  * - Presets: Default, Fast Response, Smooth Trend
- * - Color Presets: Custom, Classic, Aqua, Cosmic, Cyber, Neon
- * - Orbiting star field visualization (inner & outer orbiting harmonics)
- * - Modern, uncluttered little arrow markers (arrowUp / arrowDown) at trend flips
- * - Live telemetry dashboard table and alert triggers
+ * - Electric-blue bullish / luminous-maroon bearish lines with triangle markers at trend flips
+ * - Fast Response defaults, with balanced and smooth presets available
+ * - Alert triggers without decorative overlays or dashboard tables
  * - Memory & CPU optimized (single-pass arrays, fast math, zero memory leaks)
  *
  * Author: QuantAlgo / Adapted for OpenAlgo Charting Terminal
@@ -54,25 +53,6 @@ export default function ({
       }
     }
     return atr
-  }
-
-  // Pine Script ta.sma
-  function calcSMA(values, length) {
-    const n = values.length
-    const out = new Array(n).fill(null)
-    if (n === 0 || length <= 0) return out
-
-    let sum = 0
-    for (let i = 0; i < n; i++) {
-      sum += values[i]
-      if (i >= length) {
-        sum -= values[i - length]
-      }
-      if (i >= length - 1) {
-        out[i] = sum / length
-      }
-    }
-    return out
   }
 
   // Pine Script ta.ema
@@ -153,9 +133,10 @@ export default function ({
         key: 'preset',
         type: 'select',
         label: 'Preset Configuration',
-        default: 'Default',
+        default: 'Fast Response',
         options: [
-          { label: 'Default (Balanced 14/4)', value: 'Default' },
+          { label: 'Responsive', value: 'Default' },
+          { label: 'Balanced (14/4)', value: 'Balanced' },
           { label: 'Fast Response (Intraday 8/2)', value: 'Fast Response' },
           { label: 'Smooth Trend (Position 21/4)', value: 'Smooth Trend' },
         ],
@@ -260,35 +241,6 @@ export default function ({
 
       // 3. Visual & Style Settings
       {
-        key: 'colorPreset',
-        type: 'select',
-        label: 'Color Preset',
-        default: 'Custom',
-        options: [
-          { label: 'Custom', value: 'Custom' },
-          { label: 'Classic (Green/Red)', value: 'Classic' },
-          { label: 'Aqua (Cyan/Orange)', value: 'Aqua' },
-          { label: 'Cosmic (Teal/Purple)', value: 'Cosmic' },
-          { label: 'Cyber (Cyan/Orange)', value: 'Cyber' },
-          { label: 'Neon (Yellow/Magenta)', value: 'Neon' },
-        ],
-        group: '3. Visual Settings',
-      },
-      {
-        key: 'bullishColor',
-        type: 'color',
-        label: 'Bullish Color',
-        default: '#00ffaa',
-        group: '3. Visual Settings',
-      },
-      {
-        key: 'bearishColor',
-        type: 'color',
-        label: 'Bearish Color',
-        default: '#ff3344',
-        group: '3. Visual Settings',
-      },
-      {
         key: 'showTrend',
         type: 'boolean',
         label: 'Show Trend Line',
@@ -296,40 +248,13 @@ export default function ({
         group: '3. Visual Settings',
       },
       {
-        key: 'showStars',
-        type: 'boolean',
-        label: 'Show Orbiting Stars',
-        default: true,
-        group: '3. Visual Settings',
-      },
-      {
         key: 'showSignals',
         type: 'boolean',
-        label: 'Show Buy/Sell Arrow Markers',
+        label: 'Show Trend Change Triangles',
         default: true,
         group: '3. Visual Settings',
       },
 
-      // 4. Dashboard
-      {
-        key: 'showDash',
-        type: 'boolean',
-        label: 'Show Dashboard Table',
-        default: true,
-        group: '4. Dashboard',
-      },
-      {
-        key: 'dashLoc',
-        type: 'select',
-        label: 'Location',
-        default: 'Top Right',
-        options: [
-          { label: 'Top Right', value: 'Top Right' },
-          { label: 'Bottom Right', value: 'Bottom Right' },
-          { label: 'Bottom Left', value: 'Bottom Left' },
-        ],
-        group: '4. Dashboard',
-      },
     ],
 
     plots: [
@@ -337,43 +262,13 @@ export default function ({
         key: 'trendLineBull',
         type: 'line',
         title: 'Gaussian Trend Bull',
-        colorKey: 'bullishColor',
-        style: { lineWidth: 3 },
+        style: { color: '#448aff', lineWidth: 3 },
       },
       {
         key: 'trendLineBear',
         type: 'line',
         title: 'Gaussian Trend Bear',
-        colorKey: 'bearishColor',
-        style: { lineWidth: 3 },
-      },
-      {
-        key: 'innerStarA',
-        type: 'line',
-        title: 'Inner Star A',
-        colorKey: 'bullishColor',
-        style: { lineWidth: 2, lineStyle: 'dotted' },
-      },
-      {
-        key: 'innerStarB',
-        type: 'line',
-        title: 'Inner Star B',
-        colorKey: 'bearishColor',
-        style: { lineWidth: 2, lineStyle: 'dotted' },
-      },
-      {
-        key: 'outerStarA',
-        type: 'line',
-        title: 'Outer Star A',
-        colorKey: 'bullishColor',
-        style: { lineWidth: 1, lineStyle: 'dashed' },
-      },
-      {
-        key: 'outerStarB',
-        type: 'line',
-        title: 'Outer Star B',
-        colorKey: 'bearishColor',
-        style: { lineWidth: 1, lineStyle: 'dashed' },
+        style: { color: '#c94f70', lineWidth: 3 },
       },
     ],
 
@@ -381,10 +276,6 @@ export default function ({
       const n = bars.length
       const outTrendLineBull = new Array(n).fill(null)
       const outTrendLineBear = new Array(n).fill(null)
-      const outInnerStarA = new Array(n).fill(null)
-      const outInnerStarB = new Array(n).fill(null)
-      const outOuterStarA = new Array(n).fill(null)
-      const outOuterStarB = new Array(n).fill(null)
 
       const trendSeries = new Array(n).fill(0)
       const signalsSeries = new Array(n).fill(0)
@@ -395,10 +286,6 @@ export default function ({
         return {
           trendLineBull: outTrendLineBull,
           trendLineBear: outTrendLineBear,
-          innerStarA: outInnerStarA,
-          innerStarB: outInnerStarB,
-          outerStarA: outOuterStarA,
-          outerStarB: outOuterStarB,
           trend: trendSeries,
           signals: signalsSeries,
           trendLine: trendLineArr,
@@ -407,7 +294,7 @@ export default function ({
       }
 
       // Handle Preset Overrides
-      const preset = String(inputs.preset || 'Default')
+      const preset = String(inputs.preset || 'Fast Response')
       let gLen = Number(inputs.length ?? 14)
       let gPoles = Number(inputs.poles ?? 4)
       let atrLen = Number(inputs.atrLength ?? 14)
@@ -417,7 +304,7 @@ export default function ({
       let chopMult = Number(inputs.chopMultiplier ?? 2.5)
       let effSmooth = Number(inputs.efficiencySmooth ?? 5)
 
-      if (preset === 'Fast Response') {
+      if (preset === 'Fast Response' || preset === 'Default') {
         gLen = 8
         gPoles = 2
         atrLen = 10
@@ -439,7 +326,6 @@ export default function ({
 
       const adaptiveWidth = Boolean(inputs.adaptiveWidth ?? true)
       const showTrend = Boolean(inputs.showTrend ?? true)
-      const showStars = Boolean(inputs.showStars ?? true)
 
       // Price Source
       const srcKey = inputs.source || 'close'
@@ -476,13 +362,6 @@ export default function ({
 
       // 3. Trend Width (ATR * Multiplier)
       const atrSeries = calcATR(bars, atrLen)
-
-      // Visual Span for Orbiting Stars (SMA(high - low, 14))
-      const barSpans = new Array(n)
-      for (let i = 0; i < n; i++) {
-        barSpans[i] = bars[i].high - bars[i].low
-      }
-      const visualSpan = calcSMA(barSpans, 14)
 
       // 4. Stepping Trend Line State Machine
       let trendLine = filteredPrice[0] ?? src[0]
@@ -524,6 +403,12 @@ export default function ({
         trendSeries[i] = trendDir
         trendLineArr[i] = trendLine
 
+        // Join colour segments at a reversal so the line stays continuous.
+        if (showTrend && i > 0 && trendDir !== prevTrendDir) {
+          if (trendDir === 1) outTrendLineBull[i - 1] = prevTrendLine
+          else if (trendDir === -1) outTrendLineBear[i - 1] = prevTrendLine
+        }
+
         // Trend line output
         if (showTrend) {
           if (trendDir === 1) {
@@ -533,20 +418,7 @@ export default function ({
           }
         }
 
-        // Orbiting Stars Calculation
-        if (showStars) {
-          const vSpan = visualSpan[i] ?? (bars[i].high - bars[i].low)
-          const theta = i * 0.52
-          const innerOrbit = vSpan * 0.85
-          const outerOrbit = vSpan * 1.75
-
-          outInnerStarA[i] = trendLine + Math.sin(theta) * innerOrbit
-          outInnerStarB[i] = trendLine + Math.sin(theta + Math.PI) * innerOrbit
-          outOuterStarA[i] = trendLine + Math.cos(theta * 0.71 + 1.1) * outerOrbit
-          outOuterStarB[i] = trendLine + Math.cos(theta * 0.71 + 1.1 + Math.PI) * outerOrbit
-        }
-
-        // Detect Trend Flips for Arrow Markers & Alerts
+        // Detect Trend Flips for Triangle Markers & Alerts
         if (trendDir === 1 && prevTrendDir !== 1) {
           signalsSeries[i] = 1 // Bullish Flip
         } else if (trendDir === -1 && prevTrendDir !== -1) {
@@ -557,10 +429,6 @@ export default function ({
       return {
         trendLineBull: outTrendLineBull,
         trendLineBear: outTrendLineBear,
-        innerStarA: outInnerStarA,
-        innerStarB: outInnerStarB,
-        outerStarA: outOuterStarA,
-        outerStarB: outOuterStarB,
         trend: trendSeries,
         signals: signalsSeries,
         trendLine: trendLineArr,
@@ -573,149 +441,36 @@ export default function ({
       const out = []
       const n = bars.length
 
-      // Resolved Colors based on Color Preset
-      const cp = settings.colorPreset || 'Custom'
-      let bullColor = settings.bullishColor || '#00ffaa'
-      let bearColor = settings.bearishColor || '#ff3344'
-
-      if (cp === 'Classic') {
-        bullColor = '#00ff00'
-        bearColor = '#ff0000'
-      } else if (cp === 'Aqua') {
-        bullColor = '#00d4ff'
-        bearColor = '#ff8c00'
-      } else if (cp === 'Cosmic') {
-        bullColor = '#49ffce'
-        bearColor = '#9932cc'
-      } else if (cp === 'Cyber') {
-        bullColor = '#00cccc'
-        bearColor = '#ff6600'
-      } else if (cp === 'Neon') {
-        bullColor = '#ffff00'
-        bearColor = '#ff00ff'
-      }
+      const bullColor = '#448aff'
+      const bearColor = '#c94f70'
 
       for (let i = 0; i < n; i++) {
         const sig = values.signals[i]
         if (!sig) continue
 
         const bar = bars[i]
-        const barSpan = Math.max((bar.high - bar.low) * 0.15, (bar.close || 1) * 0.0008)
 
         if (sig === 1) {
-          // Modern, uncluttered little green arrow up
+          // One compact triangle below a bullish trend-change candle.
           out.push({
             time: bar.time,
-            position: 'atPrice',
-            price: bar.low - barSpan,
-            shape: 'arrowUp',
+            position: 'belowBar',
+            shape: 'triangleUp',
             size: 'small',
             color: bullColor,
           })
         } else if (sig === -1) {
-          // Modern, uncluttered little red arrow down
+          // One compact triangle above a bearish trend-change candle.
           out.push({
             time: bar.time,
-            position: 'atPrice',
-            price: bar.high + barSpan,
-            shape: 'arrowDown',
+            position: 'aboveBar',
+            shape: 'triangleDown',
             size: 'small',
             color: bearColor,
           })
         }
       }
       return out
-    },
-
-    table({ bars, values, settings }) {
-      if (settings.showDash === false || bars.length === 0) return null
-      const lastIdx = bars.length - 1
-      const trend = values.trend?.[lastIdx] ?? 0
-      const tLine = values.trendLine?.[lastIdx]
-      const eff = values.efficiency?.[lastIdx] ?? 0
-      const preset = String(settings.preset || 'Default')
-
-      const isDark =
-        typeof document === 'undefined' ||
-        document.documentElement.classList.contains('dark')
-
-      const bullColor = isDark ? '#22c55e' : '#15803d'
-      const bearColor = isDark ? '#f87171' : '#dc2626'
-      const neutralColor = isDark ? '#d4d4d8' : '#475569'
-      const trendText = trend === 1 ? '▲ BULLISH' : trend === -1 ? '▼ BEARISH' : '● NEUTRAL'
-      const trendColor = trend === 1 ? bullColor : trend === -1 ? bearColor : neutralColor
-      const trendCellBg =
-        trend === 1
-          ? isDark
-            ? 'rgba(34, 197, 94, 0.16)'
-            : 'rgba(22, 163, 74, 0.14)'
-          : trend === -1
-            ? isDark
-              ? 'rgba(248, 113, 113, 0.16)'
-              : 'rgba(220, 38, 38, 0.14)'
-            : isDark
-              ? 'rgba(255, 255, 255, 0.06)'
-              : 'rgba(15, 23, 42, 0.06)'
-
-      let pos = 'top-right'
-      if (settings.dashLoc === 'Bottom Left') pos = 'bottom-left'
-      else if (settings.dashLoc === 'Bottom Right') pos = 'bottom-right'
-
-      const headerTitleBg = isDark ? 'rgba(28, 28, 34, 0.96)' : '#f1f5f9'
-      const headerBadgeBg = isDark ? 'rgba(39, 39, 46, 0.96)' : '#e2e8f0'
-      const rowLabelBg = isDark ? 'rgba(18, 18, 22, 0.94)' : 'rgba(255, 255, 255, 0.96)'
-      const rowValueBg = isDark ? 'rgba(22, 22, 27, 0.94)' : 'rgba(248, 250, 252, 0.96)'
-      const headerTitleColor = isDark ? '#ffffff' : '#09090b'
-      const labelColor = isDark ? '#d4d4d8' : '#334155'
-      const valueColor = isDark ? '#ffffff' : '#09090b'
-
-      const rows = [
-        [
-          { text: '  Gaussian Filter Trend', bgColor: headerTitleBg, textColor: headerTitleColor, bold: true, align: 'left', fontSize: 11 },
-          { text: `${preset} `, bgColor: headerBadgeBg, textColor: bullColor, bold: true, align: 'right', fontSize: 11 },
-        ],
-        [
-          { text: '  Trend Direction', bgColor: rowLabelBg, textColor: labelColor, align: 'left', fontSize: 11 },
-          { text: `${trendText} `, bgColor: trendCellBg, textColor: trendColor, bold: true, align: 'right', fontSize: 11 },
-        ],
-      ]
-
-      if (tLine !== null && tLine !== undefined) {
-        rows.push([
-          { text: '  Trend Level', bgColor: rowLabelBg, textColor: labelColor, align: 'left', fontSize: 11 },
-          { text: `${Number(tLine).toFixed(2)} `, bgColor: rowValueBg, textColor: valueColor, bold: true, align: 'right', fontSize: 11 },
-        ])
-      }
-
-      const effColor = eff > 0.5 ? bullColor : isDark ? '#fbbf24' : '#b45309'
-      const effBg =
-        eff > 0.5
-          ? isDark
-            ? 'rgba(34, 197, 94, 0.14)'
-            : 'rgba(22, 163, 74, 0.12)'
-          : isDark
-            ? 'rgba(245, 158, 11, 0.14)'
-            : 'rgba(245, 158, 11, 0.12)'
-
-      rows.push([
-        { text: '  Efficiency Ratio', bgColor: rowLabelBg, textColor: labelColor, align: 'left', fontSize: 11 },
-        { text: `${(eff * 100).toFixed(1)}% `, bgColor: effBg, textColor: effColor, bold: true, align: 'right', fontSize: 11 },
-      ])
-
-      return {
-        rows,
-        options: {
-          position: pos,
-          cellWidth: 'auto',
-          cellHeight: 22,
-          margin: 12,
-          borderColor: isDark ? 'rgba(255, 255, 255, 0.10)' : 'rgba(0, 0, 0, 0.12)',
-          borderWidth: 1,
-          frameColor: isDark ? 'rgba(255, 255, 255, 0.22)' : 'rgba(0, 0, 0, 0.20)',
-          frameWidth: 1,
-          background: isDark ? 'rgba(15, 15, 18, 0.95)' : 'rgba(255, 255, 255, 0.96)',
-        },
-      }
     },
 
     alerts: [
