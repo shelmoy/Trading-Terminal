@@ -45,6 +45,7 @@ Strike Labels (different for CE and PE):
     - Strike ABOVE ATM: CE is OTM, PE is ITM
 """
 
+import math
 from datetime import UTC, datetime
 from typing import Any
 
@@ -88,6 +89,11 @@ def _reference_metadata(symbol: str, exchange: str) -> dict[str, str]:
         "underlying_symbol": symbol,
         "underlying_exchange": exchange,
     }
+
+
+def _usable_reference(response: dict) -> bool:
+    value = (response.get("data") or {}).get("ltp")
+    return isinstance(value, (int, float)) and math.isfinite(value) and value > 0
 
 
 def get_strikes_with_labels(
@@ -483,6 +489,27 @@ def get_option_chain(
                 symbol=quote_symbol, exchange=quote_exchange, api_key=api_key
             )
 
+        if not success and is_broker_busy(status_code):
+            return False, quote_response, status_code
+        if (not success or not _usable_reference(quote_response)) and quote_exchange in (
+            "NSE_INDEX",
+            "BSE_INDEX",
+            "NSE",
+            "BSE",
+        ):
+            future = find_near_month_futures(
+                base_symbol, get_option_exchange(quote_exchange), final_expiry
+            )
+            if future:
+                future_ok, future_quote, future_status = get_quotes(
+                    symbol=future["symbol"], exchange=future["exchange"], api_key=api_key
+                )
+                if not future_ok and is_broker_busy(future_status):
+                    return False, future_quote, future_status
+                if future_ok and _usable_reference(future_quote):
+                    quote_symbol, quote_exchange = future["symbol"], future["exchange"]
+                    success, quote_response, status_code = future_ok, future_quote, future_status
+
         if not success:
             return (
                 False,
@@ -496,7 +523,7 @@ def get_option_chain(
         underlying_data = quote_response.get("data", {})
         underlying_ltp = underlying_data.get("ltp")
         underlying_prev_close = underlying_data.get("prev_close", 0)
-        if underlying_ltp is None:
+        if not _usable_reference(quote_response):
             return (
                 False,
                 {"status": "error", "message": f"Could not determine LTP for {quote_symbol}"},
