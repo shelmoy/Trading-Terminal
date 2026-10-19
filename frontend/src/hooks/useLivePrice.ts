@@ -30,6 +30,8 @@ export interface UseLivePriceOptions {
   enabled?: boolean
   /** Time in ms after which WebSocket data is considered stale (default: 5000) */
   staleThreshold?: number
+  /** Keep the last received tick until a newer quote snapshot arrives (watchlists). */
+  retainLastTick?: boolean
   /** Whether to use MultiQuotes API as fallback when WebSocket unavailable (default: true) */
   useMultiQuotesFallback?: boolean
   /** Interval in ms to refresh MultiQuotes data (default: 30000) */
@@ -87,6 +89,7 @@ export function useLivePrice<T extends PriceableItem>(
   const {
     enabled = true,
     staleThreshold = 5000,
+    retainLastTick = false,
     useMultiQuotesFallback = true,
     multiQuotesRefreshInterval = 30000,
     pauseWhenHidden = true,
@@ -236,10 +239,12 @@ export function useLivePrice<T extends PriceableItem>(
 
       // Check if WebSocket LTP is fresh (accepts pre-market & live session ticks in 0-1ms)
       const hasWsData =
-        exchangeMarketActive &&
+        (retainLastTick || exchangeMarketActive) &&
         wsData?.data?.ltp &&
         wsData.lastUpdate &&
-        Date.now() - wsData.lastUpdate < staleThreshold
+        (retainLastTick
+          ? !mqData?.ltp || wsData.lastUpdate >= multiQuotesFetchedAt
+          : Date.now() - wsData.lastUpdate < staleThreshold)
 
       // Check if we have MultiQuotes data (fallback when WebSocket not available)
       const hasMqData = !hasWsData && mqData?.ltp
@@ -315,7 +320,17 @@ export function useLivePrice<T extends PriceableItem>(
         _dataSource: dataSource,
       } as T & { _dataSource: string }
     })
-  }, [items, marketData, multiQuotes, isMarketOpen, getMarketStatus, wsConnected, staleThreshold])
+  }, [
+    items,
+    marketData,
+    multiQuotes,
+    multiQuotesFetchedAt,
+    isMarketOpen,
+    getMarketStatus,
+    wsConnected,
+    staleThreshold,
+    retainLastTick,
+  ])
 
   return {
     data: enhancedData,

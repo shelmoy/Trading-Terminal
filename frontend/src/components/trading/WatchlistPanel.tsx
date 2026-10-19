@@ -43,8 +43,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { type PriceableItem, useLivePrice } from '@/hooks/useLivePrice'
-import { useMarketStatus } from '@/hooks/useMarketStatus'
-import { needsPreviousClose, previousClose } from '@/lib/trading/previousClose'
+import { useWatchlistQuotes } from '@/hooks/useWatchlistQuotes'
 import { prefetchSymbolData, type SearchRow } from '@/lib/trading/terminal'
 import { cn } from '@/lib/utils'
 import { showToast } from '@/utils/toast'
@@ -152,6 +151,7 @@ function compact(value: number | undefined): string {
 
 /** What the panel shows, per user. */
 interface Display {
+  version: number
   columns: ColumnId[]
   logo: boolean
   exchange: boolean
@@ -159,7 +159,8 @@ interface Display {
 
 const DISPLAY_KEY = 'oa-trading-watchlist-display'
 const DISPLAY_DEFAULT: Display = {
-  columns: ['last', 'changePercent'],
+  version: 2,
+  columns: ['last', 'change', 'changePercent'],
   logo: true,
   exchange: true,
 }
@@ -168,12 +169,17 @@ function readDisplay(): Display {
   try {
     const saved = JSON.parse(localStorage.getItem(DISPLAY_KEY) || '{}')
     const ids = COLUMNS.map((c) => c.id) as string[]
+    const savedColumns = Array.isArray(saved.columns)
+      ? (saved.columns.filter((c: unknown) => ids.includes(c as string)) as ColumnId[])
+      : DISPLAY_DEFAULT.columns
+    // Upgrade the former default once; preserve any deliberately customised columns.
+    const formerDefault = saved.version !== 2 && savedColumns.length === 2 &&
+      savedColumns.includes('last') && savedColumns.includes('changePercent')
     return {
+      version: 2,
       // Filtered against the live column list, so a stored id from an older
       // build cannot leave the header and the rows disagreeing.
-      columns: Array.isArray(saved.columns)
-        ? (saved.columns.filter((c: unknown) => ids.includes(c as string)) as ColumnId[])
-        : DISPLAY_DEFAULT.columns,
+      columns: formerDefault ? DISPLAY_DEFAULT.columns : savedColumns,
       logo: typeof saved.logo === 'boolean' ? saved.logo : true,
       exchange: typeof saved.exchange === 'boolean' ? saved.exchange : true,
     }
@@ -248,7 +254,6 @@ export function WatchlistPanel({ apiKey, onPick, search, activeSymbol }: Props) 
   const [confirm, setConfirm] = useState<{ kind: 'delete' | 'clear'; name: string } | null>(null)
 
   const fileRef = useRef<HTMLInputElement>(null)
-  const { isMarketOpen } = useMarketStatus()
 
   const [display, setDisplay] = useState<Display>(readDisplay)
   useEffect(() => {
@@ -383,15 +388,15 @@ export function WatchlistPanel({ apiKey, onPick, search, activeSymbol }: Props) 
     [symbolKey]
   )
 
-  // Background prefetch chart data for top watchlist items for 0-1ms instant load
+  // Warm chart history for the first few instruments in the selected saved list.
   useEffect(() => {
-    if (!apiKey || !items.length) return
-    const top = items.slice(0, 10)
+    if (!apiKey || !priceable.length) return
+    const top = priceable.slice(0, 10)
     for (const it of top) {
       void prefetchSymbolData(apiKey, it.symbol, it.exchange, '5m')
       void prefetchSymbolData(apiKey, it.symbol, it.exchange, '1m')
     }
-  }, [apiKey, symbolKey])
+  }, [apiKey, priceable])
 
   const {
     data: priced,
@@ -401,81 +406,13 @@ export function WatchlistPanel({ apiKey, onPick, search, activeSymbol }: Props) 
     isAnyMarketOpen,
   } = useLivePrice(priceable, {
     enabled: priceable.length > 0,
+    retainLastTick: true,
     useMultiQuotesFallback: true,
     multiQuotesRefreshInterval: SNAPSHOT_REFRESH_MS,
     pauseWhenHidden: true,
   })
 
-  /**
-   * Previous closes resolved from daily history.
-   *
-   * Only for instruments whose quote did not carry a usable one. What a
-   * broker puts in `prev_close` is its own convention, and some report the
-   * CURRENT session's close there, which equals the last traded price and
-   * turns every row into +0.00%. See lib/trading/previousClose.ts.
-   */
-  const [resolvedCloses, setResolvedCloses] = useState<Record<string, number>>({})
-
-  /**
-   * Last price and change per row.
-   *
-   * The live price comes from the hook, which has already chosen between the
-   * feed and the REST fallback. The previous close comes from the snapshot
-   * when it is usable and from daily history when it is not, which is the
-   * same bar the chart legend reads, so a row agrees with the chart it opens.
-   */
-  const quotes = useMemo(() => {
-    const next: Record<string, Quote> = {}
-    for (const row of priced) {
-      const key = `${row.exchange}:${row.symbol}`
-      const snapshot = multiQuotes.get(key)
-      const ltp = row.ltp ?? snapshot?.ltp
-      if (typeof ltp !== 'number' || ltp === 0) continue
-
-      const prevClose = needsPreviousClose(snapshot?.prev_close, ltp)
-        ? resolvedCloses[key]
-        : snapshot?.prev_close
-      const known = typeof prevClose === 'number' && prevClose > 0
-      next[key] = {
-        ltp,
-        change: known ? ltp - (prevClose as number) : null,
-        changePercent: known ? ((ltp - (prevClose as number)) / (prevClose as number)) * 100 : null,
-        volume: snapshot?.volume,
-        high: snapshot?.high,
-        low: snapshot?.low,
-        open: snapshot?.open,
-      }
-    }
-    return next
-  }, [priced, multiQuotes, resolvedCloses])
-
-  // One request per instrument per trading day, and only for the ones that
-  // need it, so a broker whose quote already carries a real previous close
-  // costs nothing extra.
-  useEffect(() => {
-    let alive = true
-    for (const row of priced) {
-      const key = `${row.exchange}:${row.symbol}`
-      const snapshot = multiQuotes.get(key)
-      const ltp = row.ltp ?? snapshot?.ltp
-      if (typeof ltp !== 'number' || ltp === 0) continue
-      if (!needsPreviousClose(snapshot?.prev_close, ltp)) continue
-      if (resolvedCloses[key] !== undefined) continue
-
-      void previousClose(apiKey, row.symbol, row.exchange, isMarketOpen(row.exchange)).then(
-        (value) => {
-          // A failure is recorded as 0, not skipped. This effect re-runs on
-          // every tick (useLivePrice hands back a new array each time), and an
-          // absent key reads as "not asked yet", so leaving it out re-requested
-          // an unresolvable symbol several times a second.
-          if (alive) setResolvedCloses((prev) => ({ ...prev, [key]: value ?? 0 }))
-        }
-      )
-    }
-    return () => {
-      alive = false
-    }
-  }, [priced, multiQuotes, resolvedCloses, apiKey, isMarketOpen])
+  const quotes = useWatchlistQuotes(apiKey, priced, multiQuotes)
 
   /**
    * When the snapshot last actually arrived.
@@ -486,7 +423,6 @@ export function WatchlistPanel({ apiKey, onPick, search, activeSymbol }: Props) 
    * Watching the map's identity is what turns that into an observation.
    */
   const [lastSnapshotAt, setLastSnapshotAt] = useState<number | null>(null)
-  // biome-ignore lint/correctness/useExhaustiveDependencies: multiQuotes is the signal; its identity changes only when a fetch actually resolved
   useEffect(() => {
     if (multiQuotes.size > 0) setLastSnapshotAt(Date.now())
   }, [multiQuotes])
@@ -679,9 +615,10 @@ export function WatchlistPanel({ apiKey, onPick, search, activeSymbol }: Props) 
       id="oa-panel-watchlist"
       label="Watchlist"
       storageKey="oa-trading-watchlist-width"
-      minWidth={panelMode === 'lists' ? minWidth : 300}
+      minWidth={panelMode === 'lists' ? minWidth : 340}
     >
-      <div className="flex shrink-0 gap-1 border-b p-1.5" role="group" aria-label="Watchlist category">
+      <fieldset className="m-0 flex min-w-0 shrink-0 gap-1 border-0 border-b border-border p-1.5">
+        <legend className="sr-only">Watchlist category</legend>
         {(['lists', 'commodities', 'indices'] as const).map((mode) => <button
           key={mode} type="button" aria-pressed={panelMode === mode}
           onClick={() => setPanelMode(mode)}
@@ -689,7 +626,7 @@ export function WatchlistPanel({ apiKey, onPick, search, activeSymbol }: Props) 
             panelMode === mode ? 'bg-accent font-semibold text-accent-foreground' : 'text-muted-foreground hover:bg-accent/50')}>
           {mode === 'lists' ? 'My lists' : mode === 'commodities' ? 'Commodities' : 'Indices'}
         </button>)}
-      </div>
+      </fieldset>
       {panelMode !== 'lists' ? <BrokerWatchlistCatalog mode={panelMode} apiKey={apiKey} onPick={onPick} activeSymbol={activeSymbol} /> : <>
       {/* Header: which list, and what can be done to it. Its height lands the
           rule on the same line as every pane toolbar's. */}
