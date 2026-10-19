@@ -88,21 +88,21 @@ export const CHART_TYPE_GROUPS: ChartTypeDef[][] = [
     {
       value: 'renko-v2',
       label: 'Renko Version 2',
-      iconKey: 'bricks',
+      iconKey: 'renko-v2',
       series: 'candlestick',
       transform: (b) => ({ type: 'renko-v2', options: { boxSize: b } }),
     },
     {
       value: 'renko-v3',
       label: 'Renko Version 3',
-      iconKey: 'bricks',
+      iconKey: 'renko-v3',
       series: 'candlestick',
       transform: (b) => ({ type: 'renko-v3', options: { boxSize: b } }),
     },
     {
       value: 'renko-v4',
       label: 'Renko Version 4',
-      iconKey: 'bricks',
+      iconKey: 'renko-v4',
       series: 'candlestick',
       transform: () => ({ type: 'renko-v4', options: { boxSize: 0 } }),
     },
@@ -210,16 +210,45 @@ const s = {
   strokeLinejoin: 'round' as const,
 }
 
+/** Renko's stair-step bricks with a drawn version numeral, readable at 16px. */
+function RenkoVersionIcon({ version }: { version: 2 | 3 | 4 }) {
+  const numeral = {
+    2: 'M18 14h4v3l-4 4h4',
+    3: 'M18 14h4v7h-4m0-3.5h4',
+    4: 'M18 14v3.5h4m0-3.5v7',
+  }[version]
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="16"
+      height="16"
+      aria-hidden="true"
+      focusable="false"
+      {...s}
+      strokeWidth={lineStroke24(16)}
+    >
+      <path d="M2 15h5v5H2zM7 10h5v5H7zM12 5h5v5h-5z" />
+      <path d={numeral} />
+    </svg>
+  )
+}
+
 /**
  * Icon for a chart-type value (used in the dropdown button + menu items).
  *
  * Every type the engine draws a glyph for uses it, so the chart-type menu
- * reads from the same set as the toolbar around it. The two profile types are
- * this terminal's own and keep their pictures, drawn at the same line.
+ * reads from the same set as the toolbar around it. Custom Renko versions and
+ * profile types use matching vector glyphs drawn at the same line weight.
  */
 export function chartTypeIcon(iconKey: string): ReactNode {
   if (hasChromeIcon(iconKey)) return <ChromeIcon id={iconKey} />
   switch (iconKey) {
+    case 'renko-v2':
+      return <RenkoVersionIcon version={2} />
+    case 'renko-v3':
+      return <RenkoVersionIcon version={3} />
+    case 'renko-v4':
+      return <RenkoVersionIcon version={4} />
     case 'tpo':
       return (
         <svg viewBox="0 0 24 24" {...s} strokeWidth={lineStroke24(16)}>
