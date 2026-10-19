@@ -52,3 +52,24 @@ activation requires a brief service restart; refresh the browser afterward.
 
 Official FYERS expiry selection reference:
 [Option Chain](https://fyers.in/api-docs/ai/skills/option-chain/).
+
+## Read-only activation results
+
+Actual option-chain requests returned HTTP 200 with listed strikes for NIFTY,
+BANKNIFTY, FINNIFTY, MIDCPNIFTY, NIFTYNXT50, NIFTYFPI, SENSEX and BANKEX on
+both instances. The selected later NIFTY expiry (27OCT26) also returned six
+priced legs on both. Resolving an already-derivative segment now preserves
+NFO/BFO instead of defaulting BFO to NFO.
+
+Kotak additionally returned its SENSEX50 chain through the listed
+SENSEX5029OCT26FUT reference when its spot quote failed. That broker returned
+no LTP for the six inspected SENSEX50 option legs; those remain unavailable
+rather than being assigned fabricated prices. Some less-liquid NIFTYNXT50
+and NIFTYFPI legs also lacked Kotak quotes. FYERS currently lists no SENSEX50
+options in its downloaded master, so the selector does not invent that chain.
+The panel labels a futures reference as Fut, with its exact symbol in the
+tooltip, rather than calling its price Spot.
+
+For the screenshot's CRUDEOIL 17NOV26 selection, both instances returned
+21 strikes and 42 priced CE/PE legs, with CRUDEOIL19NOV26FUT as the reference.
+All observations used read-only market-data/account-state requests.

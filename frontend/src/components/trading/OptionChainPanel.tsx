@@ -768,8 +768,8 @@ export function OptionChainPanel({ apiKey, onPick, activeSymbol }: Props) {
       {chain && (
         <div className="option-chain-summary flex flex-col border-b bg-muted/10 text-[11px]">
           <div className="flex shrink-0 items-center justify-between px-2 py-1">
-            <span className="flex items-center gap-1">
-              <span className="text-muted-foreground font-medium">Spot</span>
+            <span className="flex items-center gap-1" title={`Price reference: ${chain.underlying_exchange}:${chain.underlying_symbol}`}>
+              <span className="text-muted-foreground font-medium">{chain.underlying_symbol?.endsWith('FUT') ? 'Fut' : 'Spot'}</span>
               <span
                 className={cn(
                   'font-semibold tabular-nums',
