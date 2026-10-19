@@ -166,6 +166,7 @@ export function BrokerWatchlistCatalog({
   } = useLivePrice(contracts, {
     enabled: contracts.length > 0,
     retainLastTick: true,
+    includeOpenInterest: false,
     multiQuotesRefreshInterval: 60_000,
     pauseWhenHidden: true,
   })

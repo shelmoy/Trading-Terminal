@@ -803,6 +803,7 @@ export class MarketDataManager {
         body: JSON.stringify({
           apikey: this.apiKey,
           symbols: symbolsArray,
+          include_oi: false,
         }),
       })
 

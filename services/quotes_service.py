@@ -209,7 +209,7 @@ def get_quotes(
 
 
 def get_multiquotes_with_auth(
-    auth_token: str, feed_token: str | None, broker: str, symbols: list
+    auth_token: str, feed_token: str | None, broker: str, symbols: list, include_oi: bool = True
 ) -> tuple[bool, dict[str, Any], int]:
     """
     Get real-time quotes for multiple symbols using provided auth tokens.
@@ -308,7 +308,10 @@ def get_multiquotes_with_auth(
         # Use broker's native multiquotes method with only valid symbols
         # Strip validation metadata before passing to broker
         clean_symbols = [{"symbol": s["symbol"], "exchange": s["exchange"]} for s in valid_symbols]
-        multiquotes = data_handler.get_multiquotes(clean_symbols)
+        if not include_oi and hasattr(data_handler, "get_quote_snapshots"):
+            multiquotes = data_handler.get_quote_snapshots(clean_symbols)
+        else:
+            multiquotes = data_handler.get_multiquotes(clean_symbols)
 
         if multiquotes is None:
             return False, {"status": "error", "message": "Failed to fetch multiquotes"}, 500
@@ -338,6 +341,7 @@ def get_multiquotes(
     auth_token: str | None = None,
     feed_token: str | None = None,
     broker: str | None = None,
+    include_oi: bool = True,
 ) -> tuple[bool, dict[str, Any], int]:
     """
     Get real-time quotes for multiple symbols.
@@ -363,11 +367,11 @@ def get_multiquotes(
         )
         if AUTH_TOKEN is None:
             return False, {"status": "error", "message": "Invalid openalgo apikey"}, 403
-        return get_multiquotes_with_auth(AUTH_TOKEN, FEED_TOKEN, broker_name, symbols)
+        return get_multiquotes_with_auth(AUTH_TOKEN, FEED_TOKEN, broker_name, symbols, include_oi)
 
     # Case 2: Direct internal call with auth_token and broker
     elif auth_token and broker:
-        return get_multiquotes_with_auth(auth_token, feed_token, broker, symbols)
+        return get_multiquotes_with_auth(auth_token, feed_token, broker, symbols, include_oi)
 
     # Case 3: Invalid parameters
     else:

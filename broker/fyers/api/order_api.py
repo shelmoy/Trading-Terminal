@@ -26,9 +26,8 @@ def get_api_response(endpoint, auth, method="GET", payload="", _retry_count=0):
     """
     Make API requests to Fyers API using shared connection pooling.
 
-    Rate limited process-wide (broker.fyers.api.rate_limiter) since Fyers
-    caps all endpoints combined -- orders, data, funds -- at 10 req/sec per
-    API key. On HTTP 429 this retries with backoff (honoring the
+    Uses account/transaction pacing independently of market-data requests.
+    On HTTP 429 this retries with backoff (honoring the
     Retry-After / X-Retry-After-Ms headers when present) instead of
     immediately surfacing the failure to the caller.
 
@@ -51,7 +50,7 @@ def get_api_response(endpoint, auth, method="GET", payload="", _retry_count=0):
         url = f"https://api-t1.fyers.in{endpoint}"
         headers = {"Authorization": f"{api_key}:{AUTH_TOKEN}", "Content-Type": "application/json"}
 
-        apply_rate_limit()
+        apply_rate_limit(kind="order")
 
         logger.debug(f"Making {method} request to Fyers API: {url}")
 
@@ -91,7 +90,7 @@ def get_api_response(endpoint, auth, method="GET", payload="", _retry_count=0):
         raise
     except httpx.HTTPStatusError as e:
         if e.response.status_code == 429 and _retry_count < MAX_RETRIES:
-            delay = retry_delay_from_headers(e.response.headers, _retry_count)
+            delay = retry_delay_from_headers(e.response.headers, _retry_count, kind="order")
             logger.warning(
                 f"Fyers API rate limited (429) on {endpoint}. Retrying in "
                 f"{delay:.2f}s (attempt {_retry_count + 1}/{MAX_RETRIES})"
@@ -170,7 +169,6 @@ def _get_cached_positions(auth):
 def _invalidate_position_cache(auth):
     """Invalidate the position cache so the next queued order fetches fresh data."""
     _position_cache.invalidate(auth)
-
 
 
 def get_open_position(tradingsymbol, exchange, product, auth):

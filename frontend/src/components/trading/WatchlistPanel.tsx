@@ -407,6 +407,7 @@ export function WatchlistPanel({ apiKey, onPick, search, activeSymbol }: Props) 
   } = useLivePrice(priceable, {
     enabled: priceable.length > 0,
     retainLastTick: true,
+    includeOpenInterest: false,
     useMultiQuotesFallback: true,
     multiQuotesRefreshInterval: SNAPSHOT_REFRESH_MS,
     pauseWhenHidden: true,

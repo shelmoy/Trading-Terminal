@@ -71,6 +71,7 @@ import {
   withBarCache,
 } from 'openalgo-charts'
 import { formatTradingSymbol } from '@/lib/trading/displaySymbol'
+import { validHistoryBars } from './historyValidation'
 import type {
   DrawingController,
   DrawingPatch,
@@ -219,7 +220,7 @@ let fastCachePersistTimer: ReturnType<typeof setTimeout> | null = null
           v.bars.length > 0 &&
           now - (v.time || 0) < BAR_PREVIEW_RETENTION_MS
         ) {
-          globalBarMemoryCache.set(k, v)
+          globalBarMemoryCache.set(k, { ...v, bars: validHistoryBars(v.bars) })
         }
       }
     }
@@ -339,7 +340,7 @@ export async function prefetchSymbolData(
             const from = delta
               ? lastTime - 5 * cacheIntervalSec(interval)
               : to - lookbackDays(interval) * 86400
-            const fresh = await feed.getBars({ symbol, exchange, interval, from, to, noCache: true })
+            const fresh = validHistoryBars(await feed.getBars({ symbol, exchange, interval, from, to, noCache: true }))
             if (fresh?.length) {
               const bars = delta ? mergeBarsByTime(base, fresh) : fresh
               globalBarMemoryCache.set(memKey, { bars, time: Date.now() })
@@ -8467,6 +8468,8 @@ export class TradingTerminal {
           : openInterestCapability(request.exchange ?? '')
       },
     })
+    const rawGetBars = this.rest.getBars.bind(this.rest)
+    this.rest.getBars = async (request) => validHistoryBars(await rawGetBars(request))
     const baseCachedBars = withBarCache(this.rest, { ttlMs: 10 * 60_000 })
     const origCachedBars = baseCachedBars.getCachedBars.bind(baseCachedBars)
     baseCachedBars.getCachedBars = async (request): Promise<Bar[] | undefined> => {

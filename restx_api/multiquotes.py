@@ -33,7 +33,11 @@ class MultiQuotes(Resource):
             symbols = multiquotes_data["symbols"]
 
             # Call the service function to get multiquotes data with API key
-            success, response_data, status_code = get_multiquotes(symbols=symbols, api_key=api_key)
+            success, response_data, status_code = get_multiquotes(
+                symbols=symbols,
+                api_key=api_key,
+                include_oi=multiquotes_data.get("include_oi", True),
+            )
 
             return make_response(jsonify(response_data), status_code)
 

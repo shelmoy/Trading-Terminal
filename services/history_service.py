@@ -1,4 +1,5 @@
 import importlib
+import math
 import os
 import pickle
 import time
@@ -27,7 +28,9 @@ logger = get_logger(__name__)
 # resolve instantaneously in 0-1ms without hitting broker rate limits.
 _history_cache = LockedTTLCache(maxsize=3000, ttl=900)
 # Fast lookup by (SYMBOL, EXCHANGE, INTERVAL) -> (start_date_str, end_date_str, timestamp, result_tuple)
-_history_latest_by_sym_iv: dict[tuple[str, str, str], tuple[str, str, float, tuple[bool, dict[str, Any], int]]] = {}
+_history_latest_by_sym_iv: dict[
+    tuple[str, str, str], tuple[str, str, float, tuple[bool, dict[str, Any], int]]
+] = {}
 _history_latest_lock = real_threading.Lock()
 _inflight_locks: dict[tuple[str, str, str, str, str], real_threading.Event] = {}
 _inflight_guard = real_threading.Lock()
@@ -35,6 +38,49 @@ _inflight_guard = real_threading.Lock()
 _DISK_CACHE_PATH = Path("db/fast_history_cache.pkl")
 _disk_persist_lock = real_threading.Lock()
 _last_disk_persist = 0.0
+
+
+def _sanitize_history_result(result, context):
+    """Quarantine inconsistent broker candles; never invent replacement OHLC."""
+    if not result[0] or not isinstance(result[1], dict):
+        return result
+    rows = result[1].get("data")
+    if not isinstance(rows, list) or not rows:
+        return result
+    valid = []
+    for row in rows:
+        try:
+            timestamp, open_, high, low, close = [
+                float(row[key]) for key in ("timestamp", "open", "high", "low", "close")
+            ]
+            volume = float(row.get("volume", 0))
+            if not all(
+                math.isfinite(value) for value in (timestamp, open_, high, low, close, volume)
+            ):
+                continue
+            if high < max(open_, close, low) or low > min(open_, close) or volume < 0:
+                continue
+        except (TypeError, ValueError, KeyError):
+            continue
+        valid.append(row)
+    dropped = len(rows) - len(valid)
+    if not dropped:
+        return result
+    logger.warning("Quarantined %d inconsistent history candles for %s", dropped, context)
+    if not valid:
+        return (
+            False,
+            {
+                "status": "error",
+                "message": "Broker history contains no valid candles. Please try again later.",
+            },
+            502,
+        )
+    return (
+        True,
+        {**result[1], "data": valid, "data_quality": {"dropped_candles": dropped}},
+        result[2],
+    )
 
 
 def _load_disk_history_cache() -> None:
@@ -51,11 +97,15 @@ def _load_disk_history_cache() -> None:
             if not isinstance(item, tuple) or len(item) != 4:
                 continue
             s_date, e_date, saved_at, res = item
+            if isinstance(res, tuple) and len(res) == 3:
+                res = _sanitize_history_result(res, str(k))
             if now - saved_at < 3600 * 12 and isinstance(res, tuple) and len(res) == 3 and res[0]:
                 with _history_latest_lock:
                     _history_latest_by_sym_iv[k] = (s_date, e_date, saved_at, res)
                 _history_cache[(k[0], k[1], k[2], s_date, e_date)] = res
-        logger.info(f"Loaded {len(_history_latest_by_sym_iv)} warm history series from {_DISK_CACHE_PATH}")
+        logger.info(
+            f"Loaded {len(_history_latest_by_sym_iv)} warm history series from {_DISK_CACHE_PATH}"
+        )
     except Exception as e:
         logger.debug(f"Could not load fast history cache from disk: {e}")
 
@@ -221,7 +271,10 @@ def get_history_with_auth(
         if "oi" not in df.columns:
             df["oi"] = 0
 
-        return True, {"status": "success", "data": df.to_dict(orient="records")}, 200
+        return _sanitize_history_result(
+            (True, {"status": "success", "data": df.to_dict(orient="records")}, 200),
+            f"{exchange}:{symbol}",
+        )
     except BrokerBusyError as e:
         return broker_busy_result(e, f"History request for {exchange}:{symbol}")
     except Exception as e:
@@ -420,7 +473,14 @@ def get_history(
             if AUTH_TOKEN is None:
                 return False, {"status": "error", "message": "Invalid openalgo apikey"}, 403
             res = get_history_with_auth(
-                AUTH_TOKEN, FEED_TOKEN, broker_name, symbol, exchange, interval, start_date, end_date
+                AUTH_TOKEN,
+                FEED_TOKEN,
+                broker_name,
+                symbol,
+                exchange,
+                interval,
+                start_date,
+                end_date,
             )
             # Kotak Neo exposes MCX quotes and live ticks but currently refuses
             # candle history for its mcx_fo segment. If the user has imported
@@ -446,8 +506,14 @@ def get_history(
                     )
                     res = local_res
                 else:
-                    broker_message = (res[1] or {}).get("message") if isinstance(res[1], dict) else None
-                    local_message = (local_res[1] or {}).get("message") if isinstance(local_res[1], dict) else None
+                    broker_message = (
+                        (res[1] or {}).get("message") if isinstance(res[1], dict) else None
+                    )
+                    local_message = (
+                        (local_res[1] or {}).get("message")
+                        if isinstance(local_res[1], dict)
+                        else None
+                    )
                     res = (
                         False,
                         {
@@ -487,11 +553,16 @@ def get_history(
                     if s_str == e_str and prev_entry is not None and prev_entry[0] < prev_entry[1]:
                         # Single-day live tail repair: merge fresh today bars into multi-day history
                         p_start, _p_end, _p_time, p_res = prev_entry
-                        p_rows = (p_res[1] or {}).get("data") if isinstance(p_res[1], dict) else None
-                        first_new_ts = rows[0].get("timestamp") if isinstance(rows[0], dict) else None
+                        p_rows = (
+                            (p_res[1] or {}).get("data") if isinstance(p_res[1], dict) else None
+                        )
+                        first_new_ts = (
+                            rows[0].get("timestamp") if isinstance(rows[0], dict) else None
+                        )
                         if p_rows and first_new_ts is not None:
                             kept = [
-                                r for r in p_rows
+                                r
+                                for r in p_rows
                                 if isinstance(r, dict) and (r.get("timestamp") or 0) < first_new_ts
                             ]
                             merged_res = (
@@ -505,7 +576,9 @@ def get_history(
                                 now_ts,
                                 merged_res,
                             )
-                            _history_cache[(sym_u, exch_u, interval, p_start, max(_p_end, e_str))] = merged_res
+                            _history_cache[
+                                (sym_u, exch_u, interval, p_start, max(_p_end, e_str))
+                            ] = merged_res
                     else:
                         _history_latest_by_sym_iv[sym_iv_key] = (s_str, e_str, now_ts, res)
                 _save_disk_history_cache()
@@ -539,9 +612,20 @@ def _scalper_prewarm_worker() -> None:
             from services.option_chain_service import get_option_chain
 
             auth_row = Auth.query.filter_by(is_revoked=False).first()
-            api_key = get_api_key_for_tradingview(auth_row.name) if auth_row and auth_row.name else None
+            api_key = (
+                get_api_key_for_tradingview(auth_row.name) if auth_row and auth_row.name else None
+            )
             if not api_key:
                 time.sleep(15.0)
+                continue
+
+            # Standard FYERS has a small shared data budget. Warming every
+            # index and option leg consumes it before the visible chart loads.
+            if (
+                auth_row.broker == "fyers"
+                and os.getenv("FYERS_HISTORY_PREWARM", "false").lower() != "true"
+            ):
+                time.sleep(60.0)
                 continue
 
             today = datetime.now(ist).date()

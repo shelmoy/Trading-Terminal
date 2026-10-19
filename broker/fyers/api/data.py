@@ -21,9 +21,7 @@ def get_api_response(endpoint, auth, method="GET", payload="", _retry_count=0):
     """
     Make API requests to Fyers API using shared connection pooling.
 
-    Rate limited process-wide (broker.fyers.api.rate_limiter) since Fyers
-    caps all endpoints combined at 10 req/sec per API key -- see
-    fyers-api-docs/FYERS_API_v3.md -> "Rate Limits". On HTTP 429 this retries
+    Uses the process-wide, plan-aware data limiter. On HTTP 429 this retries
     with backoff (honoring the Retry-After / X-Retry-After-Ms headers when
     present) instead of immediately surfacing the failure to the caller.
 
@@ -85,6 +83,11 @@ def get_api_response(endpoint, auth, method="GET", payload="", _retry_count=0):
         # position, and a smart order would size itself against it.
         raise
     except httpx.HTTPStatusError as e:
+        if e.response.status_code == 429 and _retry_count >= MAX_RETRIES:
+            raise BrokerBusyError(
+                "FYERS is temporarily limiting market-data requests. Please wait before retrying.",
+                retry_after=30.0,
+            ) from e
         if e.response.status_code == 429 and _retry_count < MAX_RETRIES:
             delay = retry_delay_from_headers(e.response.headers, _retry_count)
             logger.warning(
@@ -275,13 +278,18 @@ class BrokerData:
             return 0
 
         if response.get("s") != "ok":
-            logger.debug(
-                f"Depth fetch for OI failed for {br_symbol}: {response.get('message')}"
-            )
+            logger.debug(f"Depth fetch for OI failed for {br_symbol}: {response.get('message')}")
             return 0
 
         depth_data = response.get("d", {}).get(br_symbol, {})
         return int(depth_data.get("oi", 0))
+
+    def get_quote_snapshots(self, symbols: list) -> list:
+        """LTP/OHLC snapshots without an individual depth/OI call per contract."""
+        results = []
+        for start in range(0, len(symbols), 50):
+            results.extend(self._process_quotes_batch(symbols[start : start + 50], fetch_oi=False))
+        return results
 
     def _process_quotes_batch(self, symbols: list, fetch_oi: bool = True) -> list:
         """
@@ -621,9 +629,7 @@ class BrokerData:
             logger.exception(error_msg)
             raise Exception(f"{error_msg}: {e}")
 
-    def get_option_chain(
-        self, symbol: str, strikecount: int, timestamp: str | None = None
-    ) -> dict:
+    def get_option_chain(self, symbol: str, strikecount: int, timestamp: str | None = None) -> dict:
         """
         Fetch strikes around ATM for `symbol` in a single call via Fyers'
         native /data/options-chain-v3 endpoint (see

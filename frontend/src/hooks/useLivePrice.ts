@@ -32,6 +32,8 @@ export interface UseLivePriceOptions {
   staleThreshold?: number
   /** Keep the last received tick until a newer quote snapshot arrives (watchlists). */
   retainLastTick?: boolean
+  /** Watchlists need prices and previous close, without per-symbol OI requests. */
+  includeOpenInterest?: boolean
   /** Whether to use MultiQuotes API as fallback when WebSocket unavailable (default: true) */
   useMultiQuotesFallback?: boolean
   /** Interval in ms to refresh MultiQuotes data (default: 30000) */
@@ -90,6 +92,7 @@ export function useLivePrice<T extends PriceableItem>(
     enabled = true,
     staleThreshold = 5000,
     retainLastTick = false,
+    includeOpenInterest = true,
     useMultiQuotesFallback = true,
     multiQuotesRefreshInterval = 30000,
     pauseWhenHidden = true,
@@ -150,7 +153,7 @@ export function useLivePrice<T extends PriceableItem>(
         exchange: item.exchange,
       }))
 
-      const response = await tradingApi.getMultiQuotes(apiKey, symbolsList)
+      const response = await tradingApi.getMultiQuotes(apiKey, symbolsList, includeOpenInterest)
 
       if (response.status === 'success' && response.results) {
         const quotesMap = new Map<string, QuotesData>()
@@ -166,7 +169,7 @@ export function useLivePrice<T extends PriceableItem>(
     } catch {
       // Silently fail - MultiQuotes is a fallback mechanism
     }
-  }, [apiKey, items, useMultiQuotesFallback])
+  }, [apiKey, items, useMultiQuotesFallback, includeOpenInterest])
 
   // Fetch MultiQuotes on mount and when items change
   // Visibility-aware: pause polling when tab is hidden

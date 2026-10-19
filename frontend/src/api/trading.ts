@@ -116,11 +116,13 @@ export const tradingApi = {
    */
   getMultiQuotes: async (
     apiKey: string,
-    symbols: MultiQuotesSymbol[]
+    symbols: MultiQuotesSymbol[],
+    includeOi = true
   ): Promise<MultiQuotesApiResponse> => {
     const response = await apiClient.post<MultiQuotesApiResponse>('/multiquotes', {
       apikey: apiKey,
       symbols,
+      include_oi: includeOi,
     })
     return response.data
   },
@@ -159,7 +161,10 @@ export const tradingApi = {
   ): Promise<ApiResponse<RequiredMarginData>> => {
     const response = await apiClient.post<ApiResponse<RequiredMarginData>>(
       '/margin',
-      { apikey: apiKey, positions: [{ ...position, quantity: String(position.quantity), pricetype: 'MARKET' }] },
+      {
+        apikey: apiKey,
+        positions: [{ ...position, quantity: String(position.quantity), pricetype: 'MARKET' }],
+      },
       { signal, timeout: 10000 }
     )
     return response.data
