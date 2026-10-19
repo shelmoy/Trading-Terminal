@@ -13,8 +13,10 @@ from utils.broker_backpressure import BrokerBusyError
 from utils.constants import FNO_EXCHANGES
 from utils.httpx_client import get_httpx_client
 from utils.logging import get_logger
+from utils.thread_safe_cache import LockedTTLCache
 
 logger = get_logger(__name__)
+_chain_expiry_ids = LockedTTLCache(maxsize=256, ttl=3600)
 
 
 def get_api_response(endpoint, auth, method="GET", payload="", _retry_count=0):
@@ -629,7 +631,13 @@ class BrokerData:
             logger.exception(error_msg)
             raise Exception(f"{error_msg}: {e}")
 
-    def get_option_chain(self, symbol: str, strikecount: int, timestamp: str | None = None) -> dict:
+    def get_option_chain(
+        self,
+        symbol: str,
+        strikecount: int,
+        timestamp: str | None = None,
+        expiry_date: str | None = None,
+    ) -> dict:
         """
         Fetch strikes around ATM for `symbol` in a single call via Fyers'
         native /data/options-chain-v3 endpoint (see
@@ -645,7 +653,8 @@ class BrokerData:
             strikecount: Strikes above/below ATM to fetch (Fyers hard caps
                 this at 50 -- an unbounded "entire chain" request can't be
                 served by this endpoint and must use the generic path)
-            timestamp: Optional epoch string for a historical chain snapshot
+            timestamp: Broker expiry identifier from expiryData, not a historical snapshot.
+            expiry_date: Requested DDMMMYY option expiry; resolved to the broker identifier.
 
         Returns:
             dict keyed by (strike_price: float, option_type: "CE"/"PE") ->
@@ -655,11 +664,31 @@ class BrokerData:
         strikecount = max(1, min(int(strikecount), 50))
         encoded_symbol = urllib.parse.quote(symbol)
         endpoint = f"/data/options-chain-v3?symbol={encoded_symbol}&strikecount={strikecount}"
+        expiry_key = (symbol, expiry_date)
+        if expiry_date and timestamp is None:
+            timestamp = _chain_expiry_ids.get(expiry_key)
         if timestamp:
             endpoint += f"&timestamp={timestamp}"
 
         try:
             response = get_api_response(endpoint, self.auth_token)
+            if expiry_date and timestamp is None and response.get("s") == "ok":
+                target = datetime.strptime(expiry_date.replace("-", "").upper(), "%d%b%y").date()
+                expiry_rows = response.get("data", {}).get("expiryData", [])
+                selected = None
+                for item in expiry_rows:
+                    try:
+                        if datetime.strptime(item.get("date", ""), "%d-%m-%Y").date() == target:
+                            selected = str(item["expiry"])
+                            break
+                    except (ValueError, KeyError, TypeError):
+                        continue
+                if selected is None:
+                    return {}  # Never substitute the nearest expiry for a missing selection.
+                _chain_expiry_ids[expiry_key] = selected
+                response = get_api_response(f"{endpoint}&timestamp={selected}", self.auth_token)
+        except BrokerBusyError:
+            raise
         except Exception:
             logger.exception(f"Error fetching option chain for {symbol}")
             return {}
@@ -684,6 +713,7 @@ class BrokerData:
             ltp = item.get("ltp", 0) or 0
             ltpch = item.get("ltpch", 0) or 0
             result[(float(strike), option_type)] = {
+                "broker_symbol": item.get("symbol", ""),
                 "ltp": ltp,
                 "bid": item.get("bid", 0),
                 "ask": item.get("ask", 0),

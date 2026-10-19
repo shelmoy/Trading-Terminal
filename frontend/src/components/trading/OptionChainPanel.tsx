@@ -47,6 +47,7 @@ import {
 } from '@/components/ui/select'
 import { useMarketStatus } from '@/hooks/useMarketStatus'
 import { needsPreviousClose } from '@/lib/trading/previousClose'
+import { optionChainTarget } from '@/lib/trading/optionChainSelection'
 import type { SearchRow } from '@/lib/trading/terminal'
 import { cn } from '@/lib/utils'
 import type { OptionData } from '@/types/option-chain'
@@ -272,6 +273,7 @@ export function OptionChainPanel({ apiKey, onPick, activeSymbol }: Props) {
    */
   const [underlyingError, setUnderlyingError] = useState<string | null>(null)
   const [expiryError, setExpiryError] = useState<string | null>(null)
+  const [chartSupportNote, setChartSupportNote] = useState<string | null>(null)
 
   /** Bumped to re-run the loaders after a Retry. */
   const [attempt, setAttempt] = useState(0)
@@ -316,6 +318,7 @@ export function OptionChainPanel({ apiKey, onPick, activeSymbol }: Props) {
 
         for (const r of results) {
           if (r.status === 'fulfilled') {
+            cachedSegmentUnderlyings[r.value.exchange] = r.value.list
             for (const item of r.value.list) {
               allItems.push({ name: item, exchange: r.value.exchange })
             }
@@ -332,18 +335,7 @@ export function OptionChainPanel({ apiKey, onPick, activeSymbol }: Props) {
         setUnderlyings(currentSegmentList)
         setUnderlyingError(null)
 
-        // If current underlying isn't in current segment or global, ensure fallback
-        setPrefs((p) => {
-          if (currentSegmentList.length > 0 && !currentSegmentList.includes(p.underlying)) {
-            // Check if current underlying exists in any exchange
-            const match = allItems.find((item) => item.name.toUpperCase() === p.underlying.toUpperCase())
-            if (match) {
-              return { ...p, exchange: match.exchange, underlying: match.name, expiry: '' }
-            }
-            return { ...p, underlying: currentSegmentList[0], expiry: '' }
-          }
-          return p
-        })
+
       } catch {
         if (!alive) return
         if (cachedSegmentUnderlyings[prefs.exchange]?.length) {
@@ -361,65 +353,22 @@ export function OptionChainPanel({ apiKey, onPick, activeSymbol }: Props) {
     }
   }, [prefs.exchange, attempt])
 
-  /* ── Auto-sync with active chart symbol ───────────────────────────────────── */
+  /* Sync to exact broker-listed roots, never an unrelated default index. */
   useEffect(() => {
-    if (!activeSymbol || activeSymbol === lastSyncedSymbolRef.current) return
-    lastSyncedSymbolRef.current = activeSymbol
-
-    // Parse active symbol format: e.g. "BSE_INDEX:SENSEX", "BFO:SENSEX...", "NSE_INDEX:NIFTY", "NFO:NIFTY...", "NSE:RELIANCE"
-    const parts = activeSymbol.split(':')
-    const rawSym = (parts.length > 1 ? parts[1] : parts[0]).toUpperCase()
-    const rawEx = (parts.length > 1 ? parts[0] : '').toUpperCase()
-
-    let detectedExchange: Exchange | null = null
-    let detectedUnderlying: string | null = null
-
-    // 1. Direct index or common underlying detection
-    if (rawSym.includes('SENSEX') || rawEx === 'BSE_INDEX' || rawEx === 'BFO') {
-      detectedExchange = 'BFO'
-      detectedUnderlying = rawSym.includes('BANKEX') ? 'BANKEX' : 'SENSEX'
-    } else if (rawSym.includes('NIFTY') || rawEx === 'NSE_INDEX' || rawEx === 'NFO') {
-      detectedExchange = 'NFO'
-      if (rawSym.includes('BANKNIFTY')) detectedUnderlying = 'BANKNIFTY'
-      else if (rawSym.includes('FINNIFTY')) detectedUnderlying = 'FINNIFTY'
-      else if (rawSym.includes('MIDCPNIFTY')) detectedUnderlying = 'MIDCPNIFTY'
-      else if (rawSym.includes('NIFTYNXT50')) detectedUnderlying = 'NIFTYNXT50'
-      else detectedUnderlying = 'NIFTY'
-    } else if (rawEx === 'MCX' || rawSym === 'CRUDEOIL' || rawSym === 'GOLD' || rawSym === 'SILVER' || rawSym === 'NATURALGAS') {
-      detectedExchange = 'MCX'
-      detectedUnderlying = rawSym.replace(/[0-9].*$/, '')
-    } else {
-      // 2. Check if clean symbol matches any global derivative underlying
-      const cleanSym = rawSym.replace(/(CE|PE)$/i, '').replace(/[0-9].*$/, '')
-      const match = globalUnderlyings.find(
-        (u) => u.name.toUpperCase() === cleanSym || cleanSym.startsWith(u.name.toUpperCase())
-      )
-      if (match) {
-        detectedExchange = match.exchange
-        detectedUnderlying = match.name
-      } else if (cleanSym) {
-        // Assume default NFO for equity stocks like RELIANCE, TCS, etc.
-        detectedExchange = 'NFO'
-        detectedUnderlying = cleanSym
-      }
+    if (!activeSymbol || !globalUnderlyings.length) return
+    const syncKey = `${activeSymbol}|${globalUnderlyings.map((item) => `${item.exchange}:${item.name}`).join(',')}`
+    if (syncKey === lastSyncedSymbolRef.current) return
+    lastSyncedSymbolRef.current = syncKey
+    const target = optionChainTarget(activeSymbol, globalUnderlyings)
+    if (!target) {
+      setChartSupportNote(`No listed options for ${activeSymbol.split(':').pop()}. Select an option underlying above.`)
+      setPrefs((current) => ({ ...current, underlying: '', expiry: '' }))
+      return
     }
-
-    if (detectedExchange && detectedUnderlying) {
-      const expKey = `${detectedUnderlying}:${detectedExchange}`
-      const knownExpiries = cachedExpiriesMap[expKey]
-      const immediateExpiry = knownExpiries && knownExpiries.length > 0 ? knownExpiries[0] : ''
-
-      setPrefs((p) => {
-        if (p.underlying === detectedUnderlying && p.exchange === detectedExchange && (p.expiry || !immediateExpiry)) {
-          return p
-        }
-        return {
-          exchange: detectedExchange!,
-          underlying: detectedUnderlying!,
-          expiry: immediateExpiry, // Set immediately for 0-1ms instant load
-        }
-      })
-    }
+    setChartSupportNote(null)
+    const dates = cachedExpiriesMap[`${target.name}:${target.exchange}`]
+    setPrefs((current) => current.underlying === target.name && current.exchange === target.exchange
+      ? current : { exchange: target.exchange, underlying: target.name, expiry: dates?.[0] ?? '' })
   }, [activeSymbol, globalUnderlyings])
 
   /* ── expiries for the chosen underlying ───────────────────────────────── */
@@ -431,7 +380,7 @@ export function OptionChainPanel({ apiKey, onPick, activeSymbol }: Props) {
       const dates = cachedExpiriesMap[expiryKey]
       setExpiries(dates)
       setPrefs((p) =>
-        dates.length === 0 || dates.includes(p.expiry) ? p : { ...p, expiry: dates[0] }
+        dates.includes(p.expiry) ? p : { ...p, expiry: dates[0] ?? '' }
       )
     }
 
@@ -445,7 +394,7 @@ export function OptionChainPanel({ apiKey, onPick, activeSymbol }: Props) {
         setExpiries(dates)
         setExpiryError(null)
         setPrefs((p) =>
-          dates.length === 0 || dates.includes(p.expiry) ? p : { ...p, expiry: dates[0] }
+          dates.includes(p.expiry) ? p : { ...p, expiry: dates[0] ?? '' }
         )
       } catch {
         if (!alive) return
@@ -645,9 +594,13 @@ export function OptionChainPanel({ apiKey, onPick, activeSymbol }: Props) {
       <div className={`${PANEL_HEADER} option-chain-header`}>
         <Select
           value={prefs.exchange}
-          onValueChange={(value) =>
-            setPrefs((p) => ({ ...p, exchange: value as Exchange, expiry: '' }))
-          }
+          onValueChange={(value) => {
+            setChartSupportNote(null)
+            setPrefs((p) => {
+              const listed = cachedSegmentUnderlyings[value] ?? []
+              return { exchange: value as Exchange, underlying: listed.includes(p.underlying) ? p.underlying : listed[0] ?? '', expiry: '' }
+            })
+          }}
         >
           <SelectTrigger className="h-8 w-[76px] text-[12px] font-semibold tracking-wide border-border/60 bg-muted/20" aria-label="Exchange segment">
             <SelectValue />
@@ -703,6 +656,7 @@ export function OptionChainPanel({ apiKey, onPick, activeSymbol }: Props) {
                         key={`${item.exchange}:${item.name}`}
                         value={`${item.name} ${item.exchange}`}
                         onSelect={() => {
+                          setChartSupportNote(null)
                           setPrefs({
                             exchange: item.exchange,
                             underlying: item.name,
@@ -903,7 +857,7 @@ export function OptionChainPanel({ apiKey, onPick, activeSymbol }: Props) {
           <p className="p-3 text-[12px] text-muted-foreground">Loading chain...</p>
         ) : rows.length === 0 ? (
           <p className="p-3 text-[12px] text-muted-foreground">
-            No chain for this contract. Check the expiry, or that master contracts are downloaded.
+            {chartSupportNote ?? 'No listed option chain for this selection. Choose an underlying and an available option expiry.'}
           </p>
         ) : (
           rows.map((row) => {

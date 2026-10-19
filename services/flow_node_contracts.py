@@ -112,7 +112,7 @@ def normalize_status(value: str | None) -> str:
 
 def parse_underlying_symbol(underlying: str) -> tuple[str, str | None]:
     """Split an optional ``DDMMMYY`` expiry from an underlying symbol."""
-    match = re.match(r"^([A-Z]+)(\d{2}[A-Z]{3}\d{2})(?:FUT)?$", underlying.upper())
+    match = re.match(r"^([A-Z][A-Z0-9]*?)(\d{2}[A-Z]{3}\d{2})(?:FUT)?$", underlying.upper())
     if match:
         return match.group(1), match.group(2)
     return underlying.upper(), None

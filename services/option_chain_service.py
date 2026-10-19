@@ -62,6 +62,7 @@ from services.option_symbol_service import (
     NO_SPOT_EXCHANGES,
     construct_option_symbol,
     find_atm_strike_from_actual,
+    find_near_month_futures,
     get_available_strikes,
     get_option_exchange,
     parse_underlying_symbol,
@@ -362,7 +363,7 @@ def get_option_chain(
     try:
         # Step 1: Parse underlying symbol
         base_symbol, embedded_expiry = parse_underlying_symbol(underlying)
-        final_expiry = embedded_expiry or expiry_date
+        final_expiry = (expiry_date or embedded_expiry or "").replace("-", "").upper()
 
         if not final_expiry:
             return False, {"status": "error", "message": "Expiry date is required."}, 400
@@ -383,20 +384,28 @@ def get_option_chain(
 
         # Step 2: Determine quote exchange for underlying LTP
         quote_exchange = exchange
-        if exchange.upper() in ["NFO", "BFO"]:
-            if base_symbol in [
-                "NIFTY",
-                "BANKNIFTY",
-                "FINNIFTY",
-                "MIDCPNIFTY",
-                "NIFTYNXT50",
-                "INDIAVIX",
-            ]:
-                quote_exchange = "NSE_INDEX"
-            elif base_symbol in ["SENSEX", "BANKEX", "SENSEX50"]:
-                quote_exchange = "BSE_INDEX"
+        quote_symbol = base_symbol
+        if exchange.upper() in ("NFO", "BFO", "NSE", "BSE", "NSE_INDEX", "BSE_INDEX"):
+            segment = get_option_exchange(exchange)
+            index_exchange, cash_exchange = (
+                ("NSE_INDEX", "NSE") if segment == "NFO" else ("BSE_INDEX", "BSE")
+            )
+            if get_br_symbol(base_symbol, index_exchange):
+                quote_exchange = index_exchange
+            elif get_br_symbol(base_symbol, cash_exchange):
+                quote_exchange = cash_exchange
             else:
-                quote_exchange = "NSE" if exchange.upper() == "NFO" else "BSE"
+                future = find_near_month_futures(base_symbol, segment, final_expiry)
+                if future is None:
+                    return (
+                        False,
+                        {
+                            "status": "error",
+                            "message": f"No broker-listed price reference found for {base_symbol}.",
+                        },
+                        404,
+                    )
+                quote_symbol, quote_exchange = future["symbol"], future["exchange"]
         elif exchange.upper() in CRYPTO_EXCHANGES:
             # CRYPTO: look up the canonical perpetual symbol from cache (e.g. BTC -> BTCUSDFUT)
             quote_exchange = exchange.upper()
@@ -423,7 +432,7 @@ def get_option_chain(
             # nothing and the chain comes back with no underlying price at all.
             # The near-month future is the pricing reference instead.
             quote_exchange = exchange.upper()
-            resolved = resolve_underlying_quote(base_symbol, quote_exchange)
+            resolved = resolve_underlying_quote(base_symbol, quote_exchange, final_expiry)
             if resolved is None:
                 return (
                     False,
@@ -442,10 +451,6 @@ def get_option_chain(
             logger.info(
                 f"{exchange.upper()} has no spot; pricing {base_symbol} against {quote_symbol}"
             )
-
-        if exchange.upper() not in CRYPTO_EXCHANGES and exchange.upper() not in NO_SPOT_EXCHANGES:
-            # Use base symbol for index quotes (non-Delta)
-            quote_symbol = base_symbol if embedded_expiry else underlying
 
         # Step 3: Fetch underlying LTP
         logger.info(f"Fetching LTP for {quote_symbol} on {quote_exchange}")
@@ -612,8 +617,8 @@ def get_option_chain(
                 # unbounded "entire chain" request (strike_count=None) still
                 # needs the generic path.
                 used_fast_path = False
+                _auth, _, _broker = get_auth_token_broker(api_key, include_feed_token=True)
                 if strike_count is not None and strike_count <= 50:
-                    _auth, _, _broker = get_auth_token_broker(api_key, include_feed_token=True)
                     if _broker == "fyers" and _auth:
                         _bmod = import_broker_module(_broker)
                         if _bmod is not None and hasattr(_bmod.BrokerData, "get_option_chain"):
@@ -624,19 +629,27 @@ def get_option_chain(
                                 # strike off from ours; harmless if unused, and
                                 # still capped at Fyers' hard max of 50.
                                 fyers_chain = _dh.get_option_chain(
-                                    fyers_symbol, strikecount=min(strike_count + 2, 50)
+                                    fyers_symbol,
+                                    strikecount=min(strike_count + 2, 50),
+                                    expiry_date=final_expiry,
                                 )
                                 for item in chain_symbols:
                                     strike = item["strike"]
                                     if item["ce"]["exists"]:
                                         data = fyers_chain.get((strike, "CE"))
-                                        if data:
+                                        if data and data.get("broker_symbol") == get_br_symbol(
+                                            item["ce"]["symbol"], options_exchange
+                                        ):
                                             quotes_map[item["ce"]["symbol"]] = data
                                     if item["pe"]["exists"]:
                                         data = fyers_chain.get((strike, "PE"))
-                                        if data:
+                                        if data and data.get("broker_symbol") == get_br_symbol(
+                                            item["pe"]["symbol"], options_exchange
+                                        ):
                                             quotes_map[item["pe"]["symbol"]] = data
-                                used_fast_path = bool(fyers_chain)
+                                used_fast_path = all(
+                                    item["symbol"] in quotes_map for item in symbols_to_fetch
+                                )
                             except BrokerBusyError:
                                 raise
                             except Exception as _fe:
@@ -648,7 +661,11 @@ def get_option_chain(
 
                 if not used_fast_path:
                     success, quotes_response, status_code = get_multiquotes(
-                        symbols=symbols_to_fetch, api_key=api_key
+                        symbols=[
+                            item for item in symbols_to_fetch if item["symbol"] not in quotes_map
+                        ],
+                        api_key=api_key,
+                        include_oi=_broker != "fyers",
                     )
                     if not success and is_broker_busy(status_code):
                         # Refused before reaching the broker (gthread only).
@@ -660,7 +677,7 @@ def get_option_chain(
             # The Fyers fast path is the only one that fills quotes_map itself;
             # both the crypto per-symbol loop and the generic multiquotes call
             # hand back a results list that still has to be indexed here.
-            if not quotes_map and success and "results" in quotes_response:
+            if success and "results" in quotes_response:
                 for result in quotes_response["results"]:
                     symbol = result.get("symbol")
                     if symbol:

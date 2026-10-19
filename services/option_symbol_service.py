@@ -127,7 +127,9 @@ def clear_strikes_cache():
 NO_SPOT_EXCHANGES = frozenset({"MCX", "CDS", "BCD", "NCDEX", "NCO"})
 
 
-def find_near_month_futures(base_symbol: str, exchange: str) -> dict[str, Any] | None:
+def find_near_month_futures(
+    base_symbol: str, exchange: str, option_expiry: str | None = None
+) -> dict[str, Any] | None:
     """Nearest non-expired FUT contract for a base symbol on an exchange.
 
     The ATM-pricing source for option chains on exchanges with no spot: the
@@ -160,7 +162,9 @@ def find_near_month_futures(base_symbol: str, exchange: str) -> dict[str, Any] |
         rows = SymToken.query.filter(
             SymToken.symbol.like(f"{base}%FUT"),
             SymToken.exchange == exch,
-            SymToken.instrumenttype == "FUT",
+            SymToken.instrumenttype.in_(
+                ("FUT", "FUTIDX", "FUTSTK", "FUTCOM", "FUTENR", "FUTCUR", "FUTIRC")
+            ),
             SymToken.expiry.isnot(None),
             SymToken.expiry != "",
         ).all()
@@ -173,6 +177,13 @@ def find_near_month_futures(base_symbol: str, exchange: str) -> dict[str, Any] |
 
     exact = re.compile(rf"^{re.escape(base)}\d{{2}}[A-Z]{{3}}\d{{2}}FUT$")
     today = datetime.now().date()
+    if option_expiry:
+        try:
+            today = max(
+                today, datetime.strptime(option_expiry.replace("-", "").upper(), "%d%b%y").date()
+            )
+        except ValueError:
+            return None
 
     candidates = []
     for row in rows:
@@ -193,7 +204,9 @@ def find_near_month_futures(base_symbol: str, exchange: str) -> dict[str, Any] |
     return {"symbol": row.symbol, "exchange": row.exchange, "expiry": row.expiry}
 
 
-def resolve_underlying_quote(base_symbol: str, exchange: str) -> tuple[str, str] | None:
+def resolve_underlying_quote(
+    base_symbol: str, exchange: str, option_expiry: str | None = None
+) -> tuple[str, str] | None:
     """The (symbol, exchange) to quote for a chain's underlying reference.
 
     Returns None when an exchange that needs a future has none available, so
@@ -204,7 +217,7 @@ def resolve_underlying_quote(base_symbol: str, exchange: str) -> tuple[str, str]
     if exch not in NO_SPOT_EXCHANGES:
         return (base_symbol, exch)
 
-    fut = find_near_month_futures(base_symbol, exch)
+    fut = find_near_month_futures(base_symbol, exch, option_expiry)
     if fut is None:
         return None
     return (fut["symbol"], fut["exchange"])

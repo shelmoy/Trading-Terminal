@@ -134,8 +134,7 @@ export function mergeOptionChainMarketData(
       return {
         ...contract,
         ltp: roundToTickSize(tick.ltp, contract.tick_size) ?? contract.ltp,
-        bid:
-          roundToTickSize(depthBuy?.price ?? tick.bid_price, contract.tick_size) ?? contract.bid,
+        bid: roundToTickSize(depthBuy?.price ?? tick.bid_price, contract.tick_size) ?? contract.bid,
         ask:
           roundToTickSize(depthSell?.price ?? tick.ask_price, contract.tick_size) ?? contract.ask,
         bid_qty: depthBuy?.quantity ?? tick.bid_size ?? contract.bid_qty ?? 0,
@@ -152,13 +151,7 @@ export function mergeOptionChainMarketData(
 
   const underlyingTick = marketData.get(underlyingKey)
   const underlyingLtp = underlyingTick?.data?.ltp ?? fallbackUnderlyingLtp
-  const repriced = withGreeks(
-    mergedChain,
-    polledData,
-    underlyingLtp,
-    clockOffsetMs,
-    interestRate
-  )
+  const repriced = withGreeks(mergedChain, polledData, underlyingLtp, clockOffsetMs, interestRate)
 
   return {
     ...polledData,
@@ -182,7 +175,8 @@ export function currentWebSocketMarketData(
     Array.from(marketData).filter(
       ([key, symbolData]) =>
         (relevantKeys === undefined || relevantKeys.has(key.toUpperCase())) &&
-        symbolData.updateSource === 'websocket' && symbolData.connectionEpoch === connectionEpoch
+        symbolData.updateSource === 'websocket' &&
+        symbolData.connectionEpoch === connectionEpoch
     )
   )
 }
@@ -249,8 +243,12 @@ export function useOptionChainLive(
   // Check if polledData belongs to the currently requested underlying (prevents cross-underlying WS subscriptions on index switch)
   const isMatchingUnderlying = Boolean(
     polledData &&
-      polledData.underlying_symbol?.toUpperCase() === underlying.toUpperCase() &&
-      (!expiryDate || !polledData.expiry_date || polledData.expiry_date === expiryDate)
+      dataIdentity?.underlying.toUpperCase() === underlying.toUpperCase() &&
+      dataIdentity.exchange.toUpperCase() === optionExchange.toUpperCase() &&
+      dataIdentity.expiry === expiryDate &&
+      (!polledData.expiry_date ||
+        polledData.expiry_date.replace(/-/g, '').toUpperCase() ===
+          expiryDate.replace(/-/g, '').toUpperCase())
   )
 
   // Track merged data with WebSocket updates (initialized with polledData immediately for 0ms rendering)
@@ -373,13 +371,7 @@ export function useOptionChainLive(
         interestRate
       )
     )
-  }, [
-    polledData,
-    isMatchingUnderlying,
-    currentWsData,
-    optionExchange,
-    interestRate,
-  ])
+  }, [polledData, isMatchingUnderlying, currentWsData, optionExchange, interestRate])
 
   // Determine streaming status
   const isStreaming = enabled && isWsConnected && isWsAuthenticated && wsSymbols.length > 0
@@ -394,7 +386,12 @@ export function useOptionChainLive(
   }, [lastPollUpdate, lastLtpUpdate])
 
   return {
-    data: mergedData,
+    data:
+      isMatchingUnderlying &&
+      mergedData?.underlying === polledData?.underlying &&
+      mergedData?.expiry_date === polledData?.expiry_date
+        ? mergedData
+        : null,
     isLoading,
     isConnected: isPollingConnected,
     isStreaming,
