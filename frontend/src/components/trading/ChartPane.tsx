@@ -1,8 +1,7 @@
 // Lucide survives for the context menu's cut glyph only, which the engine's
 // chrome set has no picture for; it is drawn at the engine's line weight.
 // Everything else in the toolbar and the menus is the engine's chrome set.
-import { ArrowRight, Scissors } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { Scissors } from 'lucide-react'
 import type { ChartObjects, LinkGroup } from 'openalgo-charts'
 import type { MagnetMode } from 'openalgo-charts/draw'
 import type { WorkspacePane } from 'openalgo-charts/workspace'
@@ -40,6 +39,8 @@ import {
 } from '@/lib/trading/chartTypes'
 import { MOD_KEY } from '@/lib/trading/drawingKeys'
 import { ChromeIcon, chromeStroke, lineStroke24 } from '@/lib/trading/glyphs'
+import { chartTimeframePreferences } from '@/lib/trading/timeframePreferences'
+import { TimeframeMenu } from './TimeframeMenu'
 
 /**
  * The snapshot glyph: a rounded body, a softened hump and an open lens ring, on
@@ -403,7 +404,6 @@ export function ChartPane({
   }, [ready])
   const [intervalGroups, setIntervalGroups] = useState<IntervalGroup[]>([])
   const [interval, setIntervalState] = useState('5m')
-  const [customInterval, setCustomInterval] = useState('')
   const [chartType, setChartTypeState] = useState('candlestick')
   // The type on screen now, for a reply that lands after the type has moved on.
   const chartTypeRef = useRef(chartType)
@@ -1237,81 +1237,18 @@ export function ChartPane({
           </Tip>
 
           <ToolbarDivider />
-          {/* Timeframe */}
-          <DropdownMenu>
-            <Tip
-              tip={{
-                title: 'Interval',
-                chord: 'Type a number',
-                sub: '5 then Enter is 5 minutes; 1h, D and W work too',
-              }}
-            >
-              <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
-                  className={cn(TB_BTN, 'min-w-9 gap-1 font-semibold text-foreground')}
-                  aria-label={`Interval ${interval}`}
-                >
-                  {interval || '-'}
-                  <MenuChevron />
-                </button>
-              </DropdownMenuTrigger>
-            </Tip>
-            <DropdownMenuContent container={menuHost} align="start" className="w-64">
-              {intervalGroups.map((g) => (
-                <div key={g.label} className="px-1 pb-1">
-                  <div className="px-1 py-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-                    {g.label}
-                  </div>
-                  <div className="grid grid-cols-4 gap-1">
-                    {g.items.map((iv) => (
-                      <DropdownMenuItem
-                        key={iv}
-                        onSelect={() => changeInterval(iv)}
-                        className={cn(
-                          'justify-center rounded text-xs',
-                          iv === interval && 'bg-primary/15 font-semibold text-primary'
-                        )}
-                      >
-                        {iv}
-                      </DropdownMenuItem>
-                    ))}
-                  </div>
-                </div>
-              ))}
-              <DropdownMenuSeparator />
-              <div className="p-1.5" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
-                <div className="px-1 pb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-                  Custom Interval
-                </div>
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault()
-                    if (!customInterval.trim()) return
-                    const norm = normalizeCustomInterval(customInterval.trim())
-                    if (norm) {
-                      changeInterval(norm)
-                      setCustomInterval('')
-                    } else {
-                      showToast.error('Invalid interval format. Use e.g. 10s, 40s, 50s, 2m, 1h')
-                    }
-                  }}
-                  className="flex items-center gap-1"
-                >
-                  <Input
-                    type="text"
-                    value={customInterval}
-                    onChange={(e) => setCustomInterval(e.target.value)}
-                    placeholder="e.g. 40s, 2m"
-                    className="h-7 text-xs font-mono px-2"
-                  />
-                  <Button type="submit" size="sm" variant="secondary" className="h-7 px-2 text-xs">
-                    <ArrowRight className="h-3.5 w-3.5" />
-                  </Button>
-                </form>
-              </div>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          {/* Shared choices, with selection owned by this pane. */}
+          <TimeframeMenu
+            current={interval}
+            groups={intervalGroups}
+            preferences={chartTimeframePreferences()}
+            canSelectInterval={(code) =>
+              terminalRef.current?.supportsInterval?.(code) ??
+              intervalGroups.some((group) => group.items.includes(code))
+            }
+            onSelect={changeInterval}
+            container={menuHost}
+          />
 
           <ToolbarDivider />
           {/* Chart type */}
@@ -1720,8 +1657,11 @@ export function ChartPane({
           <QuickIntervalBox
             initial={intervalBox}
             available={intervalGroups.flatMap((group) => group.items)}
+            canSelectInterval={(code) => terminalRef.current?.supportsInterval?.(code) ?? false}
             onApply={(code) => {
               setIntervalBox(null)
+              if (!intervalGroups.some((group) => group.items.includes(code)))
+                chartTimeframePreferences().addCustom(code)
               if (code !== interval) changeInterval(code)
             }}
             onClose={() => setIntervalBox(null)}

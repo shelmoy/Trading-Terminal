@@ -30,6 +30,7 @@ import {
   type AlertSource,
   type AlertsDocument,
   type Bar,
+  type BarsRequest,
   BuySellButtons,
   CandleBuilder,
   ChartObjects,
@@ -133,8 +134,13 @@ import {
   candleSessionAnchor,
   isTradingSessionOpenForCandles,
   isValidIntradaySessionBar,
+  prepareSessionHours,
+  sessionCalendar,
+  sessionCalendarRevision,
 } from './sessionHours'
 import { TerminalComparisons } from './terminalComparisons'
+import { createTradingTimeframes } from './timeframeFeed'
+import { chartTimeframePreferences } from './timeframePreferences'
 import type { PreparedReplayMember } from './workspaceReplay'
 import {
   createWorkspacePanePreferences,
@@ -185,7 +191,6 @@ const initialBarRequests = new Map<string, Promise<Bar[]>>()
 const FAST_CACHE_STORAGE_KEY = 'openalgo.scalper.fastCache.v1'
 // Saved candles are a preview, never an excuse to skip authoritative refresh.
 const BAR_PREVIEW_RETENTION_MS = 7 * 86400_000
-const INTERVALS_CACHE_KEY = 'openalgo.chart.intervals.v1'
 let fastCachePersistTimer: ReturnType<typeof setTimeout> | null = null
 
 ;(function hydrateFastCache() {
@@ -1398,6 +1403,7 @@ export class TradingTerminal {
    * must never be confidently wrong about a price.
    */
   private cachedBars: ReturnType<typeof withBarCache> | null = null
+  private timeframes: ReturnType<typeof createTradingTimeframes> | null = null
   /** One owner for warm history, authoritative repair, paging and live merges. */
   private data: DataLoadingController | null = null
   private offData: (() => void) | null = null
@@ -3148,21 +3154,23 @@ export class TradingTerminal {
     // broker session, the same bar cache, and the same rule about never
     // serving a forming bar from it. Nothing about the key reaches a chart
     // setting, so a saved layout carries the study's symbol and no credential.
-    this.chart.setBarsProvider(async (request) => {
-      const feed = this.cachedBars ?? this.rest
-      if (!feed) return []
-      const bars = await feed.getBars({
-        symbol: request.symbol,
-        // An indicator naming only a symbol means "on this chart's exchange",
-        // which is the common case for a benchmark on the same venue.
-        exchange: request.exchange ?? this.sym?.exchange ?? '',
-        interval: request.interval,
-        from: request.from,
-        to: request.to,
-        signal: request.signal,
+    if (this.timeframes) this.chart.setBarsProvider(this.timeframes.provider)
+    else
+      this.chart.setBarsProvider(async (request) => {
+        const feed = this.timeframes?.feed ?? this.cachedBars ?? this.rest
+        if (!feed) return []
+        const bars = await feed.getBars({
+          symbol: request.symbol,
+          // An indicator naming only a symbol means "on this chart's exchange",
+          // which is the common case for a benchmark on the same venue.
+          exchange: request.exchange ?? this.sym?.exchange ?? '',
+          interval: request.interval,
+          from: request.from,
+          to: request.to,
+          signal: request.signal,
+        })
+        return bars
       })
-      return bars
-    })
   }
 
   /** Safe link metadata for the active chart branding, if it supplies a destination. */
@@ -4991,8 +4999,18 @@ export class TradingTerminal {
     chartRuns: boolean
   ): IndicatorField {
     if (field.type !== 'interval' || field.options !== undefined) return field
+    const choices = [
+      ...new Set([
+        ...this.availableIntervals,
+        ...chartTimeframePreferences().custom(),
+        'W',
+        'M',
+        'Q',
+        'Y',
+      ]),
+    ]
     const offered = chartRuns
-      ? this.availableIntervals.filter((code) => isKnownInterval(code))
+      ? choices.filter((code) => this.supportsInterval(code) && isKnownInterval(code))
       : this.availableIntervals
     // The empty entry is "the chart's own interval", which is how a study says
     // it is not folding at all.
@@ -5560,12 +5578,20 @@ export class TradingTerminal {
 
   private installComparisons(): void {
     const chart = this.chart
-    const feed = this.cachedBars ?? this.rest
+    const feed = this.timeframes?.feed ?? this.cachedBars ?? this.rest
     if (!chart || !feed || this.destroyed) return
     let setup = Promise.resolve()
     if (!this.comparisons) {
       const comparisons = new TerminalComparisons({
         feed,
+        ...(this.timeframes
+          ? {
+              bucketStart: (request: BarsRequest, time: number) =>
+                sessionCalendar({ ...request, from: time, to: time + 1 })
+                  ? this.timeframes!.bucketStart(request, time)
+                  : null,
+            }
+          : {}),
         ws: { url: this.wsUrl, apiKey: this.apiKey },
         now: () => this.gridNow(),
         onChange: () => {
@@ -6851,7 +6877,12 @@ export class TradingTerminal {
       rememberSecondsTick(this.secondsKey(this.sym.symbol, this.sym.exchange, '1s'), tickTimeSec, e.ltp)
     }
     if (this.builder && sessionOpen) {
-      const u = this.builder.onTick({ time: tickTimeSec, price: e.ltp, ltq: e.ltq })
+      let u
+      try {
+        u = this.builder.onTick({ time: tickTimeSec, price: e.ltp, ltq: e.ltq })
+      } catch {
+        return // An after-hours or stale tick must not create a candle.
+      }
       if (u) {
         this.liveBucket = u.bar.time
         if (this.waitingForSecondsTicks) {
@@ -6919,7 +6950,29 @@ export class TradingTerminal {
       ? candleSessionAnchor(this.sym?.exchange || '', nowSec())
       : (this.rawBars[this.rawBars.length - 1]?.time ?? 0)
     this.builder = sec
-      ? new CandleBuilder({ intervalSec: sec, volumeMode: 'ltq-sum', sessionAnchorSec })
+      ? new CandleBuilder({
+          intervalSec: sec,
+          volumeMode: 'ltq-sum',
+          sessionAnchorSec,
+          ...(this.timeframes &&
+          sessionCalendar({
+            symbol: '',
+            exchange: this.sym?.exchange || this.exprLegExchange,
+            interval: this.interval,
+          })
+            ? {
+                bucketStart: (time) =>
+                  this.timeframes!.bucketStart(
+                    {
+                      symbol: this.sym?.symbol ?? '',
+                      exchange: this.sym?.exchange || this.exprLegExchange,
+                      interval: this.interval,
+                    },
+                    time
+                  ),
+              }
+            : {}),
+        })
       : null
     // History normally ends *inside* the bar currently forming. An unseeded
     // builder has no current bar, so its first tick opens a second one for that
@@ -6989,7 +7042,29 @@ export class TradingTerminal {
     // bucket short, the first tick opens a provisional bar and the repair after
     // the bar closes brings the open it missed.
     this.builder = sec
-      ? new CandleBuilder({ intervalSec: sec, volumeMode: 'ltq-sum', sessionAnchorSec })
+      ? new CandleBuilder({
+          intervalSec: sec,
+          volumeMode: 'ltq-sum',
+          sessionAnchorSec,
+          ...(this.timeframes &&
+          sessionCalendar({
+            symbol: '',
+            exchange: this.sym?.exchange || this.exprLegExchange,
+            interval: this.interval,
+          })
+            ? {
+                bucketStart: (time) =>
+                  this.timeframes!.bucketStart(
+                    {
+                      symbol: this.sym?.symbol ?? '',
+                      exchange: this.sym?.exchange || this.exprLegExchange,
+                      interval: this.interval,
+                    },
+                    time
+                  ),
+              }
+            : {}),
+        })
       : null
     if (this.builder && this.rawBars.length) {
       this.builder.seed(this.rawBars[this.rawBars.length - 1])
@@ -7222,7 +7297,7 @@ export class TradingTerminal {
       from: to - lookbackDays(this.interval) * 86400,
       to,
     }
-    const inner = this.cachedBars ?? this.rest
+    const inner = this.timeframes?.feed ?? this.cachedBars ?? this.rest
     if (!inner) return false
     const feed = this.exprFeed ?? new ExpressionFeed(inner, () => this.exprLegExchange)
     let bars: readonly Bar[]
@@ -7364,7 +7439,7 @@ export class TradingTerminal {
     opts: { silent?: boolean; strict?: boolean },
     ticket: number
   ): Promise<boolean> {
-    const feed = this.cachedBars ?? this.rest
+    const feed = this.timeframes?.feed ?? this.cachedBars ?? this.rest
     if (!feed) return false
     /**
      * Claim this load. Two awaits follow -- the symbol lookup and the bars --
@@ -7645,6 +7720,14 @@ export class TradingTerminal {
   }
 
   /* ── toolbar setters (called by the React page) ───────────────────────── */
+  /** Native choices work without a calendar; custom choices require compatible source metadata. */
+  supportsInterval(code: string, exchange = this.sym?.exchange ?? 'NSE'): boolean {
+    return (
+      this.timeframes?.supports(code, { symbol: this.sym?.symbol ?? '', exchange }) ??
+      this.availableIntervals.includes(code)
+    )
+  }
+
   setInterval(iv: string): string {
     const norm = normalizeCustomInterval(iv) || iv
     if (norm === this.interval) return norm
@@ -7655,13 +7738,9 @@ export class TradingTerminal {
         return this.interval
       }
     }
-    if (!this.availableIntervals.includes(norm)) {
-      if (normalizeCustomInterval(norm)) {
-        this.availableIntervals.push(norm)
-      } else {
-        this.toast(`The connected feed does not support ${iv}`, 'err')
-        return this.interval
-      }
+    if (!this.supportsInterval(norm)) {
+      this.toast(`The connected feed does not support ${iv}`, 'err')
+      return this.interval
     }
     iv = norm
     if (
@@ -8449,7 +8528,39 @@ export class TradingTerminal {
       return fetched
     }
     this.cachedBars = baseCachedBars
-    this.exprFeed = new ExpressionFeed(baseCachedBars, () => this.exprLegExchange)
+    this.trade = new OpenAlgoTradeFeed({ baseUrl: '', apiKey: this.apiKey, strategy: STRATEGY })
+
+    // broker-supported intervals → the timeframe dropdown
+    let groups: IntervalGroup[]
+    let capabilitiesKnown = true
+    try {
+      const j = await this.api<{ data?: IntervalData }>('intervals')
+      this.nativeSecondIntervals = new Set(j.data?.seconds || [])
+      groups = intervalGroups(j.data || {})
+    } catch (error) {
+      if (this.initialWorkspacePane) throw error
+      capabilitiesKnown = false
+      groups = intervalGroups({ minutes: ['1m', '5m', '15m'], hours: ['1h'], days: ['D'] })
+    }
+    // The pane may have closed while intervals loaded. Do not reopen its resources.
+    if (this.destroyed) {
+      if (this.initialWorkspacePane) throw new Error('Workspace preparation was cancelled')
+      return
+    }
+    this.availableIntervals = groups.flatMap((group) => group.items)
+    const savedSymbol = this.initialWorkspacePane ?? savedInstrument(this.lsGet('symbol'))
+    const exchange = savedSymbol?.exchange ?? 'NSE'
+    await prepareSessionHours(this.apiKey, { symbol: '', exchange, interval: 'D' })
+    if (this.destroyed) return
+    this.timeframes = createTradingTimeframes(this.cachedBars, {
+      providerId: 'openalgo',
+      nativeIntervals: this.availableIntervals,
+      calendar: (request) => (capabilitiesKnown ? sessionCalendar(request) : null),
+      calendarRevision: sessionCalendarRevision,
+      prepare: (request) => prepareSessionHours(this.apiKey, request),
+      now: nowSec,
+    })
+    this.exprFeed = new ExpressionFeed(this.timeframes.feed, () => this.exprLegExchange)
     // Repair follows the stream: one small refresh a moment after each bar
     // closes, an immediate one when the stream skips a bucket, and each asks
     // history for the last few bars only. The 30-second poll stays, now as a
@@ -8472,14 +8583,39 @@ export class TradingTerminal {
     window.addEventListener('focus', this.redrawOnFocus)
     window.addEventListener('pagehide', this.flushRenkoV4)
     this.onVisibilityChange()
-    this.trade = new OpenAlgoTradeFeed({ baseUrl: '', apiKey: this.apiKey, strategy: STRATEGY })
 
-    // Pre-seed interval & WebSocket BEFORE any network await so external callers
-    // (like Scalper) that invoke loadSymbol() immediately use the right interval and WS!
-    const earlySavedInterval = this.initialWorkspacePane?.interval || this.lsGet('interval')
-    if (earlySavedInterval) {
-      this.interval = earlySavedInterval
+    if (this.initialWorkspacePane) {
+      const pane = this.initialWorkspacePane
+      // Only what this pane holds: the validation below reads the registry for
+      // the pane's own studies, and the rest of the catalogue follows once the
+      // chart is up.
+      await this.loadIndicatorsFor((pane.chart.indicators ?? []).map((study) => study.indicatorId))
+      this.assertWorkspacePreparation()
+      validateWorkspacePaneSupport(pane, {
+        chartTypes: new Set(Object.keys(CHART_TYPES)),
+        intervals: new Set([
+          ...this.availableIntervals,
+          ...(this.supportsInterval(pane.interval, pane.exchange) ? [pane.interval] : []),
+        ]),
+        indicators: new Set(registeredIndicators().map((study) => study.id)),
+      })
+      if (
+        isProfileKind(this.ctype) &&
+        !profileIntervalSupported(this.ctype, pane.interval, this.profileBlockMinutes())
+      )
+        throw new Error(`Unsupported workspace profile interval: ${pane.interval}`)
+      this.interval = pane.interval
+    } else {
+      const saved = this.lsGet('interval')
+      this.interval =
+        saved && this.supportsInterval(saved, exchange) ? saved : pickInterval(groups, saved)
     }
+    if (!this.initialWorkspacePane && isProfileKind(this.ctype)) {
+      const interval = this.compatibleProfileInterval(this.ctype)
+      if (interval) this.interval = interval
+      else this.ctype = 'candlestick'
+    }
+    this.cb.onReady({ intervalGroups: groups, interval: this.interval, chartType: this.ctype })
 
     // one WebSocket for ticks + the account-level order stream.
     this.ws = new OpenAlgoWsFeed({ url: this.wsUrl, apiKey: this.apiKey })
@@ -8534,94 +8670,6 @@ export class TradingTerminal {
     if (this.bookTimer) clearInterval(this.bookTimer)
     this.bookTimer = setInterval(() => this.pollBook(), 8000)
 
-    // broker-supported intervals → the timeframe dropdown (0ms warm cache in localStorage)
-    let groups: IntervalGroup[] | null = null
-    if (!this.initialWorkspacePane && typeof window !== 'undefined') {
-      try {
-        const cachedIv = localStorage.getItem(INTERVALS_CACHE_KEY)
-        if (cachedIv) {
-          const parsedIv = JSON.parse(cachedIv) as IntervalData
-          if (parsedIv && typeof parsedIv === 'object') {
-            this.nativeSecondIntervals = new Set(parsedIv.seconds || [])
-            groups = intervalGroups(parsedIv)
-            // Refresh intervals silently in background
-            void this.api<{ data?: IntervalData }>('intervals')
-              .then((j) => {
-                if (j?.data) {
-                  this.nativeSecondIntervals = new Set(j.data.seconds || [])
-                  localStorage.setItem(INTERVALS_CACHE_KEY, JSON.stringify(j.data))
-                }
-              })
-              .catch(() => {})
-          }
-        }
-      } catch {
-        /* fall through to network fetch */
-      }
-    }
-    if (!groups) {
-      if (!this.initialWorkspacePane) {
-        groups = intervalGroups({ minutes: ['1m', '5m', '15m'], hours: ['1h'], days: ['D'] })
-        // The interval catalogue must not block the first candle request.
-        void this.api<{ data?: IntervalData }>('intervals').then((j) => {
-          if (this.destroyed || !j.data) return
-          this.nativeSecondIntervals = new Set(j.data.seconds || [])
-          const freshGroups = intervalGroups(j.data)
-          this.availableIntervals = freshGroups.flatMap((group) => group.items)
-          this.cb.onReady({ intervalGroups: freshGroups, interval: this.interval, chartType: this.ctype })
-          if (this.nativeSecondIntervals.has(this.interval)) this.reconcileNow()
-          try {
-            localStorage.setItem(INTERVALS_CACHE_KEY, JSON.stringify(j.data))
-          } catch { /* storage can be disabled */ }
-        }).catch(() => {})
-      }
-    }
-    if (!groups) {
-      try {
-        const j = await this.api<{ data?: IntervalData }>('intervals')
-        this.nativeSecondIntervals = new Set(j.data?.seconds || [])
-        if (j?.data && typeof window !== 'undefined') {
-          try {
-            localStorage.setItem(INTERVALS_CACHE_KEY, JSON.stringify(j.data))
-          } catch {
-            /* ignore */
-          }
-        }
-        groups = intervalGroups(j.data || {})
-      } catch (error) {
-        if (this.initialWorkspacePane) throw error
-        groups = intervalGroups({ minutes: ['1m', '5m', '15m'], hours: ['1h'], days: ['D'] })
-      }
-    }
-    // The pane may have closed while intervals loaded. Do not reopen its resources.
-    if (this.destroyed) {
-      if (this.initialWorkspacePane) throw new Error('Workspace preparation was cancelled')
-      return
-    }
-    this.availableIntervals = groups.flatMap((group) => group.items)
-    if (this.initialWorkspacePane) {
-      const pane = this.initialWorkspacePane
-      await this.loadIndicatorsFor((pane.chart.indicators ?? []).map((study) => study.indicatorId))
-      this.assertWorkspacePreparation()
-      validateWorkspacePaneSupport(pane, {
-        chartTypes: new Set(Object.keys(CHART_TYPES)),
-        intervals: new Set(this.availableIntervals),
-        indicators: new Set(registeredIndicators().map((study) => study.id)),
-      })
-      if (
-        isProfileKind(this.ctype) &&
-        !profileIntervalSupported(this.ctype, pane.interval, this.profileBlockMinutes())
-      )
-        throw new Error(`Unsupported workspace profile interval: ${pane.interval}`)
-      this.interval = pane.interval
-    } else {
-      this.interval = pickInterval(groups, this.lsGet('interval'))
-    }
-    if (!this.initialWorkspacePane && isProfileKind(this.ctype)) {
-      const interval = this.compatibleProfileInterval(this.ctype)
-      if (interval) this.interval = interval
-      else this.ctype = 'candlestick'
-    }
     if (this.ctype === 'renko-v4') {
       const interval = renkoV4HistoryInterval(this.availableIntervals)
       if (interval) this.interval = interval
@@ -8737,6 +8785,8 @@ export class TradingTerminal {
     this.offData = null
     this.data?.destroy()
     this.data = null
+    this.timeframes?.destroy()
+    this.timeframes = null
     this.detachAlerts()
     this.detachObjects()
     this.detachDrawing()
