@@ -26,6 +26,31 @@ export interface Watchlist {
   items: WatchlistItem[]
 }
 
+export interface BrokerContract {
+  symbol: string
+  exchange: string
+  name: string
+  expiry?: string
+  expiry_label?: string
+  lotsize?: number
+  instrumenttype?: string
+  tick_size?: number
+}
+
+export interface BrokerInstrument {
+  id: string
+  name: string
+  kind: 'commodity' | 'commodity_index' | 'index'
+  contracts: BrokerContract[]
+}
+
+export interface BrokerWatchlistCatalog {
+  broker: string
+  as_of: string
+  commodities: BrokerInstrument[]
+  indices: BrokerInstrument[]
+}
+
 interface Envelope<T> {
   status: 'success' | 'error'
   data: T
@@ -33,6 +58,12 @@ interface Envelope<T> {
 }
 
 export const watchlistApi = {
+  brokerCatalog: async (): Promise<BrokerWatchlistCatalog> => {
+    const res = await webClient.get<Envelope<BrokerWatchlistCatalog>>(
+      '/watchlist/api/broker-catalog'
+    )
+    return res.data.data
+  },
   list: async (): Promise<Watchlist[]> => {
     const res = await webClient.get<Envelope<Watchlist[]>>('/watchlist/api/lists')
     return res.data.data ?? []

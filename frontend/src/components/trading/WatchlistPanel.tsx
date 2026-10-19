@@ -49,6 +49,7 @@ import { prefetchSymbolData, type SearchRow } from '@/lib/trading/terminal'
 import { cn } from '@/lib/utils'
 import { showToast } from '@/utils/toast'
 import { PANEL_HEADER, PanelShell } from './panelShell'
+import { BrokerWatchlistCatalog } from './BrokerWatchlistCatalog'
 import { SymbolSearchDialog } from './SymbolSearchDialog'
 
 /** Remembers which list was open, so a reload lands where the user left off. */
@@ -222,6 +223,15 @@ function rowGrid(columns: typeof COLUMNS): string {
 }
 
 export function WatchlistPanel({ apiKey, onPick, search, activeSymbol }: Props) {
+  const [panelMode, setPanelMode] = useState<'lists' | 'commodities' | 'indices'>(() => {
+    try {
+      const saved = localStorage.getItem('oa-watchlist-tab')
+      return saved === 'lists' || saved === 'indices' ? saved : 'commodities'
+    } catch { return 'commodities' }
+  })
+  useEffect(() => {
+    try { localStorage.setItem('oa-watchlist-tab', panelMode) } catch { /* Storage is optional. */ }
+  }, [panelMode])
   const [lists, setLists] = useState<Watchlist[]>([])
   const [activeId, setActiveId] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
@@ -362,7 +372,7 @@ export function WatchlistPanel({ apiKey, onPick, search, activeSymbol }: Props) 
   }
 
   /* ── live prices ──────────────────────────────────────────────────────── */
-  const items = useMemo(() => active?.items ?? [], [active])
+  const items = useMemo(() => panelMode === 'lists' ? active?.items ?? [] : [], [active, panelMode])
 
   // A stable identity for the hook's dependency chain: `items` is a fresh array
   // on every render, and useLivePrice keys its subscription off this.
@@ -669,8 +679,18 @@ export function WatchlistPanel({ apiKey, onPick, search, activeSymbol }: Props) 
       id="oa-panel-watchlist"
       label="Watchlist"
       storageKey="oa-trading-watchlist-width"
-      minWidth={minWidth}
+      minWidth={panelMode === 'lists' ? minWidth : 300}
     >
+      <div className="flex shrink-0 gap-1 border-b p-1.5" role="group" aria-label="Watchlist category">
+        {(['lists', 'commodities', 'indices'] as const).map((mode) => <button
+          key={mode} type="button" aria-pressed={panelMode === mode}
+          onClick={() => setPanelMode(mode)}
+          className={cn('flex-1 rounded-md px-2 py-1.5 text-[11px] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
+            panelMode === mode ? 'bg-accent font-semibold text-accent-foreground' : 'text-muted-foreground hover:bg-accent/50')}>
+          {mode === 'lists' ? 'My lists' : mode === 'commodities' ? 'Commodities' : 'Indices'}
+        </button>)}
+      </div>
+      {panelMode !== 'lists' ? <BrokerWatchlistCatalog mode={panelMode} apiKey={apiKey} onPick={onPick} activeSymbol={activeSymbol} /> : <>
       {/* Header: which list, and what can be done to it. Its height lands the
           rule on the same line as every pane toolbar's. */}
       <div className={PANEL_HEADER}>
@@ -1103,6 +1123,7 @@ export function WatchlistPanel({ apiKey, onPick, search, activeSymbol }: Props) 
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      </>}
     </PanelShell>
   )
 }

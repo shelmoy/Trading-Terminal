@@ -69,6 +69,29 @@ def lists():
     return jsonify({"status": "success", "data": get_watchlists(_user())})
 
 
+@watchlist_bp.route("/watchlist/api/broker-catalog", methods=["GET"])
+@check_session_validity
+def broker_catalog():
+    """Built-in commodity contracts and indices from the connected broker master."""
+    from database.broker_watchlist import get_broker_watchlist_catalog
+
+    broker = session.get("broker")
+    if not broker:
+        return jsonify({"status": "error", "message": "Connect your broker first."}), 409
+    try:
+        response = jsonify({"status": "success", "data": get_broker_watchlist_catalog(broker)})
+        response.headers["Cache-Control"] = "no-store"
+        return response
+    except Exception:
+        logger.exception("Could not read broker watchlist catalog for %s", broker)
+        return jsonify(
+            {
+                "status": "error",
+                "message": "Could not read the broker contract list. Please refresh.",
+            }
+        ), 503
+
+
 @watchlist_bp.route("/watchlist/api/lists", methods=["POST"])
 @check_session_validity
 def create_list():
