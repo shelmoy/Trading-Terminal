@@ -55,6 +55,7 @@ from blueprints.apikey import api_key_bp
 from blueprints.arbitrage import arbitrage_bp  # Import the Arbitrage blueprint
 from blueprints.auth import auth_bp
 from blueprints.brlogin import brlogin_bp
+from blueprints.broker_instances import broker_instances_bp
 from blueprints.broker_credentials import (
     broker_credentials_bp,  # Import the broker credentials blueprint
 )
@@ -298,6 +299,10 @@ def create_app():
 
     # Register other blueprints
     app.register_blueprint(auth_bp)
+    app.register_blueprint(broker_instances_bp)
+    from utils.broker_instances import guard_managed_login
+
+    app.before_request(guard_managed_login)
     app.register_blueprint(dashboard_bp)
     app.register_blueprint(orders_bp)
     app.register_blueprint(search_bp)

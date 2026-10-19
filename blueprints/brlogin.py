@@ -3,6 +3,9 @@ import hashlib
 import http.client
 import json
 import os
+import re
+import secrets
+import time
 
 import jwt
 from flask import Blueprint, jsonify, make_response, redirect, request, session, url_for
@@ -38,6 +41,9 @@ def ratelimit_handler(e):
 @limiter.limit(LOGIN_RATE_LIMIT_MIN)
 @limiter.limit(LOGIN_RATE_LIMIT_HOUR)
 def broker_callback(broker, para=None):
+    configured = re.search(r"/([^/]+)/callback$", os.getenv("REDIRECT_URL", ""))
+    if configured is None or configured.group(1) != broker:
+        return jsonify(error="This broker belongs to a different instance. Select it from the broker page."), 400
     logger.info(f"Broker callback initiated for: {broker}")
     logger.debug("Session keys: %s", sorted(session.keys()))
     logger.info(f"Session has user key: {'user' in session}")
@@ -253,6 +259,16 @@ def broker_callback(broker, para=None):
 
     elif broker == "fyers":
         code = request.args.get("auth_code")
+        expected_state = session.pop("fyers_oauth_state", None)
+        started_at = session.pop("fyers_oauth_started", 0)
+        actual_state = request.args.get("state", "")
+        if (
+            not isinstance(expected_state, str)
+            or not secrets.compare_digest(expected_state, actual_state)
+            or time.time() - started_at > 300
+            or not code
+        ):
+            return handle_auth_failure("FYERS login expired or state did not match. Please connect again.")
         logger.debug("Fyers broker - auth_code present: %s", bool(code))
         auth_token, error_message = auth_function(code)
         forward_url = "broker.html"

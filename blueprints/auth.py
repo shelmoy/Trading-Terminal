@@ -132,6 +132,8 @@ def get_broker_config():
 
     # Return full config only for authenticated users
     if "user" in session:
+        from utils.broker_instances import configured_instances
+
         BROKER_API_KEY = os.getenv("BROKER_API_KEY")
         return jsonify(
             {
@@ -139,6 +141,7 @@ def get_broker_config():
                 "broker_name": broker_name,
                 "broker_api_key": BROKER_API_KEY,
                 "redirect_url": REDIRECT_URL,
+                "broker_instances": configured_instances(),
             }
         )
 
@@ -156,6 +159,10 @@ def get_broker_config():
 @auth_bp.route("/check-setup", methods=["GET"])
 def check_setup_required():
     """Check if initial setup is required (no users exist)."""
+    from utils.broker_instances import managed_login_enabled
+
+    if managed_login_enabled():
+        return jsonify({"status": "success", "needs_setup": False})
     needs_setup = find_user_by_username() is None
     return jsonify({"status": "success", "needs_setup": needs_setup})
 

@@ -59,6 +59,16 @@ interface BrokerConfig {
   broker_name: string
   broker_api_key: string
   redirect_url: string
+  broker_instances?: Record<string, string>
+}
+
+function instanceLoginUrl(config: BrokerConfig, broker: string): string | null {
+  if (broker === config.broker_name) return null
+  const configured = config.broker_instances?.[broker]
+  if (!configured) return null
+  const url = new URL(configured)
+  if (url.hostname !== '127.0.0.1' || !['http:', 'https:'].includes(url.protocol)) return null
+  return `${url.origin}/auth/instance-login`
 }
 
 // Helper function to get Flattrade API key
@@ -126,8 +136,15 @@ export default function BrokerSelect() {
       return
     }
 
-    if (selectedBroker === 'fyers' && brokerConfig.broker_name !== 'fyers') {
-      setError('Configure your FYERS App ID, secret and /fyers/callback redirect URL in Profile before connecting FYERS.')
+    const linkedInstance = instanceLoginUrl(brokerConfig, selectedBroker)
+    if (linkedInstance) {
+      setIsSubmitting(true)
+      window.location.assign(linkedInstance)
+      return
+    }
+
+    if (selectedBroker !== brokerConfig.broker_name) {
+      setError('This broker is not configured. Add its credentials in a separate linked broker instance before connecting.')
       return
     }
 
@@ -195,13 +212,8 @@ export default function BrokerSelect() {
         break
 
       case 'fyers': {
-        const params = new URLSearchParams({
-          client_id: broker_api_key,
-          redirect_uri: redirect_url,
-          response_type: 'code',
-          state: generateRandomState(),
-        })
-        loginUrl = `https://api-t1.fyers.in/api/v3/generate-authcode?${params}`
+        // The server binds a cryptographic OAuth state to the app session.
+        loginUrl = '/auth/fyers/start'
         break
       }
 
@@ -289,7 +301,16 @@ export default function BrokerSelect() {
                   </Label>
                   <Select
                     value={selectedBroker}
-                    onValueChange={setSelectedBroker}
+                    onValueChange={(broker) => {
+                      setSelectedBroker(broker)
+                      setError(null)
+                      if (!brokerConfig) return
+                      const linked = instanceLoginUrl(brokerConfig, broker)
+                      if (linked || (broker === 'fyers' && brokerConfig.broker_name === 'fyers')) {
+                        setIsSubmitting(true)
+                        window.location.assign(linked || '/auth/fyers/start')
+                      }
+                    }}
                     disabled={isSubmitting}
                   >
                     <SelectTrigger id="broker-select" className="w-full">
