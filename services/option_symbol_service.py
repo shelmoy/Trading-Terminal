@@ -739,6 +739,8 @@ def get_option_exchange(underlying_exchange: str) -> str:
     """
     underlying_exchange = underlying_exchange.upper()
 
+    if underlying_exchange in ("NFO", "BFO"):
+        return underlying_exchange
     if underlying_exchange in ["NSE", "NSE_INDEX"]:
         return "NFO"
     elif underlying_exchange in ["BSE", "BSE_INDEX"]:
