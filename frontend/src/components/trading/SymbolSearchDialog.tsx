@@ -160,8 +160,29 @@ function matchScore(symbol: string, q: string): number {
   return 3
 }
 
+const FUTURE_EXCHANGES = new Set(['NFO', 'BFO', 'MCX', 'NCDEX', 'NCO', 'CDS', 'BCD'])
+const EXPIRY_MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
+
+/** Use the actual calendar date, not the day-first symbol's alphabetic order. */
+function futureExpiry(row: SearchRow): { underlying: string; date: number } | null {
+  if (!FUTURE_EXCHANGES.has(String(row.exchange))) return null
+  const symbol = String(row.symbol).toUpperCase()
+  const contract = symbol.match(/^(.*?)(\d{2})([A-Z]{3})(\d{4}|\d{2})FUT$/)
+  if (!contract) return null
+  const expiry = String(row.expiry ?? '').toUpperCase().match(/^(\d{2})-?([A-Z]{3})-?(\d{4}|\d{2})$/)
+  const day = Number(expiry?.[1] ?? contract[2])
+  const month = EXPIRY_MONTHS.indexOf(expiry?.[2] ?? contract[3])
+  const rawYear = expiry?.[3] ?? contract[4]
+  const year = Number(rawYear) + (rawYear.length === 2 ? 2000 : 0)
+  if (month < 0) return null
+  const date = Date.UTC(year, month, day)
+  const parsed = new Date(date)
+  if (parsed.getUTCDate() !== day || parsed.getUTCMonth() !== month) return null
+  return { underlying: contract[1], date }
+}
+
 /** Rank rows so Index surfaces above Cash, which surfaces above F&O/Currency/Commodity. */
-function compareRows(a: SearchRow, b: SearchRow, q: string): number {
+function compareRows(a: SearchRow, b: SearchRow, q: string, today: number): number {
   // A row whose name is exactly what was typed comes first, ahead of category.
   //
   // Category is the right tie-break between near matches, and the wrong one
@@ -181,6 +202,20 @@ function compareRows(a: SearchRow, b: SearchRow, q: string): number {
   if (scoreDiff) return scoreDiff
   const exDiff = (EXCHANGE_RANK[exA] ?? 9) - (EXCHANGE_RANK[exB] ?? 9)
   if (exDiff) return exDiff
+  const futureA = futureExpiry(a)
+  const futureB = futureExpiry(b)
+  const futureDiff = Number(!futureA) - Number(!futureB)
+  if (futureDiff) return futureDiff
+  if (futureA && futureB) {
+    const underlyingDiff = futureA.underlying.localeCompare(futureB.underlying)
+    if (underlyingDiff) return underlyingDiff
+    const expiredA = futureA.date < today
+    const expiredB = futureB.date < today
+    if (expiredA !== expiredB) return Number(expiredA) - Number(expiredB)
+    // Expiry-day futures remain current through that exchange session.
+    const expiryDiff = expiredA ? futureB.date - futureA.date : futureA.date - futureB.date
+    if (expiryDiff) return expiryDiff
+  }
   const lenDiff = String(a.symbol).length - String(b.symbol).length
   if (lenDiff) return lenDiff
   return String(a.symbol).localeCompare(String(b.symbol))
@@ -332,7 +367,9 @@ export function SymbolSearchDialog({
     const named = whole !== '' && rows.some((r) => String(r.symbol).toUpperCase().startsWith(whole))
     const q = named ? whole : leg.trim().toUpperCase()
     const base = chip === 'ALL' ? rows : rows.filter((r) => categoryOf(String(r.exchange)) === chip)
-    return [...base].sort((a, b) => compareRows(a, b, q)).slice(0, MAX_ROWS)
+    const istDate = new Date(Date.now() + 5.5 * 60 * 60 * 1000)
+    const today = Date.UTC(istDate.getUTCFullYear(), istDate.getUTCMonth(), istDate.getUTCDate())
+    return [...base].sort((a, b) => compareRows(a, b, q, today)).slice(0, MAX_ROWS)
   }, [rows, chip, leg, query])
 
   // On open: seed query with the current symbol, select it, focus, reset chip.
