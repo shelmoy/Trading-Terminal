@@ -66,6 +66,7 @@ export interface AlertChart {
     indicatorId: string
     paneIndex: number
     values(): Record<string, readonly (number | null)[]>
+    visible?(): boolean
     series(plotKey: string): unknown
   }[]
   primaryBars(): readonly { close: number }[]

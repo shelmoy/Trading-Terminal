@@ -243,6 +243,22 @@ export function AlertsPanel({ view, log, paneLabel, onEdit, onClearLog, revision
       // different problems.
       if (alert.state !== 'armed') continue
       try {
+        const owner =
+          alert.source.kind === 'indicator'
+            ? alert.source.instanceId
+            : alert.source.kind === 'drawing'
+              ? alert.source.input?.instanceId
+              : undefined
+        if (
+          owner &&
+          view.chart
+            .indicators()
+            .find((study) => study.id === owner)
+            ?.visible?.() === false
+        ) {
+          reasons[alert.id] = 'Indicator is hidden. Show it to resume this alert.'
+          continue
+        }
         const how = view.alerts.availability(alert.id)
         if (!how.available && how.reason) reasons[alert.id] = how.reason
       } catch {

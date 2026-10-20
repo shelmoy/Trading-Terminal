@@ -99,6 +99,11 @@ import type { AlertFacts } from './alertMessage'
 import { fillAlertMessage } from './alertMessage'
 import { askToNotify } from './alertNotify'
 import { mergeAlertRuntime } from './alertRuntime'
+import {
+  activeIndicatorAlertHost,
+  activeSignalStudy,
+  alertSourceActive,
+} from './indicatorAlertActivity'
 import { csvOptions, type DataExportOptions } from './chartDataExport'
 import { chartMotionOptions } from './chartMotion'
 import { CHART_READY, type ChartStateView, chartLoadFailed, chartNoData } from './chartState'
@@ -4495,7 +4500,7 @@ export class TradingTerminal {
     // separate places, so a removed record lets the definition come back armed;
     // `terminalAlerts.test.ts` holds that. `spentLines` is the engine's own
     // answer, opt-in per host, and it changes nothing about evaluation.
-    this.alerts = new AlertController(chart, {
+    this.alerts = new AlertController(activeIndicatorAlertHost(chart), {
       drawings: this.objectDrawings,
       spentLines: 'hide',
     })
@@ -4522,11 +4527,28 @@ export class TradingTerminal {
       this.offAlerts.push(chart.on(event, save))
     }
     let fireSequence = 0
-    const deliver = (payload: unknown) => {
-      const event = payload as AlertEventPayload & { price?: number }
-      if (this.alertEvaluationPaused()) return
+    const deliver = (payload: unknown, origin: 'controller' | 'indicator') => {
+      if (!payload || typeof payload !== 'object') return
+      const event = payload as AlertEventPayload & {
+        price?: number
+        instanceId?: unknown
+        indicatorId?: unknown
+        sourceValues?: unknown
+      }
+      if (this.chart !== chart || this.alertEvaluationPaused()) return
       const id = String(event.alertId ?? '')
-      const alert = this.alerts?.list().find((one) => one.id === id)
+      const alert =
+        origin === 'controller' ? this.alerts?.list().find((one) => one.id === id) : undefined
+      const study = origin === 'indicator' ? activeSignalStudy(chart.indicators(), event) : undefined
+      // The eye toggle only hides plots in the SDK; its signal calculations
+      // can continue. Gate every delivery and log before any side effect.
+      if (origin === 'indicator') {
+        if (!study) return
+      } else if (
+        !alert || alert.state === 'disabled' || !alertSourceActive(chart.indicators(), alert.source)
+      ) {
+        return
+      }
       const fired = String(event.title ?? alert?.title ?? 'Alert')
       // The message is filled in against the bar that fired it, so a
       // notification on a locked phone carries the number rather than sending
@@ -4534,6 +4556,17 @@ export class TradingTerminal {
       const said = fillAlertMessage(String(event.message ?? ''), this.alertFacts(event)) || fired
       this.toast(said, 'ok')
       const facts = this.alertFacts(event)
+      const symbol = this.sym?.symbol ?? ''
+      const exchange = this.sym?.exchange ?? ''
+      const interval = this.interval
+      const stillActive = () => {
+        if (this.chart !== chart || this.alertEvaluationPaused()) return false
+        if (study)
+          return chart.indicators().some((current) => current.id === study.id && current.visible())
+        const current = this.alerts?.list().find((one) => one.id === id)
+        return !!current && current.state !== 'disabled' &&
+          alertSourceActive(chart.indicators(), current.source)
+      }
       void deliverAlert(
         deliveryOf(alert?.payload),
         {
@@ -4547,7 +4580,9 @@ export class TradingTerminal {
           // Named once per failure and never retried. These run on a price
           // being reached, and a retry behind a fired alert is a queue that
           // grows while the market moves.
-          onProblem: (message) => this.toast(message, 'err'),
+          onProblem: (message) => {
+            if (stillActive()) this.toast(message, 'err')
+          },
         }
       ).then((delivered) => {
         // Written down after the send, so the row can say what actually went
@@ -4557,11 +4592,11 @@ export class TradingTerminal {
         void reportFire({
           alertId: id,
           title: String(event.title ?? 'Alert'),
-          kind: String(alert?.source?.kind ?? 'price'),
+          kind: origin === 'indicator' ? 'indicator' : String(alert?.source?.kind ?? 'price'),
           condition: String(alert?.condition ?? ''),
-          symbol: this.sym?.symbol ?? '',
-          exchange: this.sym?.exchange ?? '',
-          interval: this.interval,
+          symbol,
+          exchange,
+          interval,
           ...(typeof facts.price === 'number' ? { price: facts.price } : {}),
           // The filled message, not the template: a log row reading
           // "crossed {{price}}" is a row nobody can read back.
@@ -4578,23 +4613,25 @@ export class TradingTerminal {
         alertId: String(event.alertId ?? ''),
         title: String(event.title ?? 'Alert'),
         message: String(event.message ?? ''),
-        symbol: this.sym?.symbol ?? '',
-        exchange: this.sym?.exchange ?? '',
+        symbol,
+        exchange,
         ...(typeof event.price === 'number' ? { price: event.price } : {}),
         firedAt: typeof event.time === 'number' ? event.time : Math.floor(Date.now() / 1000),
       })
     }
-    this.offAlerts.push(chart.on('alert:triggered', deliver))
-    this.offAlerts.push(chart.on('indicator:alert', deliver))
+    this.offAlerts.push(chart.on('alert:triggered', (payload) => deliver(payload, 'controller')))
+    this.offAlerts.push(chart.on('indicator:alert', (payload) => deliver(payload, 'indicator')))
     // A script's alert that waits for its bar to close. The chart judges a
     // study's alerts once, on a bar's first tick, when such an alert is still
     // withheld, so it never fired live; the study announces the closed bar
     // itself (`openscriptStudies.hostedStudy`) and it is delivered like any
     // other, including being held back while replay or a workspace change owns
     // the chart.
-    this.offAlerts.push(chart.on(SCRIPT_ALERT_EVENT, deliver))
+    this.offAlerts.push(chart.on(SCRIPT_ALERT_EVENT, (payload) => deliver(payload, 'indicator')))
     this.offAlerts.push(
-      chart.on('alert:error', () => {
+      chart.on('alert:error', (event) => {
+        if (this.chart !== chart || this.alertEvaluationPaused()) return
+        if (event.alert && !alertSourceActive(chart.indicators(), event.alert.source)) return
         this.toast('An alert condition could not be evaluated. Review its source.', 'err')
       })
     )
@@ -5389,6 +5426,8 @@ export class TradingTerminal {
     if (!sameIndicatorRecords(this.activeIndicators, next)) {
       this.activeIndicators = next
       this.lsSet('indicators', JSON.stringify({ version: 2, indicators: this.activeIndicators }))
+      // Refresh a study alert's paused reason after a legend/Objects eye toggle.
+      this.cb.onAlertsChanged?.()
     }
     const announced = this.listIndicators().map(({ id, name }) => ({ id, name }))
     if (!sameIndicatorInstances(this.announcedIndicators, announced)) {

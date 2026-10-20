@@ -204,6 +204,8 @@ export interface ScriptAlertPayload {
   /** The bar that closed, not the one whose arrival closed it. */
   time: number
   index: number
+  /** Transient identity of this instance's current values, never persisted. */
+  sourceValues?: ChartValues
 }
 
 declare module 'openalgo-charts' {
@@ -484,6 +486,9 @@ export function hostedStudy(
         message: spec.message?.(ctx) ?? spec.title,
         time: closed.time,
         index: from,
+        // calcTail runs before the SDK replaces the instance's values. The
+        // previous object identifies this exact copy, even with duplicate scripts.
+        sourceValues: previous,
       }
       emit(SCRIPT_ALERT_EVENT, payload)
     }
