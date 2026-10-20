@@ -28,13 +28,14 @@ type Value = string | number | boolean
 
 interface Props {
   req: ChartSettingsRequest | null
+  title?: string
   onApply(patch: Record<string, Value>): void
   onClose(): void
 }
 
 const isPair = (f: ChartSettingsField): f is ChartSettingsPairField => f.type === 'colorPair'
 
-export function ChartSettingsDialog({ req, onApply, onClose }: Props) {
+export function ChartSettingsDialog({ req, title = 'Chart settings', onApply, onClose }: Props) {
   const [values, setValues] = useState<Record<string, Value>>({})
   const [tabId, setTabId] = useState<string>('')
 
@@ -119,10 +120,15 @@ export function ChartSettingsDialog({ req, onApply, onClose }: Props) {
       onMouseDown={(e) => e.target === e.currentTarget && onClose()}
       role="presentation"
     >
-      <div className="flex max-h-[92%] w-[380px] flex-col rounded-lg border bg-popover shadow-2xl">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        className="flex max-h-[92%] w-[380px] flex-col rounded-lg border bg-popover shadow-2xl"
+      >
         {/* Title */}
         <div className="flex shrink-0 items-center justify-between px-4 pb-2 pt-3">
-          <h3 className="text-[15px] font-semibold tracking-tight">Chart settings</h3>
+          <h3 className="text-[15px] font-semibold tracking-tight">{title}</h3>
           <button
             type="button"
             onClick={onClose}

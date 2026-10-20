@@ -35,6 +35,7 @@ import {
   CHART_TYPE_GROUPS,
   CHART_TYPES,
   chartTypeIcon,
+  type BoxChartType,
   isBoxChartType,
 } from '@/lib/trading/chartTypes'
 import { MOD_KEY } from '@/lib/trading/drawingKeys'
@@ -487,7 +488,7 @@ export function ChartPane({
   // The Renko or point and figure dialog. It belongs to the type it was opened
   // for, so a switch to any other type closes it.
   const [boxSettings, setBoxSettings] = useState<{
-    type: 'renko' | 'point-figure'
+    type: BoxChartType
     req: ChartSettingsRequest
   } | null>(null)
   useEffect(() => {
@@ -1702,7 +1703,8 @@ export function ChartPane({
               type={boxSettings.type}
               req={boxSettings.req}
               onApply={(patch) => {
-                void terminalRef.current?.applyChartSettings(patch)
+                if (chartTypeRef.current === boxSettings.type)
+                  void terminalRef.current?.applyChartSettings(patch)
               }}
               onClose={() => setBoxSettings(null)}
             />

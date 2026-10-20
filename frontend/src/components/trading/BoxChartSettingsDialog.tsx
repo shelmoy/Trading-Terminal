@@ -25,12 +25,14 @@ import {
   useState,
 } from 'react'
 import type { ChartSettingsPairField, ChartSettingsRequest } from '@/lib/trading/terminal'
+import type { BoxChartType } from '@/lib/trading/chartTypes'
 import { cn } from '@/lib/utils'
-import { ColorPairRow } from './ChartSettingsDialog'
+import { ChartSettingsDialog, ColorPairRow } from './ChartSettingsDialog'
 import { CONTROL } from './IndicatorSettingsDialog'
 
 type Value = string | number | boolean
-export type BoxChartType = 'renko' | 'point-figure'
+export type { BoxChartType } from '@/lib/trading/chartTypes'
+type NativeBoxChartType = 'renko' | 'point-figure'
 type Mode = 'fixed' | 'percent' | 'atr' | 'atrPercent'
 
 interface Props {
@@ -42,17 +44,20 @@ interface Props {
 
 const TITLE: Record<BoxChartType, string> = {
   renko: 'Renko settings',
+  'renko-v2': 'Renko Version 2 settings',
+  'renko-v3': 'Renko Version 3 settings',
+  'renko-v4': 'Renko Version 4 settings',
   'point-figure': 'Point & Figure settings',
 }
 
 /** The percent presets each type offers. */
-const PRESETS: Record<BoxChartType, number[]> = {
+const PRESETS: Record<NativeBoxChartType, number[]> = {
   renko: [0.05, 0.1, 0.25, 0.5, 1, 2, 3, 5],
   'point-figure': [0.05, 0.1, 0.15, 0.25, 0.5, 1, 2, 3],
 }
 
 /** The colour rows each renderer reads. A Renko brick spans its open and close exactly, so it has no wick. */
-const COLOR_ROWS: Record<BoxChartType, string[]> = {
+const COLOR_ROWS: Record<NativeBoxChartType, string[]> = {
   renko: ['symbol.body', 'symbol.borders'],
   'point-figure': ['symbol.body'],
 }
@@ -100,7 +105,56 @@ function lengthProblem(text: string): string | null {
     : 'Enter a whole number, 1 or more'
 }
 
-export function BoxChartSettingsDialog({ type, req, onApply, onClose }: Props) {
+export function BoxChartSettingsDialog(props: Props) {
+  const { type } = props
+  if (type === 'renko' || type === 'point-figure')
+    return <NativeBoxChartSettingsDialog {...props} type={type} />
+  return <RenkoVersionSettingsDialog {...props} />
+}
+
+function RenkoVersionSettingsDialog({ type, req, onApply, onClose }: Props) {
+  // V2/V3 own renkov*. keys; V4 uses the registered transform schema. Read
+  // these exact controls so the shortcut and the full Price tab stay in sync.
+  // Keep the request stable across live chart renders so an in-progress edit
+  // is not reset whenever the parent receives a tick.
+  const scoped = useMemo<ChartSettingsRequest | null>(() => {
+    if (!req) return null
+    const prefix =
+      type === 'renko-v2' ? 'renkov2.' : type === 'renko-v3' ? 'renkov3.' : 'transform.'
+    const price = req.tabs.find((tab) => tab.id === 'price')
+    if (!price) return null
+    const inputs = price.inputs.filter(
+      (field) =>
+        field.key.startsWith(prefix) ||
+        field.key === 'renkov4.showTrend' ||
+        (field.type === 'colorPair' &&
+          ['symbol.body', 'symbol.borders', 'symbol.wicks'].includes(field.key))
+    )
+    const keys = new Set(
+      inputs.flatMap((field) => {
+        if (field.type !== 'colorPair') return [field.key]
+        const pair = field as ChartSettingsPairField
+        return [pair.up.key, pair.down.key, ...(pair.enabled ? [pair.enabled.key] : [])]
+      })
+    )
+    return {
+      ...req,
+      initialTab: 'price',
+      tabs: [{ ...price, inputs }],
+      defaults: Object.fromEntries(Object.entries(req.defaults).filter(([key]) => keys.has(key))),
+    }
+  }, [req, type])
+  return (
+    <ChartSettingsDialog title={TITLE[type]} req={scoped} onApply={onApply} onClose={onClose} />
+  )
+}
+
+function NativeBoxChartSettingsDialog({
+  type,
+  req,
+  onApply,
+  onClose,
+}: Omit<Props, 'type'> & { type: NativeBoxChartType }) {
   const id = useId()
   const [values, setValues] = useState<Record<string, Value>>({})
   // What the two number boxes show. Kept apart from `values` so a half-typed

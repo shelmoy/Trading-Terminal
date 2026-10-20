@@ -158,8 +158,10 @@ export const CHART_TYPES: Record<string, ChartTypeDef> = Object.fromEntries(
  * The types built from price boxes, which carry a settings dialog of their own
  * beside the chart type: box size and how it is measured, reversal, prices.
  */
-export function isBoxChartType(value: string): value is 'renko' | 'point-figure' {
-  return value === 'renko' || value === 'point-figure'
+export type BoxChartType = 'renko' | 'renko-v2' | 'renko-v3' | 'renko-v4' | 'point-figure'
+
+export function isBoxChartType(value: string): value is BoxChartType {
+  return ['renko', 'renko-v2', 'renko-v3', 'renko-v4', 'point-figure'].includes(value)
 }
 
 /**
@@ -210,25 +212,37 @@ const s = {
   strokeLinejoin: 'round' as const,
 }
 
-/** Renko's stair-step bricks with a drawn version numeral, readable at 16px. */
+/** Three rounded bricks and a separate version badge, on the toolbar's 16px grid. */
 function RenkoVersionIcon({ version }: { version: 2 | 3 | 4 }) {
   const numeral = {
-    2: 'M18 14h4v3l-4 4h4',
-    3: 'M18 14h4v7h-4m0-3.5h4',
-    4: 'M18 14v3.5h4m0-3.5v7',
+    2: 'M11 10.5h2.5v1.5L11 14h2.5',
+    3: 'M11 10.5h2.5V14H11m.5-1.75h2',
+    4: 'M11 10.5v1.75h2.5m0-1.75V14',
   }[version]
   return (
     <svg
-      viewBox="0 0 24 24"
+      viewBox="0 0 16 16"
       width="16"
       height="16"
       aria-hidden="true"
       focusable="false"
       {...s}
-      strokeWidth={lineStroke24(16)}
+      strokeWidth={1.15}
     >
-      <path d="M2 15h5v5H2zM7 10h5v5H7zM12 5h5v5h-5z" />
-      <path d={numeral} />
+      <rect x="1" y="9" width="4" height="4" rx="0.6" />
+      <rect x="5" y="5" width="4" height="4" rx="0.6" />
+      <rect x="9" y="1" width="4" height="4" rx="0.6" />
+      <rect
+        x="9.25"
+        y="8.75"
+        width="6"
+        height="6.5"
+        rx="1.5"
+        fill="currentColor"
+        fillOpacity="0.1"
+        stroke="none"
+      />
+      <path d={numeral} strokeWidth="1" />
     </svg>
   )
 }

@@ -2,8 +2,9 @@ import { LayoutGrid, Link2 as LinkIcon } from 'lucide-react'
 import { type ChartObjects, createLinkGroup, type LinkGroup } from 'openalgo-charts'
 import type { WorkspaceDocument, WorkspacePayload } from 'openalgo-charts/workspace'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useSearchParams } from 'react-router'
+import { useSearchParams } from 'react-router'
 import { AccountControls } from '@/components/layout/AccountControls'
+import { Navbar } from '@/components/layout/Navbar'
 
 // Lazy, because the panel pulls the markdown renderer and the syntax
 // highlighter's grammars and themes behind it. Statically imported, every
@@ -54,11 +55,7 @@ import {
   type ChartOrderBridgeRef,
 } from '@/components/trading/dock/chartOrderBridge'
 import { DOCK_ID } from '@/components/trading/dock/DockShell'
-import {
-  type DockTab,
-  escapeTarget,
-  writeDockTab,
-} from '@/components/trading/dock/dockState'
+import { type DockTab, escapeTarget, writeDockTab } from '@/components/trading/dock/dockState'
 import { TradingDock } from '@/components/trading/dock/TradingDock'
 import { GridDividers } from '@/components/trading/GridDividers'
 import { IndicatorTemplates } from '@/components/trading/IndicatorTemplates'
@@ -246,6 +243,7 @@ export default function Trading() {
 }
 
 function TradingWorkspace({ account }: { account: string | null }) {
+  const [showMainNavbar, setShowMainNavbar] = useState(false)
   const workspaceCatalog = useChartWorkspaceCatalog(account)
   const workspacePending = useRef(false)
   const visibleGrid = useRef<PreparedChartGrid | null>(null)
@@ -1472,7 +1470,12 @@ function TradingWorkspace({ account }: { account: string | null }) {
 
   return (
     <ChartOrderBridgeContext.Provider value={orderBridge}>
-      <div className="flex flex-1 flex-col overflow-hidden">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        {showMainNavbar && (
+          <div id="trading-main-navigation" className="shrink-0">
+            <Navbar fluid />
+          </div>
+        )}
         {/* Rail + grid */}
         <div aria-live="polite">
           {autosave.error && (
@@ -1499,18 +1502,30 @@ function TradingWorkspace({ account }: { account: string | null }) {
             </p>
           )}
         </div>
-        {/* The terminal's one header. The app's navbar is not on this page:
-            the chart takes the viewport, and the way back to the dashboard
-            and the account controls the navbar carries (broker, Live or
-            Analyze, light or dark, the profile menu) sit at the two ends of
-            this row instead. They stay put while the chart controls between
-            them scroll on a narrow screen. */}
+        {/* Reveal the app navigation without leaving or remounting the charts,
+            following Scalper's header toggle. */}
         <div className="oa-terminal-band flex h-10 shrink-0 items-center border-b">
-          <Tip tip={{ title: 'Dashboard', sub: 'Leave the terminal for the dashboard' }}>
-            <Link to="/dashboard" aria-label="Dashboard" className={cn(TB_BTN, 'ml-1 gap-1')}>
-              <ChromeIcon id="chevron-left" size={14} className="opacity-70" />
+          <Tip
+            tip={{
+              title: 'Dashboard',
+              sub: showMainNavbar ? 'Hide OpenAlgo navigation' : 'Show OpenAlgo navigation',
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => setShowMainNavbar((shown) => !shown)}
+              aria-label="Toggle OpenAlgo navigation"
+              aria-expanded={showMainNavbar}
+              aria-controls="trading-main-navigation"
+              className={cn(TB_BTN, 'ml-1 gap-1', showMainNavbar && TB_ON)}
+            >
+              <ChromeIcon
+                id={showMainNavbar ? 'chevron-up' : 'chevron-down'}
+                size={14}
+                className="opacity-70"
+              />
               <span className="hidden md:inline">Dashboard</span>
-            </Link>
+            </button>
           </Tip>
           <ToolbarDivider />
           <div
