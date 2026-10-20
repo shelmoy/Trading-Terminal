@@ -12,6 +12,7 @@
 !supertrend_ai.js
 !supertrend_mtf_ha.js
 !gaussian_filter_trend.js
+!quantitative_glass_trend_v6.js
 
 # Ignore backup and editor files
 *.bak

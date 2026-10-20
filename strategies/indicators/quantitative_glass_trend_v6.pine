@@ -1,0 +1,141 @@
+//@version=5
+indicator("Quantitative Glass Trend Engine - Anti-Fakeout [v6]", overlay=true, max_labels_count=500)
+
+// ==========================================
+// 1. INPUT PARAMETERS
+// ==========================================
+grp_math     = "Quantitative Trend Engine"
+lengthInput  = input.int(21, "Regression Period", minval=5, group=grp_math, tooltip="Statistical window for price linear regression.")
+zThreshold   = input.float(1.5, "Z-Score Threshold", minval=0.5, step=0.1, group=grp_math, tooltip="Higher value reduces fakeouts by requiring stronger structural expansion.")
+atrMult      = input.float(2.0, "ATR Dynamic Stop Distance", minval=1.0, step=0.1, group=grp_math, tooltip="Filters out minor pullbacks in a strong trend.")
+
+grp_chan     = "Quantitative Channel Settings"
+showChannels = input.bool(true, "Display Regression Channels", group=grp_chan)
+devMultiplier= input.float(2.0, "Channel Band Width", minval=0.5, step=0.1, group=grp_chan)
+
+grp_ui       = "Glass UI Customization"
+showLabels   = input.bool(true, "Show Glass Signal Labels", group=grp_ui)
+showDashboard= input.bool(true, "Show Liquid Glass UI Panel", group=grp_ui)
+
+// ==========================================
+// 2. MATHEMATICAL & STATISTICAL COMPUTATION
+// ==========================================
+// Linear Regression Calculation
+x = bar_index
+y = close
+sumX  = ta.sma(x, lengthInput) * lengthInput
+sumY  = ta.sma(y, lengthInput) * lengthInput
+sumXY = ta.sma(x * y, lengthInput) * lengthInput
+sumX2 = ta.sma(x * x, lengthInput) * lengthInput
+
+slope = (lengthInput * sumXY - sumX * sumY) / (lengthInput * sumX2 - sumX * sumX)
+intercept = (sumY - slope * sumX) / lengthInput
+regLine = slope * x + intercept
+
+// Residual Standard Deviation (Standard Error)
+residuals = y - regLine
+stdErr = ta.stdev(residuals, lengthInput)
+stdErr := stdErr == 0 ? 0.0001 : stdErr
+
+// Z-Score Computation
+zScore = (close - regLine) / stdErr
+
+// Dynamic ATR Trailing Filter (Structure Shield)
+atrVal = ta.atr(14)
+var float trailingStop = na
+
+if bar_index == 0
+    trailingStop := close
+else
+    if slope > 0
+        trailingStop := math.max(nz(trailingStop[1]), low - (atrVal * atrMult))
+    else if slope < 0
+        trailingStop := math.min(nz(trailingStop[1]), high + (atrVal * atrMult))
+
+// Channel Boundaries
+upperChannel = regLine + (stdErr * devMultiplier)
+lowerChannel = regLine - (stdErr * devMultiplier)
+
+// ==========================================
+// 3. TREND STATE MACHINE (STRICT NO-FAKE FILTER)
+// ==========================================
+var int trendState = 0 // 1: Bullish, -1: Bearish
+
+// Strict Conditions: Requires Z-Score + Slope Direction + Structure Break
+bool validLong  = (zScore > zThreshold) and (slope > 0) and (close > trailingStop)
+bool validShort = (zScore < -zThreshold) and (slope < 0) and (close < trailingStop)
+
+// Execute state changes on confirmed bar closes only
+bool buySignal  = validLong and (trendState != 1) and barstate.isconfirmed
+bool sellSignal = validShort and (trendState != -1) and barstate.isconfirmed
+
+if buySignal
+    trendState := 1
+else if sellSignal
+    trendState := -1
+
+// Dynamic Palette
+color glassBullFill   = color.new(#00E676, 82)
+color glassBearFill   = color.new(#FF1744, 82)
+color glassText       = color.rgb(240, 243, 246)
+
+// ==========================================
+// 4. PLOTTING REGRESSION CHANNELS & CORE LINE
+// ==========================================
+plotColor = trendState == 1 ? #00E676 : trendState == -1 ? #FF1744 : color.gray
+
+// Core Regression Line
+pMid   = plot(regLine, title="Statistical Trend Line", color=plotColor, linewidth=2)
+
+// Channel Boundaries
+pUpper = plot(showChannels ? upperChannel : na, title="Upper Channel", color=color.new(#00E676, 60), linewidth=1)
+pLower = plot(showChannels ? lowerChannel : na, title="Lower Channel", color=color.new(#FF1744, 60), linewidth=1)
+
+// Shading the channel for a clean glass effect
+fill(pUpper, pMid, color=showChannels ? color.new(#00E676, 94) : na, title="Upper Channel Fill")
+fill(pMid, pLower, color=showChannels ? color.new(#FF1744, 94) : na, title="Lower Channel Fill")
+
+// Trailing Structure Line
+plot(trailingStop, title="Structural Trailing Level", color=color.new(plotColor, 50), style=plot.style_linebr, linewidth=1)
+
+// ==========================================
+// 5. GLASS SIGNAL LABELS & UI DASHBOARD
+// ==========================================
+if showLabels
+    if buySignal
+        label.new(
+             x=bar_index, y=low - (atrVal * 0.6),
+             text="✦ BUY",
+             style=label.style_label_up,
+             color=glassBullFill,
+             textcolor=glassText,
+             size=size.small,
+             textalign=text.align_center
+             )
+        
+    if sellSignal
+        label.new(
+             x=bar_index, y=high + (atrVal * 0.6),
+             text="✦ SELL",
+             style=label.style_label_down,
+             color=glassBearFill,
+             textcolor=glassText,
+             size=size.small,
+             textalign=text.align_center
+             )
+
+// Liquid Glass Status Panel
+var table glassTable = table.new(position = position.top_right, columns = 2, rows = 2, 
+                                 bgcolor = color.new(#131722, 60), 
+                                 border_width = 1, 
+                                 border_color = color.new(#ffffff, 85))
+
+if showDashboard and barstate.islast
+    string statusText = trendState == 1 ? "BULLISH" : trendState == -1 ? "BEARISH" : "NEUTRAL"
+    color statusColor = trendState == 1 ? #00E676 : trendState == -1 ? #FF1744 : color.gray
+    
+    table.cell(glassTable, 0, 0, "TREND", text_color=color.rgb(180, 190, 200), text_size=size.tiny)
+    table.cell(glassTable, 1, 0, statusText, text_color=statusColor, text_size=size.tiny)
+    
+    table.cell(glassTable, 0, 1, "STRENGTH (Z)", text_color=color.rgb(180, 190, 200), text_size=size.tiny)
+    table.cell(glassTable, 1, 1, str.tostring(zScore, "#.##"), text_color=glassText, text_size=size.tiny)
