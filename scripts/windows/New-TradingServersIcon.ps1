@@ -42,13 +42,43 @@ foreach ($size in @(16, 24, 32, 48, 64, 128, 256)) {
     $graphics.SetClip($tile)
     $graphics.FillEllipse($shine, -30, -100, 360, 230)
     $memory = New-Object IO.MemoryStream
-    try { $bitmap.Save($memory, [Drawing.Imaging.ImageFormat]::Png); $frames += ,@($size, $memory.ToArray()) }
+    try {
+        if ($size -eq 256) {
+            $bitmap.Save($memory, [Drawing.Imaging.ImageFormat]::Png)
+        } else {
+            # Classic BGRA DIB + AND mask is compatible with Explorer's small-icon path.
+            $dib = New-Object IO.BinaryWriter($memory)
+            $maskStride = [int]([Math]::Ceiling($size / 32.0) * 4)
+            $dib.Write([uint32]40); $dib.Write([int32]$size); $dib.Write([int32]($size * 2))
+            $dib.Write([uint16]1); $dib.Write([uint16]32); $dib.Write([uint32]0)
+            $dib.Write([uint32]($size * $size * 4 + $maskStride * $size))
+            foreach ($unused in 1..4) { $dib.Write([uint32]0) }
+            for ($row = $size - 1; $row -ge 0; $row--) {
+                for ($column = 0; $column -lt $size; $column++) {
+                    $pixel = $bitmap.GetPixel($column, $row)
+                    $dib.Write([byte]$pixel.B); $dib.Write([byte]$pixel.G); $dib.Write([byte]$pixel.R); $dib.Write([byte]$pixel.A)
+                }
+            }
+            for ($row = $size - 1; $row -ge 0; $row--) {
+                $mask = New-Object byte[] $maskStride
+                for ($column = 0; $column -lt $size; $column++) {
+                    if ($bitmap.GetPixel($column, $row).A -eq 0) {
+                        $byteIndex = [int][Math]::Floor($column / 8.0)
+                        $mask[$byteIndex] = $mask[$byteIndex] -bor (128 -shr ($column % 8))
+                    }
+                }
+                $dib.Write([byte[]]$mask)
+            }
+            $dib.Flush()
+        }
+        $frames += ,@($size, $memory.ToArray())
+    }
     finally {
         $memory.Dispose(); $graphics.Dispose(); $bitmap.Dispose(); $tile.Dispose(); $shadowPath.Dispose()
         $gradient.Dispose(); $shine.Dispose(); $shadow.Dispose(); $rim.Dispose(); $glass.Dispose(); $ink.Dispose(); $led.Dispose()
     }
 }
-# Explicit ICO directory with PNG frames avoids GetHicon's single-size shell fallback.
+# Multi-resolution ICO with classic small frames and a PNG high-resolution frame.
 $stream = [IO.File]::Create($Path)
 $writer = New-Object IO.BinaryWriter($stream)
 try {

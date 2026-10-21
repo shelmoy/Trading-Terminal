@@ -4,7 +4,7 @@ param(
     [ValidateSet('All', 'Kotak', 'Fyers')][string]$Broker = 'All',
     [string]$PrimaryRoot = (Join-Path $env:USERPROFILE '.gemini\antigravity\scratch\openalgo'),
     [string]$FyersRoot = 'C:\OpenAlgo-FYERS',
-    [string]$StateRoot = (Join-Path $env:LOCALAPPDATA 'OpenAlgo\ServerControl'),
+    [string]$StateRoot = (Join-Path $env:USERPROFILE 'TradingServers'),
     [string]$StatusFile,
     [switch]$NoBrowser
 )
@@ -241,6 +241,7 @@ public static class TradingControllerWindow {
         try { $uiLock = $uiMutex.WaitOne(0) } catch [Threading.AbandonedMutexException] { $uiLock = $true }
         if (-not $uiLock) {
             # Restore and focus the existing GUI instead of leaving it behind Chrome.
+            $focused = $false
             $deadline = (Get-Date).AddSeconds(5)
             do {
                 $existingPid = if (Test-Path -LiteralPath $uiPidPath) { (Get-Content -LiteralPath $uiPidPath -Raw).Trim() } else { '' }
@@ -252,12 +253,14 @@ public static class TradingControllerWindow {
                             $showCommand = if ([TradingControllerWindow]::IsIconic($existingProcess.MainWindowHandle)) { 9 } else { 5 }
                             [TradingControllerWindow]::ShowWindowAsync($existingProcess.MainWindowHandle, $showCommand) | Out-Null
                             [TradingControllerWindow]::SetForegroundWindow($existingProcess.MainWindowHandle) | Out-Null
+                            $focused = $true
                             break
                         }
                     }
                 }
                 Start-Sleep -Milliseconds 150
             } while ((Get-Date) -lt $deadline)
+            if (-not $focused) { throw 'A controller from another installation is already open. Close that controller window and open Trading Servers again. Broker servers can stay running.' }
         } else {
             $PID | Set-Content -LiteralPath $uiPidPath
             Show-Controller

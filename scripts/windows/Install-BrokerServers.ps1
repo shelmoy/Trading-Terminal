@@ -2,7 +2,7 @@
 param(
     [string]$PrimaryRoot = (Join-Path $env:USERPROFILE '.gemini\antigravity\scratch\openalgo'),
     [string]$FyersRoot = 'C:\OpenAlgo-FYERS',
-    [string]$InstallRoot = (Join-Path $env:LOCALAPPDATA 'OpenAlgo\ServerControl')
+    [string]$InstallRoot = (Join-Path $env:USERPROFILE 'TradingServers')
 )
 $ErrorActionPreference = 'Stop'
 $InstallRoot = [IO.Path]::GetFullPath($InstallRoot)
@@ -74,14 +74,20 @@ if (-not (Test-Path -LiteralPath $launcherPath)) {
 $desktop = [Environment]::GetFolderPath('Desktop')
 $linkPath = Join-Path $desktop 'Trading Servers.lnk'
 $engine = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
+$knownControllerRoots = @(
+    $InstallRoot,
+    (Join-Path $env:LOCALAPPDATA 'OpenAlgo\ServerControl'),
+    (Join-Path $env:LOCALAPPDATA 'Packages\OpenAI.Codex_2p2nqsd0c76g0\LocalCache\Local\OpenAlgo\ServerControl')
+)
 if (Test-Path -LiteralPath $linkPath) {
     $existing = $shell.CreateShortcut($linkPath)
-    $oldControllerLink = $existing.TargetPath -eq $engine -and $existing.Arguments -like ('*' + (Join-Path $InstallRoot 'BrokerServers.ps1') + '*')
-    $nativeControllerLink = [IO.Path]::GetDirectoryName($existing.TargetPath) -eq $InstallRoot -and [IO.Path]::GetFileName($existing.TargetPath) -match '^TradingServers(?:-[A-F0-9]{12})?\.exe$'
+    $oldControllerLink = $existing.TargetPath -eq $engine -and @($knownControllerRoots | Where-Object { $existing.Arguments -like ('*' + (Join-Path $_ 'BrokerServers.ps1') + '*') }).Count -gt 0
+    $nativeControllerLink = [IO.Path]::GetDirectoryName($existing.TargetPath) -in $knownControllerRoots -and [IO.Path]::GetFileName($existing.TargetPath) -match '^TradingServers(?:-[A-F0-9]{12})?\.exe$'
     if (-not $oldControllerLink -and -not $nativeControllerLink) {
         throw 'A different Trading Servers shortcut already exists. It was preserved.'
     }
     Copy-Item -LiteralPath $linkPath -Destination (Join-Path $backupRoot 'previous-Trading Servers.lnk')
+    Remove-Item -LiteralPath $linkPath
 }
 $link = $shell.CreateShortcut($linkPath)
 $link.TargetPath = $launcherPath
@@ -125,3 +131,4 @@ foreach ($folder in $shortcutFolders) {
     [TradingDesktopRefresh]::SHChangeNotify(0x1000, 0x2005, $folder, [IntPtr]::Zero)
 }
 [TradingDesktopRefresh]::SHChangeNotify(0x08000000, 0, $null, [IntPtr]::Zero)
+[TradingDesktopRefresh]::SHChangeNotify(2, 0x2005, $linkPath, [IntPtr]::Zero)

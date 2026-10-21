@@ -2,20 +2,18 @@
 Add-Type -AssemblyName PresentationFramework
 Add-Type -AssemblyName PresentationCore
 Add-Type -AssemblyName WindowsBase
+# Keep text and surfaces independent of desktop acrylic/GPU alpha composition.
+[Windows.Media.RenderOptions]::ProcessRenderMode = [Windows.Interop.RenderMode]::SoftwareOnly
 if (-not ('TradingGlassWindow' -as [type])) {
     Add-Type @'
 using System;
 using System.Runtime.InteropServices;
 public static class TradingGlassWindow {
-    [StructLayout(LayoutKind.Sequential)] public struct Margins { public int Left, Right, Top, Bottom; }
     [DllImport("dwmapi.dll")] static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);
-    [DllImport("dwmapi.dll")] static extern int DwmExtendFrameIntoClientArea(IntPtr hwnd, ref Margins margins);
     public static void Apply(IntPtr hwnd) {
-        int corner = 2, backdrop = 3;
+        int corner = 2, backdrop = 1;
         DwmSetWindowAttribute(hwnd, 33, ref corner, 4);
         DwmSetWindowAttribute(hwnd, 38, ref backdrop, 4);
-        var margins = new Margins { Left = -1, Right = -1, Top = -1, Bottom = -1 };
-        DwmExtendFrameIntoClientArea(hwnd, ref margins);
     }
 }
 '@
@@ -24,7 +22,7 @@ public static class TradingGlassWindow {
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Trading Servers" Width="720" Height="620" WindowStartupLocation="CenterScreen"
-        WindowStyle="None" ResizeMode="NoResize" Background="Transparent" FontFamily="Segoe UI" FontSize="14">
+        WindowStyle="None" ResizeMode="NoResize" Background="#EEF3FA" Foreground="#182B45" Opacity="1" FontFamily="Segoe UI" FontSize="14">
   <Window.Resources>
     <Style TargetType="Button">
       <Setter Property="Cursor" Value="Hand"/><Setter Property="Foreground" Value="#24334D"/>
@@ -57,7 +55,7 @@ public static class TradingGlassWindow {
     </Style>
   </Window.Resources>
   <Border CornerRadius="22" BorderBrush="#E8FFFFFF" BorderThickness="1">
-    <Border.Background><LinearGradientBrush StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#F0F4FAFF"/><GradientStop Color="#DEECF0FA" Offset="0.55"/><GradientStop Color="#E5E0F4F5" Offset="1"/></LinearGradientBrush></Border.Background>
+    <Border.Background><LinearGradientBrush StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#F4FAFF"/><GradientStop Color="#ECF0FA" Offset="0.55"/><GradientStop Color="#E0F4F5" Offset="1"/></LinearGradientBrush></Border.Background>
     <Grid Margin="28,18,28,24">
       <Grid.RowDefinitions><RowDefinition Height="40"/><RowDefinition Height="86"/><RowDefinition Height="180"/><RowDefinition Height="76"/><RowDefinition Height="*"/><RowDefinition Height="28"/></Grid.RowDefinitions>
       <Grid x:Name="TitleBar" Background="Transparent">
@@ -115,7 +113,8 @@ if (Test-Path -LiteralPath $iconPath) {
     # Load the pixels eagerly, so an open controller never locks its installed icon.
     $iconStream = [IO.File]::OpenRead($iconPath)
     try {
-        $window.Icon = [Windows.Media.Imaging.BitmapFrame]::Create($iconStream, [Windows.Media.Imaging.BitmapCreateOptions]::PreservePixelFormat, [Windows.Media.Imaging.BitmapCacheOption]::OnLoad)
+        $decoder = [Windows.Media.Imaging.BitmapDecoder]::Create($iconStream, [Windows.Media.Imaging.BitmapCreateOptions]::PreservePixelFormat, [Windows.Media.Imaging.BitmapCacheOption]::OnLoad)
+        $window.Icon = $decoder.Frames | Sort-Object PixelWidth -Descending | Select-Object -First 1
         $window.Icon.Freeze()
     } finally { $iconStream.Dispose() }
     $window.FindName('AppIcon').Source = $window.Icon

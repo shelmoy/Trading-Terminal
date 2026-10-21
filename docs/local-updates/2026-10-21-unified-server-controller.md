@@ -15,7 +15,7 @@ The existing broker installations remain independent: **Kotak at http://127.0.0.
 ## Installation and source
 
 - Source: `scripts/windows/BrokerServers.ps1`, `BrokerServers.UI.ps1`, `New-TradingServersIcon.ps1`, `TradingServersLauncher.cs`, `run_broker_instance.py`, and `Install-BrokerServers.ps1`.
-- Installed controller and local logs: `%LOCALAPPDATA%\OpenAlgo\ServerControl`.
+- Installed controller and local logs: `%USERPROFILE%\TradingServers` (outside packaged-app AppData redirection).
 - Reinstall/update the desktop utility from a checkout with:
 
 ```powershell
@@ -25,10 +25,10 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/windows/Install-
 Example command-line actions from PowerShell:
 
 ```powershell
-& "$env:LOCALAPPDATA\OpenAlgo\ServerControl\BrokerServers.ps1" -Action Start -Broker All
-& "$env:LOCALAPPDATA\OpenAlgo\ServerControl\BrokerServers.ps1" -Action Stop -Broker All
-& "$env:LOCALAPPDATA\OpenAlgo\ServerControl\BrokerServers.ps1" -Action Restart -Broker Fyers
-& "$env:LOCALAPPDATA\OpenAlgo\ServerControl\BrokerServers.ps1" -Action Status
+& "$env:USERPROFILE\TradingServers\BrokerServers.ps1" -Action Start -Broker All
+& "$env:USERPROFILE\TradingServers\BrokerServers.ps1" -Action Stop -Broker All
+& "$env:USERPROFILE\TradingServers\BrokerServers.ps1" -Action Restart -Broker Fyers
+& "$env:USERPROFILE\TradingServers\BrokerServers.ps1" -Action Status
 ```
 
 Use `-NoBrowser` for maintenance that should not open Chrome. For recurring maintenance, continue to check active strategies, positions/orders and market sessions before disruptive activation; the GUI's manual Stop/Restart actions execute the user's selected operation directly.
@@ -49,9 +49,9 @@ PowerShell parsing and Python syntax/lint checks passed. Operational activation 
 
 ## Glass desktop refresh
 
-The controller now uses WPF with a pale frosted surface, rounded broker cards, blue gradient Start action, compact activity panel and macOS-inspired window controls. It requests the Windows desktop acrylic backdrop and rounded corners on supported Windows versions; its own tinted surface remains readable when those effects are unavailable. Windows accessibility and transparency settings can affect the backdrop.
+The controller uses WPF with a pale glass-style surface, rounded broker cards, blue gradient Start action, compact activity panel and macOS-inspired window controls. It uses opaque background layers and software rendering for reliable contrast, with native rounded corners on supported Windows versions. It does not extend native desktop acrylic through its content.
 
-The desktop shortcut uses a new blue glass server icon containing 16, 24, 32, 48, 64, 128 and 256 pixel PNG frames in an ICO container. The icon has a new filename so Explorer can replace its previously cached blank icon. The installer checks the user, public and OneDrive desktop locations for known retired launcher targets, preserves unknown shortcuts, and sends shell refresh notifications without restarting Explorer.
+The desktop shortcut uses a blue glass server icon containing 16, 24, 32, 48, 64, 128 and 256 pixel frames in an ICO container. Small frames use classic 32-bit DIB images with transparency masks; the 256 pixel frame uses PNG. The installer checks the user, public and OneDrive desktop locations for known retired launcher targets, preserves unknown shortcuts, and recreates its own shortcut with shell refresh notifications without restarting Explorer.
 
 At this refresh, the old OpenAlgo shortcut files were already absent from the checked desktop folders; only Trading Servers remained. Shell delete/directory/icon notifications were sent to remove stale desktop entries. The new controller was opened successfully and reported responsive with no startup errors. Its presentation was updated without stopping or restarting either broker service. Start and Restart retain the existing-window Chrome tab behaviour. The prior controller, icon and shortcuts remain in the installer's private recovery folder.
 
@@ -62,3 +62,11 @@ Following a report of a blank icon and an apparently unopened GUI, the exact des
 The executable captures startup output to the private `launcher.log` and displays an error if PowerShell exits unsuccessfully. Double-clicking while the controller already exists now restores and focuses that window instead of showing an already-open message and leaving it behind another application. The controller writes its current UI PID itself. The installer requires the Windows .NET Framework compiler and retains previous native executables and a recovery copy of the replaced shortcut. No trading server restart is required.
 
 The open WPF window was also found to retain a lock on the standalone icon, preventing installer refresh. Icon decoding now uses an eagerly loaded frozen bitmap and closes the input stream. After reinstalling, the exact desktop shortcut opened a visible, responsive controller; Windows extracted its embedded icon successfully, and the icon file could be opened exclusively while the GUI remained open. Reopening the shortcut reused the same controller PID. Broker services were left running throughout. The shell icon refresh utility was invoked after shortcut replacement; Explorer's rendered desktop image was not captured.
+
+## Washed-out content and packaged-app path repair
+
+The user's screenshot showed the previous native acrylic/full-frame transparency combination washing out the WPF content. Native full-frame extension was removed, the backdrop disabled, background colors made opaque, and software rendering selected for this small controller. An exported WPF render was visually inspected for readable headings, cards and all three actions. The icon decoder now selects its largest frame for a sharp in-app image.
+
+The blank desktop icon also had a concrete path problem: Windows resolved the old shortcut target into `AppData\Local\Packages\OpenAI.Codex_2p2nqsd0c76g0\LocalCache\Local\OpenAlgo\ServerControl`, while its icon location still named the unredirected AppData folder. The controller is now installed at `%USERPROFILE%\TradingServers`. The saved shortcut's target, working directory, state root and icon location were reread and all resolved to that normal folder. The installer recognizes only the exact known older controller roots when migrating the shortcut and backs it up before recreating it. Old private recovery folders remain intact.
+
+The old controller GUI was closed gracefully and the new controller opened through the desktop shortcut. An unrelated old installation holding the GUI mutex now produces an explicit startup error instead of silently returning without a window. No broker services were started or stopped during this repair; the new status reported both instances stopped at the time of checking. No credentials, database or network configuration was changed.
