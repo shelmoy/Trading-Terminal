@@ -213,8 +213,9 @@ function Open-Chrome([object[]]$Targets) {
     $chrome = $candidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
     if (-not $chrome) { throw 'Servers are ready, but Google Chrome was not found.' }
     $urls = @($Targets | ForEach-Object { '"http://127.0.0.1:{0}/trading"' -f $_.Port })
-    Start-Process -FilePath $chrome -ArgumentList (@('--new-window') + $urls)
-    Write-Note 'Opened the selected brokers in Chrome.'
+    # Chrome forwards these tabs to its existing window; it opens normally if closed.
+    Start-Process -FilePath $chrome -ArgumentList (@('--new-tab') + $urls)
+    Write-Note 'Opened the selected brokers as Chrome tabs (reusing an existing window when available).'
 }
 
 function Show-Controller {

@@ -4,9 +4,9 @@
 
 Open **Trading Servers** on the desktop. Select **Kotak**, **FYERS**, or both; both are selected initially.
 
-- **Start** starts the selected instances, reusing an already running matching server. Once the selected servers pass their HTTP readiness checks, Chrome opens them in one window with separate tabs.
+- **Start** starts the selected instances, reusing an already running matching server. Once the selected servers pass their HTTP readiness checks, both URLs open as tabs in the existing Chrome window. If Chrome is closed, it opens normally. The launcher does not request a separate window.
 - **Stop** stops the selected local server processes and their verified Python workers. It does not submit cancellations or any other broker orders, and it leaves Chrome open.
-- **Restart** stops and starts the selected instances, then opens their pages in Chrome after readiness checks succeed.
+- **Restart** stops and starts the selected instances, then opens their pages as tabs using the same Chrome window behaviour after readiness checks succeed.
 
 Closing the controller leaves the broker services running. The controller shows each instance's status and the current action's log, while operations run in background helper processes.
 
