@@ -26,14 +26,17 @@ public static class TradingGlassWindow {
         Title="Trading Servers" Width="720" Height="640" MinWidth="540" MinHeight="560" WindowStartupLocation="CenterScreen"
         WindowStyle="SingleBorderWindow" ResizeMode="CanResize" Background="{DynamicResource WindowBrush}" Foreground="{DynamicResource PrimaryBrush}" Opacity="1" FontFamily="Segoe UI" FontSize="14">
   <Window.Resources>
-    <SolidColorBrush x:Key="WindowBrush" Color="#EEF3FA"/>
-    <SolidColorBrush x:Key="PrimaryBrush" Color="#182B45"/>
-    <SolidColorBrush x:Key="SecondaryBrush" Color="#60738B"/>
-    <SolidColorBrush x:Key="MutedBrush" Color="#64768F"/>
+    <SolidColorBrush x:Key="WindowBrush" Color="#F6F6F7"/>
+    <SolidColorBrush x:Key="PrimaryBrush" Color="#18181B"/>
+    <SolidColorBrush x:Key="SecondaryBrush" Color="#48484F"/>
+    <SolidColorBrush x:Key="MutedBrush" Color="#62626B"/>
     <SolidColorBrush x:Key="CardBrush" Color="#EFFFFFFF"/>
     <SolidColorBrush x:Key="EdgeBrush" Color="#FFFFFFFF"/>
     <SolidColorBrush x:Key="ButtonBrush" Color="#EFFFFFFF"/>
     <SolidColorBrush x:Key="DangerBrush" Color="#BA445A"/>
+    <SolidColorBrush x:Key="RestartBrush" Color="#8A5300"/>
+    <SolidColorBrush x:Key="KotakBrush" Color="#944809"/>
+    <SolidColorBrush x:Key="FyersBrush" Color="#0D6C6C"/>
     <SolidColorBrush x:Key="ActivityBrush" Color="#CCFFFFFF"/>
     <SolidColorBrush x:Key="AccentBrush" Color="#2374E8"/>
     <SolidColorBrush x:Key="AccentTextBrush" Color="White"/>
@@ -83,13 +86,13 @@ public static class TradingGlassWindow {
       <StackPanel Grid.Row="2">
         <Border CornerRadius="17" Background="{DynamicResource CardBrush}" BorderBrush="{DynamicResource EdgeBrush}" BorderThickness="1" Padding="18,15" Margin="0,0,0,12">
           <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="160"/></Grid.ColumnDefinitions>
-            <CheckBox x:Name="KotakCheck" IsChecked="True"><StackPanel><TextBlock Text="Kotak Neo" Foreground="{DynamicResource PrimaryBrush}" FontWeight="SemiBold" FontSize="16"/><TextBlock Text="127.0.0.1:5000" Foreground="{DynamicResource MutedBrush}" FontSize="12" Margin="0,3,0,0"/></StackPanel></CheckBox>
+            <CheckBox x:Name="KotakCheck" IsChecked="True"><StackPanel><TextBlock Text="Kotak Neo" Foreground="{DynamicResource KotakBrush}" FontWeight="SemiBold" FontSize="16"/><TextBlock Text="127.0.0.1:5000" Foreground="{DynamicResource MutedBrush}" FontSize="12" Margin="0,3,0,0"/></StackPanel></CheckBox>
             <TextBlock x:Name="KotakStatus" Grid.Column="1" Text="Checking…" HorizontalAlignment="Right" VerticalAlignment="Center" FontWeight="SemiBold" Foreground="{DynamicResource SecondaryBrush}"/>
           </Grid>
         </Border>
         <Border CornerRadius="17" Background="{DynamicResource CardBrush}" BorderBrush="{DynamicResource EdgeBrush}" BorderThickness="1" Padding="18,15">
           <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="160"/></Grid.ColumnDefinitions>
-            <CheckBox x:Name="FyersCheck" IsChecked="True"><StackPanel><TextBlock Text="FYERS" Foreground="{DynamicResource PrimaryBrush}" FontWeight="SemiBold" FontSize="16"/><TextBlock Text="127.0.0.1:5001" Foreground="{DynamicResource MutedBrush}" FontSize="12" Margin="0,3,0,0"/></StackPanel></CheckBox>
+            <CheckBox x:Name="FyersCheck" IsChecked="True"><StackPanel><TextBlock Text="FYERS" Foreground="{DynamicResource FyersBrush}" FontWeight="SemiBold" FontSize="16"/><TextBlock Text="127.0.0.1:5001" Foreground="{DynamicResource MutedBrush}" FontSize="12" Margin="0,3,0,0"/></StackPanel></CheckBox>
             <TextBlock x:Name="FyersStatus" Grid.Column="1" Text="Checking…" HorizontalAlignment="Right" VerticalAlignment="Center" FontWeight="SemiBold" Foreground="{DynamicResource SecondaryBrush}"/>
           </Grid>
         </Border>
@@ -97,7 +100,7 @@ public static class TradingGlassWindow {
       <UniformGrid Grid.Row="3" Columns="3" VerticalAlignment="Center">
         <Button x:Name="StartButton" Tag="Start" Margin="0,0,8,0" Foreground="{DynamicResource AccentTextBrush}" BorderBrush="{DynamicResource AccentBrush}" Background="{DynamicResource StartBrush}"><TextBlock Text="▶   Start" FontWeight="SemiBold"/></Button>
         <Button x:Name="StopButton" Tag="Stop" Margin="4,0,4,0" Foreground="{DynamicResource DangerBrush}"><TextBlock Text="■   Stop" FontWeight="SemiBold"/></Button>
-        <Button x:Name="RestartButton" Tag="Restart" Margin="8,0,0,0"><TextBlock Text="↻   Restart" FontWeight="SemiBold"/></Button>
+        <Button x:Name="RestartButton" Tag="Restart" Margin="8,0,0,0" Foreground="{DynamicResource RestartBrush}"><TextBlock Text="↻   Restart" FontWeight="SemiBold"/></Button>
       </UniformGrid>
       <Border Grid.Row="4" CornerRadius="15" Background="{DynamicResource ActivityBrush}" BorderBrush="{DynamicResource EdgeBrush}" BorderThickness="1" Padding="16,12" Margin="0,3,0,12">
         <Grid><Grid.RowDefinitions><RowDefinition Height="25"/><RowDefinition Height="*"/></Grid.RowDefinitions>
@@ -142,11 +145,12 @@ function Set-ControllerTheme([string]$Mode, [switch]$Force) {
     $themeState.Mode = $Mode
     if ($Mode -eq 'Dark') {
         $palette = @{
-            WindowBrush = '#161E2B'; PrimaryBrush = '#EDF3FC'; SecondaryBrush = '#B5C5D9'; MutedBrush = '#A3B3C9'
-            CardBrush = '#E626354B'; EdgeBrush = '#465B73'; ButtonBrush = '#293A51'; DangerBrush = '#FF9AAE'
-            ActivityBrush = '#D9202D40'; AccentBrush = '#4C9BFA'; AccentTextBrush = '#FFFFFF'
-            ReadyBrush = '#64DBB1'; WarningBrush = '#FFC781'
-            GradientStart = '#223148'; GradientEnd = '#182C36'; StartTop = '#3F8EF5'; StartBottom = '#275ECF'
+            WindowBrush = '#0B0B0C'; PrimaryBrush = '#F4F4F5'; SecondaryBrush = '#C4C4C8'; MutedBrush = '#A1A1AA'
+            CardBrush = '#ED1B1B1E'; EdgeBrush = '#353537'; ButtonBrush = '#252527'; DangerBrush = '#FDA4AF'
+            ActivityBrush = '#ED121214'; AccentBrush = '#559BFF'; AccentTextBrush = '#FFFFFF'
+            RestartBrush = '#FCD34D'; KotakBrush = '#FDBA74'; FyersBrush = '#5EEAD4'
+            ReadyBrush = '#6EE7B7'; WarningBrush = '#FBBF24'
+            GradientStart = '#111112'; GradientEnd = '#080809'; StartTop = '#2563EB'; StartBottom = '#1D4ED8'
         }
     } elseif ($Mode -eq 'HighContrast') {
         $palette = @{
@@ -154,6 +158,8 @@ function Set-ControllerTheme([string]$Mode, [switch]$Force) {
             SecondaryBrush = [Windows.SystemColors]::WindowTextColor; MutedBrush = [Windows.SystemColors]::WindowTextColor
             CardBrush = [Windows.SystemColors]::WindowColor; EdgeBrush = [Windows.SystemColors]::WindowTextColor
             ButtonBrush = [Windows.SystemColors]::ControlColor; DangerBrush = [Windows.SystemColors]::ControlTextColor
+            RestartBrush = [Windows.SystemColors]::ControlTextColor; KotakBrush = [Windows.SystemColors]::WindowTextColor
+            FyersBrush = [Windows.SystemColors]::WindowTextColor
             ActivityBrush = [Windows.SystemColors]::WindowColor; AccentBrush = [Windows.SystemColors]::HighlightColor
             AccentTextBrush = [Windows.SystemColors]::HighlightTextColor; ReadyBrush = [Windows.SystemColors]::WindowTextColor
             WarningBrush = [Windows.SystemColors]::WindowTextColor; GradientStart = [Windows.SystemColors]::WindowColor
@@ -162,11 +168,12 @@ function Set-ControllerTheme([string]$Mode, [switch]$Force) {
         }
     } else {
         $palette = @{
-            WindowBrush = '#EEF3FA'; PrimaryBrush = '#182B45'; SecondaryBrush = '#526780'; MutedBrush = '#5C708B'
-            CardBrush = '#EFFFFFFF'; EdgeBrush = '#FFFFFFFF'; ButtonBrush = '#EFFFFFFF'; DangerBrush = '#BA445A'
-            ActivityBrush = '#CCFFFFFF'; AccentBrush = '#2374E8'; AccentTextBrush = '#FFFFFF'
-            ReadyBrush = '#13785F'; WarningBrush = '#946011'
-            GradientStart = '#F3F7FD'; GradientEnd = '#E0EDF5'; StartTop = '#3C9AF6'; StartBottom = '#2263DC'
+            WindowBrush = '#F6F6F7'; PrimaryBrush = '#18181B'; SecondaryBrush = '#48484F'; MutedBrush = '#62626B'
+            CardBrush = '#F2FFFFFF'; EdgeBrush = '#DADADD'; ButtonBrush = '#FAFAFB'; DangerBrush = '#B4233B'
+            ActivityBrush = '#E6FFFFFF'; AccentBrush = '#2563EB'; AccentTextBrush = '#FFFFFF'
+            RestartBrush = '#8A5300'; KotakBrush = '#944809'; FyersBrush = '#0D6C6C'
+            ReadyBrush = '#11694F'; WarningBrush = '#8A5300'
+            GradientStart = '#FAFAFB'; GradientEnd = '#EFEFF1'; StartTop = '#2563EB'; StartBottom = '#1D4ED8'
         }
     }
     foreach ($key in @($palette.Keys | Where-Object { $_ -like '*Brush' })) {
