@@ -10,10 +10,12 @@ using System;
 using System.Runtime.InteropServices;
 public static class TradingGlassWindow {
     [DllImport("dwmapi.dll")] static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);
-    public static void Apply(IntPtr hwnd) {
-        int corner = 2, backdrop = 1;
+    public static void Apply(IntPtr hwnd, bool dark, int caption) {
+        int corner = 2, backdrop = 1, darkMode = dark ? 1 : 0;
         DwmSetWindowAttribute(hwnd, 33, ref corner, 4);
         DwmSetWindowAttribute(hwnd, 38, ref backdrop, 4);
+        DwmSetWindowAttribute(hwnd, 20, ref darkMode, 4);
+        DwmSetWindowAttribute(hwnd, 35, ref caption, 4);
     }
 }
 '@
@@ -21,12 +23,27 @@ public static class TradingGlassWindow {
 [xml]$markup = @'
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Trading Servers" Width="720" Height="620" WindowStartupLocation="CenterScreen"
-        WindowStyle="None" ResizeMode="NoResize" Background="#EEF3FA" Foreground="#182B45" Opacity="1" FontFamily="Segoe UI" FontSize="14">
+        Title="Trading Servers" Width="720" Height="640" MinWidth="540" MinHeight="560" WindowStartupLocation="CenterScreen"
+        WindowStyle="SingleBorderWindow" ResizeMode="CanResize" Background="{DynamicResource WindowBrush}" Foreground="{DynamicResource PrimaryBrush}" Opacity="1" FontFamily="Segoe UI" FontSize="14">
   <Window.Resources>
+    <SolidColorBrush x:Key="WindowBrush" Color="#EEF3FA"/>
+    <SolidColorBrush x:Key="PrimaryBrush" Color="#182B45"/>
+    <SolidColorBrush x:Key="SecondaryBrush" Color="#60738B"/>
+    <SolidColorBrush x:Key="MutedBrush" Color="#64768F"/>
+    <SolidColorBrush x:Key="CardBrush" Color="#EFFFFFFF"/>
+    <SolidColorBrush x:Key="EdgeBrush" Color="#FFFFFFFF"/>
+    <SolidColorBrush x:Key="ButtonBrush" Color="#EFFFFFFF"/>
+    <SolidColorBrush x:Key="DangerBrush" Color="#BA445A"/>
+    <SolidColorBrush x:Key="ActivityBrush" Color="#CCFFFFFF"/>
+    <SolidColorBrush x:Key="AccentBrush" Color="#2374E8"/>
+    <SolidColorBrush x:Key="AccentTextBrush" Color="White"/>
+    <SolidColorBrush x:Key="ReadyBrush" Color="#168269"/>
+    <SolidColorBrush x:Key="WarningBrush" Color="#AD6C19"/>
+    <LinearGradientBrush x:Key="BackdropBrush" StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#F4FAFF"/><GradientStop Color="#E0F4F5" Offset="1"/></LinearGradientBrush>
+    <LinearGradientBrush x:Key="StartBrush" StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#3C9AF6"/><GradientStop Color="#2263DC" Offset="1"/></LinearGradientBrush>
     <Style TargetType="Button">
-      <Setter Property="Cursor" Value="Hand"/><Setter Property="Foreground" Value="#24334D"/>
-      <Setter Property="Background" Value="#C9FFFFFF"/><Setter Property="BorderBrush" Value="#EFFFFFFF"/>
+      <Setter Property="Cursor" Value="Hand"/><Setter Property="Foreground" Value="{DynamicResource PrimaryBrush}"/>
+      <Setter Property="Background" Value="{DynamicResource ButtonBrush}"/><Setter Property="BorderBrush" Value="{DynamicResource EdgeBrush}"/>
       <Setter Property="BorderThickness" Value="1"/><Setter Property="Padding" Value="18,13"/>
       <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button">
         <Border x:Name="Surface" CornerRadius="14" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}">
@@ -43,60 +60,52 @@ public static class TradingGlassWindow {
       <Setter Property="Cursor" Value="Hand"/><Setter Property="VerticalContentAlignment" Value="Center"/>
       <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="CheckBox">
         <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="30"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-          <Border x:Name="Toggle" Width="21" Height="21" CornerRadius="7" BorderBrush="#8195B2" BorderThickness="1" Background="#70FFFFFF"/>
-          <Path x:Name="Tick" Data="M 1,5 L 5,9 L 12,1" Stroke="White" StrokeThickness="2" Width="12" Height="10" Visibility="Collapsed"/>
+          <Border x:Name="Toggle" Width="21" Height="21" CornerRadius="7" BorderBrush="{DynamicResource MutedBrush}" BorderThickness="1" Background="{DynamicResource CardBrush}"/>
+          <Path x:Name="Tick" Data="M 1,5 L 5,9 L 12,1" Stroke="{DynamicResource AccentTextBrush}" StrokeThickness="2" Width="12" Height="10" Visibility="Collapsed"/>
           <ContentPresenter Grid.Column="1" VerticalAlignment="Center" Margin="10,0,0,0"/>
         </Grid>
         <ControlTemplate.Triggers>
-          <Trigger Property="IsChecked" Value="True"><Setter TargetName="Toggle" Property="Background" Value="#2374E8"/><Setter TargetName="Toggle" Property="BorderBrush" Value="#2374E8"/><Setter TargetName="Tick" Property="Visibility" Value="Visible"/></Trigger>
+          <Trigger Property="IsChecked" Value="True"><Setter TargetName="Toggle" Property="Background" Value="{DynamicResource AccentBrush}"/><Setter TargetName="Toggle" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/><Setter TargetName="Tick" Property="Visibility" Value="Visible"/></Trigger>
           <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.5"/></Trigger>
         </ControlTemplate.Triggers>
       </ControlTemplate></Setter.Value></Setter>
     </Style>
   </Window.Resources>
-  <Border CornerRadius="22" BorderBrush="#E8FFFFFF" BorderThickness="1">
-    <Border.Background><LinearGradientBrush StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#F4FAFF"/><GradientStop Color="#ECF0FA" Offset="0.55"/><GradientStop Color="#E0F4F5" Offset="1"/></LinearGradientBrush></Border.Background>
+  <Border CornerRadius="0" BorderBrush="{DynamicResource EdgeBrush}" BorderThickness="1" Background="{DynamicResource BackdropBrush}">
     <Grid Margin="28,18,28,24">
-      <Grid.RowDefinitions><RowDefinition Height="40"/><RowDefinition Height="86"/><RowDefinition Height="180"/><RowDefinition Height="76"/><RowDefinition Height="*"/><RowDefinition Height="28"/></Grid.RowDefinitions>
-      <Grid x:Name="TitleBar" Background="Transparent">
-        <StackPanel Orientation="Horizontal" VerticalAlignment="Top">
-          <Button x:Name="CloseWindow" Width="14" Height="14" Padding="0" Background="#FF6058" BorderBrush="#E44A43" ToolTip="Close controller"/>
-          <Button x:Name="MinimizeWindow" Width="14" Height="14" Margin="9,0,0,0" Padding="0" Background="#FFBD2E" BorderBrush="#DDA125" ToolTip="Minimize"/>
-          <Ellipse Width="14" Height="14" Margin="9,0,0,0" Fill="#28C840" Stroke="#24AA35" IsHitTestVisible="False"/>
-        </StackPanel>
-        <TextBlock Text="TRADING WORKSPACE" FontSize="10" FontWeight="SemiBold" Foreground="#64768F" HorizontalAlignment="Right"/>
-      </Grid>
+      <Grid.RowDefinitions><RowDefinition Height="26"/><RowDefinition Height="86"/><RowDefinition Height="180"/><RowDefinition Height="76"/><RowDefinition Height="*"/><RowDefinition Height="28"/></Grid.RowDefinitions>
+      <TextBlock Text="TRADING WORKSPACE" FontSize="10" FontWeight="SemiBold" Foreground="{DynamicResource MutedBrush}" HorizontalAlignment="Right"/>
       <Grid Grid.Row="1"><Grid.ColumnDefinitions><ColumnDefinition Width="68"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
         <Image x:Name="AppIcon" Width="52" Height="52" VerticalAlignment="Top"/>
-        <StackPanel Grid.Column="1"><TextBlock Text="Trading Servers" FontSize="29" FontWeight="SemiBold" Foreground="#182B45"/>
-          <TextBlock Text="Two brokers. One calm workspace." Margin="1,6,0,0" Foreground="#60738B" FontSize="14"/></StackPanel>
+        <StackPanel Grid.Column="1"><TextBlock Text="Trading Servers" FontSize="29" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryBrush}"/>
+          <TextBlock Text="Two brokers. One calm workspace." Margin="1,6,0,0" Foreground="{DynamicResource SecondaryBrush}" FontSize="14"/></StackPanel>
       </Grid>
       <StackPanel Grid.Row="2">
-        <Border CornerRadius="17" Background="#BFFFFFFF" BorderBrush="#F5FFFFFF" BorderThickness="1" Padding="18,15" Margin="0,0,0,12">
+        <Border CornerRadius="17" Background="{DynamicResource CardBrush}" BorderBrush="{DynamicResource EdgeBrush}" BorderThickness="1" Padding="18,15" Margin="0,0,0,12">
           <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="160"/></Grid.ColumnDefinitions>
-            <CheckBox x:Name="KotakCheck" IsChecked="True"><StackPanel><TextBlock Text="Kotak Neo" Foreground="#22364F" FontWeight="SemiBold" FontSize="16"/><TextBlock Text="127.0.0.1:5000" Foreground="#77869A" FontSize="12" Margin="0,3,0,0"/></StackPanel></CheckBox>
-            <TextBlock x:Name="KotakStatus" Grid.Column="1" Text="Checking…" HorizontalAlignment="Right" VerticalAlignment="Center" FontWeight="SemiBold" Foreground="#687B93"/>
+            <CheckBox x:Name="KotakCheck" IsChecked="True"><StackPanel><TextBlock Text="Kotak Neo" Foreground="{DynamicResource PrimaryBrush}" FontWeight="SemiBold" FontSize="16"/><TextBlock Text="127.0.0.1:5000" Foreground="{DynamicResource MutedBrush}" FontSize="12" Margin="0,3,0,0"/></StackPanel></CheckBox>
+            <TextBlock x:Name="KotakStatus" Grid.Column="1" Text="Checking…" HorizontalAlignment="Right" VerticalAlignment="Center" FontWeight="SemiBold" Foreground="{DynamicResource SecondaryBrush}"/>
           </Grid>
         </Border>
-        <Border CornerRadius="17" Background="#BFFFFFFF" BorderBrush="#F5FFFFFF" BorderThickness="1" Padding="18,15">
+        <Border CornerRadius="17" Background="{DynamicResource CardBrush}" BorderBrush="{DynamicResource EdgeBrush}" BorderThickness="1" Padding="18,15">
           <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="160"/></Grid.ColumnDefinitions>
-            <CheckBox x:Name="FyersCheck" IsChecked="True"><StackPanel><TextBlock Text="FYERS" Foreground="#22364F" FontWeight="SemiBold" FontSize="16"/><TextBlock Text="127.0.0.1:5001" Foreground="#77869A" FontSize="12" Margin="0,3,0,0"/></StackPanel></CheckBox>
-            <TextBlock x:Name="FyersStatus" Grid.Column="1" Text="Checking…" HorizontalAlignment="Right" VerticalAlignment="Center" FontWeight="SemiBold" Foreground="#687B93"/>
+            <CheckBox x:Name="FyersCheck" IsChecked="True"><StackPanel><TextBlock Text="FYERS" Foreground="{DynamicResource PrimaryBrush}" FontWeight="SemiBold" FontSize="16"/><TextBlock Text="127.0.0.1:5001" Foreground="{DynamicResource MutedBrush}" FontSize="12" Margin="0,3,0,0"/></StackPanel></CheckBox>
+            <TextBlock x:Name="FyersStatus" Grid.Column="1" Text="Checking…" HorizontalAlignment="Right" VerticalAlignment="Center" FontWeight="SemiBold" Foreground="{DynamicResource SecondaryBrush}"/>
           </Grid>
         </Border>
       </StackPanel>
       <UniformGrid Grid.Row="3" Columns="3" VerticalAlignment="Center">
-        <Button x:Name="StartButton" Tag="Start" Margin="0,0,8,0" Foreground="White" BorderBrush="#608DD9FF"><Button.Background><LinearGradientBrush StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#3C9AF6"/><GradientStop Color="#2263DC" Offset="1"/></LinearGradientBrush></Button.Background><TextBlock Text="▶   Start" FontWeight="SemiBold"/></Button>
-        <Button x:Name="StopButton" Tag="Stop" Margin="4,0,4,0" Foreground="#BA445A"><TextBlock Text="■   Stop" FontWeight="SemiBold"/></Button>
+        <Button x:Name="StartButton" Tag="Start" Margin="0,0,8,0" Foreground="{DynamicResource AccentTextBrush}" BorderBrush="{DynamicResource AccentBrush}" Background="{DynamicResource StartBrush}"><TextBlock Text="▶   Start" FontWeight="SemiBold"/></Button>
+        <Button x:Name="StopButton" Tag="Stop" Margin="4,0,4,0" Foreground="{DynamicResource DangerBrush}"><TextBlock Text="■   Stop" FontWeight="SemiBold"/></Button>
         <Button x:Name="RestartButton" Tag="Restart" Margin="8,0,0,0"><TextBlock Text="↻   Restart" FontWeight="SemiBold"/></Button>
       </UniformGrid>
-      <Border Grid.Row="4" CornerRadius="15" Background="#80FFFFFF" BorderBrush="#DDFFFFFF" BorderThickness="1" Padding="16,12" Margin="0,3,0,12">
+      <Border Grid.Row="4" CornerRadius="15" Background="{DynamicResource ActivityBrush}" BorderBrush="{DynamicResource EdgeBrush}" BorderThickness="1" Padding="16,12" Margin="0,3,0,12">
         <Grid><Grid.RowDefinitions><RowDefinition Height="25"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-          <TextBlock Text="ACTIVITY" FontWeight="SemiBold" FontSize="10" Foreground="#6A7D96"/>
-          <TextBox x:Name="Activity" Grid.Row="1" Text="Select your brokers, then Start. Both pages open as tabs in Chrome." IsReadOnly="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" Background="Transparent" BorderThickness="0" Foreground="#435B77" FontSize="12"/>
+          <TextBlock Text="ACTIVITY" FontWeight="SemiBold" FontSize="10" Foreground="{DynamicResource MutedBrush}"/>
+          <TextBox x:Name="Activity" Grid.Row="1" Text="Select your brokers, then Start. Both pages open as tabs in Chrome." IsReadOnly="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" Background="Transparent" BorderThickness="0" Foreground="{DynamicResource SecondaryBrush}" FontSize="12"/>
         </Grid>
       </Border>
-      <TextBlock Grid.Row="5" Text="Closing this window keeps your broker servers running." Foreground="#6B7D92" FontSize="12" HorizontalAlignment="Center" VerticalAlignment="Bottom"/>
+      <TextBlock Grid.Row="5" Text="Closing this window keeps your broker servers running." Foreground="{DynamicResource MutedBrush}" FontSize="12" HorizontalAlignment="Center" VerticalAlignment="Bottom"/>
     </Grid>
   </Border>
 </Window>
@@ -119,14 +128,75 @@ if (Test-Path -LiteralPath $iconPath) {
     } finally { $iconStream.Dispose() }
     $window.FindName('AppIcon').Source = $window.Icon
 }
-$window.FindName('CloseWindow').Add_Click({ $window.Close() })
-$window.FindName('MinimizeWindow').Add_Click({ $window.WindowState = 'Minimized' })
-$window.FindName('TitleBar').Add_MouseLeftButtonDown({ if ($_.OriginalSource -isnot [Windows.Controls.Button]) { $window.DragMove() } })
+$themeState = @{ Mode = $null }
+function Get-ControllerSystemTheme {
+    if ([Windows.SystemParameters]::HighContrast) { return 'HighContrast' }
+    try {
+        $light = Get-ItemPropertyValue -LiteralPath 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize' -Name AppsUseLightTheme -ErrorAction Stop
+        if ([int]$light -eq 0) { return 'Dark' }
+    } catch { }
+    return 'Light'
+}
+function Set-ControllerTheme([string]$Mode, [switch]$Force) {
+    if ($themeState.Mode -eq $Mode -and -not $Force) { return }
+    $themeState.Mode = $Mode
+    if ($Mode -eq 'Dark') {
+        $palette = @{
+            WindowBrush = '#161E2B'; PrimaryBrush = '#EDF3FC'; SecondaryBrush = '#B5C5D9'; MutedBrush = '#A3B3C9'
+            CardBrush = '#E626354B'; EdgeBrush = '#465B73'; ButtonBrush = '#293A51'; DangerBrush = '#FF9AAE'
+            ActivityBrush = '#D9202D40'; AccentBrush = '#4C9BFA'; AccentTextBrush = '#FFFFFF'
+            ReadyBrush = '#64DBB1'; WarningBrush = '#FFC781'
+            GradientStart = '#223148'; GradientEnd = '#182C36'; StartTop = '#3F8EF5'; StartBottom = '#275ECF'
+        }
+    } elseif ($Mode -eq 'HighContrast') {
+        $palette = @{
+            WindowBrush = [Windows.SystemColors]::WindowColor; PrimaryBrush = [Windows.SystemColors]::WindowTextColor
+            SecondaryBrush = [Windows.SystemColors]::WindowTextColor; MutedBrush = [Windows.SystemColors]::WindowTextColor
+            CardBrush = [Windows.SystemColors]::WindowColor; EdgeBrush = [Windows.SystemColors]::WindowTextColor
+            ButtonBrush = [Windows.SystemColors]::ControlColor; DangerBrush = [Windows.SystemColors]::ControlTextColor
+            ActivityBrush = [Windows.SystemColors]::WindowColor; AccentBrush = [Windows.SystemColors]::HighlightColor
+            AccentTextBrush = [Windows.SystemColors]::HighlightTextColor; ReadyBrush = [Windows.SystemColors]::WindowTextColor
+            WarningBrush = [Windows.SystemColors]::WindowTextColor; GradientStart = [Windows.SystemColors]::WindowColor
+            GradientEnd = [Windows.SystemColors]::WindowColor; StartTop = [Windows.SystemColors]::HighlightColor
+            StartBottom = [Windows.SystemColors]::HighlightColor
+        }
+    } else {
+        $palette = @{
+            WindowBrush = '#EEF3FA'; PrimaryBrush = '#182B45'; SecondaryBrush = '#526780'; MutedBrush = '#5C708B'
+            CardBrush = '#EFFFFFFF'; EdgeBrush = '#FFFFFFFF'; ButtonBrush = '#EFFFFFFF'; DangerBrush = '#BA445A'
+            ActivityBrush = '#CCFFFFFF'; AccentBrush = '#2374E8'; AccentTextBrush = '#FFFFFF'
+            ReadyBrush = '#13785F'; WarningBrush = '#946011'
+            GradientStart = '#F3F7FD'; GradientEnd = '#E0EDF5'; StartTop = '#3C9AF6'; StartBottom = '#2263DC'
+        }
+    }
+    foreach ($key in @($palette.Keys | Where-Object { $_ -like '*Brush' })) {
+        $color = [Windows.Media.ColorConverter]::ConvertFromString([string]$palette[$key])
+        $brush = New-Object Windows.Media.SolidColorBrush($color)
+        $brush.Freeze()
+        $window.Resources[$key] = $brush.PSObject.BaseObject
+    }
+    foreach ($gradient in @(@('BackdropBrush', 'GradientStart', 'GradientEnd'), @('StartBrush', 'StartTop', 'StartBottom'))) {
+        $brush = New-Object Windows.Media.LinearGradientBrush
+        $brush.StartPoint = New-Object Windows.Point(0, 0); $brush.EndPoint = New-Object Windows.Point(1, 1)
+        $brush.GradientStops.Add((New-Object Windows.Media.GradientStop([Windows.Media.ColorConverter]::ConvertFromString([string]$palette[$gradient[1]]), 0)))
+        $brush.GradientStops.Add((New-Object Windows.Media.GradientStop([Windows.Media.ColorConverter]::ConvertFromString([string]$palette[$gradient[2]]), 1)))
+        $brush.Freeze()
+        $window.Resources[$gradient[0]] = $brush.PSObject.BaseObject
+    }
+    $handle = (New-Object Windows.Interop.WindowInteropHelper $window).Handle
+    if ($handle -ne [IntPtr]::Zero) {
+        $baseColor = $window.Resources['WindowBrush'].Color
+        $captionColor = [int]$baseColor.R -bor ([int]$baseColor.G -shl 8) -bor ([int]$baseColor.B -shl 16)
+        $darkCaption = $Mode -eq 'Dark' -or ($Mode -eq 'HighContrast' -and $baseColor.R -lt 128)
+        [TradingGlassWindow]::Apply($handle, $darkCaption, $captionColor)
+    }
+}
+Set-ControllerTheme -Mode (Get-ControllerSystemTheme)
 $window.Add_SourceInitialized({
     $handle = (New-Object Windows.Interop.WindowInteropHelper $window).Handle
-    [TradingGlassWindow]::Apply($handle)
+    Set-ControllerTheme -Mode (Get-ControllerSystemTheme) -Force
 })
-$runtime = @{ Operation = $null; Status = $null; NextStatus = [datetime]::MinValue; Output = $null; ErrorLog = $null }
+$runtime = @{ NextTheme = [datetime]::MinValue; Operation = $null; Status = $null; NextStatus = [datetime]::MinValue; Output = $null; ErrorLog = $null }
 $statusPath = Join-Path $StateRoot 'ui-status.json'
 $engine = Join-Path $PSHOME 'powershell.exe'
 if (-not (Test-Path -LiteralPath $engine)) { $engine = Join-Path $PSHOME 'pwsh.exe' }
@@ -155,6 +225,10 @@ foreach ($button in $buttons) {
 $timer = New-Object Windows.Threading.DispatcherTimer
 $timer.Interval = [TimeSpan]::FromMilliseconds(900)
 $timer.Add_Tick({
+    if ((Get-Date) -ge $runtime.NextTheme) {
+        Set-ControllerTheme -Mode (Get-ControllerSystemTheme)
+        $runtime.NextTheme = (Get-Date).AddSeconds(2)
+    }
     if ($runtime.Operation) {
         if (Test-Path -LiteralPath $runtime.Output) { $log.Text = (@(Get-Content -LiteralPath $runtime.Output -Encoding UTF8 -Tail 30) -join "`r`n") }
         if ($runtime.Operation.HasExited) {
@@ -176,7 +250,7 @@ $timer.Add_Tick({
         try {
             foreach ($item in (Get-Content -LiteralPath $statusPath -Raw | ConvertFrom-Json)) {
                 $labels[$item.Name].Text = $item.State
-                $labels[$item.Name].Foreground = $(if ($item.State -eq 'Ready') { '#168269' } elseif ($item.State -eq 'Stopped') { '#77869A' } else { '#AD6C19' })
+                $labels[$item.Name].SetResourceReference([Windows.Controls.TextBlock]::ForegroundProperty, $(if ($item.State -eq 'Ready') { 'ReadyBrush' } elseif ($item.State -eq 'Stopped') { 'MutedBrush' } else { 'WarningBrush' }))
             }
         } catch { }
     }

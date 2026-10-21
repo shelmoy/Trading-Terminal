@@ -49,7 +49,7 @@ PowerShell parsing and Python syntax/lint checks passed. Operational activation 
 
 ## Glass desktop refresh
 
-The controller uses WPF with a pale glass-style surface, rounded broker cards, blue gradient Start action, compact activity panel and macOS-inspired window controls. It uses opaque background layers and software rendering for reliable contrast, with native rounded corners on supported Windows versions. It does not extend native desktop acrylic through its content.
+The controller uses WPF with Windows 11-style glass surfaces, rounded broker cards, a blue gradient Start action, compact activity panel and native Windows caption controls. It follows the Windows app light/dark preference and high-contrast colors. It uses opaque background layers and software rendering for reliable contrast, with native rounded corners on supported Windows versions. It does not extend native desktop acrylic through its content.
 
 The desktop shortcut uses a blue glass server icon containing 16, 24, 32, 48, 64, 128 and 256 pixel frames in an ICO container. Small frames use classic 32-bit DIB images with transparency masks; the 256 pixel frame uses PNG. The installer checks the user, public and OneDrive desktop locations for known retired launcher targets, preserves unknown shortcuts, and recreates its own shortcut with shell refresh notifications without restarting Explorer.
 
@@ -70,3 +70,11 @@ The user's screenshot showed the previous native acrylic/full-frame transparency
 The blank desktop icon also had a concrete path problem: Windows resolved the old shortcut target into `AppData\Local\Packages\OpenAI.Codex_2p2nqsd0c76g0\LocalCache\Local\OpenAlgo\ServerControl`, while its icon location still named the unredirected AppData folder. The controller is now installed at `%USERPROFILE%\TradingServers`. The saved shortcut's target, working directory, state root and icon location were reread and all resolved to that normal folder. The installer recognizes only the exact known older controller roots when migrating the shortcut and backs it up before recreating it. Old private recovery folders remain intact.
 
 The old controller GUI was closed gracefully and the new controller opened through the desktop shortcut. An unrelated old installation holding the GUI mutex now produces an explicit startup error instead of silently returning without a window. No broker services were started or stopped during this repair; the new status reported both instances stopped at the time of checking. No credentials, database or network configuration was changed.
+
+## Native Windows controls and automatic system theme
+
+The custom traffic-light controls were replaced with the real Windows title bar. `SingleBorderWindow` and `CanResize` enable native Close, Minimize, Maximize/Restore, edge resizing, title-bar dragging/double-click and Windows 11 Snap Layout handling. Minimum dimensions keep the broker controls readable; the activity panel expands with the window.
+
+The default palette reads `AppsUseLightTheme` from the current user's Windows personalization settings. It updates within two seconds while the controller is open, without changing the user's system theme. Text, surfaces, buttons, status colors and the native caption all follow the selected palette. Windows high-contrast mode takes precedence and uses Windows system colors. The native DWM dark-caption attribute and matching caption color are updated with the content. The previous opaque/software rendering fix remains in place.
+
+Both light and dark WPF renders were exported and visually inspected; no theme-rendering errors remained. The installed desktop launch opened a visible, responsive controller in the system's dark mode. Read-only window-style inspection confirmed native caption, resize frame, maximize box and minimize box enabled, with the DWM dark-caption attribute set. This confirms the native window configuration; no simulated trading actions or broker Stop/Restart operations were performed. Private controller backup: `backups\20261021-151433-289` under the installed user folder.
