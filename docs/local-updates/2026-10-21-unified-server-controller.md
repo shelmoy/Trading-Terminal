@@ -14,7 +14,7 @@ The existing broker installations remain independent: **Kotak at http://127.0.0.
 
 ## Installation and source
 
-- Source: `scripts/windows/BrokerServers.ps1`, `run_broker_instance.py`, and `Install-BrokerServers.ps1`.
+- Source: `scripts/windows/BrokerServers.ps1`, `BrokerServers.UI.ps1`, `New-TradingServersIcon.ps1`, `run_broker_instance.py`, and `Install-BrokerServers.ps1`.
 - Installed controller and local logs: `%LOCALAPPDATA%\OpenAlgo\ServerControl`.
 - Reinstall/update the desktop utility from a checkout with:
 
@@ -46,3 +46,11 @@ Recovery branch: `backup/before-universal-server-controller-2026-10-21`. Control
 ## Checks
 
 PowerShell parsing and Python syntax/lint checks passed. Operational activation uses Start with both instances and read-only HTTP checks; no automated test suite, broker orders or stop/restart exercise against a trading session is performed. HTTP availability confirms the local app is ready, not that daily broker authentication is complete. Existing broker login flows still apply.
+
+## Glass desktop refresh
+
+The controller now uses WPF with a pale frosted surface, rounded broker cards, blue gradient Start action, compact activity panel and macOS-inspired window controls. It requests the Windows desktop acrylic backdrop and rounded corners on supported Windows versions; its own tinted surface remains readable when those effects are unavailable. Windows accessibility and transparency settings can affect the backdrop.
+
+The desktop shortcut uses a new blue glass server icon containing 16, 24, 32, 48, 64, 128 and 256 pixel PNG frames in an ICO container. The icon has a new filename so Explorer can replace its previously cached blank icon. The installer checks the user, public and OneDrive desktop locations for known retired launcher targets, preserves unknown shortcuts, and sends shell refresh notifications without restarting Explorer.
+
+At this refresh, the old OpenAlgo shortcut files were already absent from the checked desktop folders; only Trading Servers remained. Shell delete/directory/icon notifications were sent to remove stale desktop entries. The new controller was opened successfully and reported responsive with no startup errors. Its presentation was updated without stopping or restarting either broker service. Start and Restart retain the existing-window Chrome tab behaviour. The prior controller, icon and shortcuts remain in the installer's private recovery folder.
