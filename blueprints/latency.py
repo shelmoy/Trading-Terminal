@@ -35,18 +35,15 @@ def format_ist_time(timestamp):
     return ist_time.strftime("%d-%m-%Y %I:%M:%S %p")
 
 
-def get_histogram_data(broker=None, session_only=True):
+def get_histogram_data(broker=None):
     """Get histogram data for RTT distribution"""
     try:
         query = OrderLatency.query
-        if session_only:
-            cutoff = OrderLatency.get_session_start_utc()
-            query = query.filter(OrderLatency.timestamp >= cutoff)
         if broker:
             query = query.filter_by(broker=broker)
 
         # Get all RTT values
-        rtts = [r[0] for r in query.with_entities(OrderLatency.rtt_ms).filter(OrderLatency.rtt_ms.isnot(None)).all()]
+        rtts = [r[0] for r in query.with_entities(OrderLatency.rtt_ms).all()]
 
         if not rtts:
             return {"bins": [], "counts": [], "avg_rtt": 0, "min_rtt": 0, "max_rtt": 0}
@@ -78,6 +75,7 @@ def get_histogram_data(broker=None, session_only=True):
             "max_rtt": float(max_rtt),
         }
 
+        # logger.info(f"Histogram data for broker {broker}: {data}")  # Commented out to reduce log verbosity
         return data
 
     except Exception as e:
@@ -181,8 +179,7 @@ def get_logs():
     """API endpoint to get latency logs"""
     try:
         limit = min(int(request.args.get("limit", 100)), 1000)
-        session_only = request.args.get("session_only", "true").lower() in ("true", "1", "yes")
-        logs = OrderLatency.get_recent_logs(limit=limit, session_only=session_only)
+        logs = OrderLatency.get_recent_logs(limit=limit)
         return jsonify(
             [
                 {
@@ -212,34 +209,19 @@ def get_logs():
 @check_session_validity
 @limiter.limit("60/minute")
 def get_stats():
-    """API endpoint to get latency statistics (auto-resets daily, support session_only toggle)"""
+    """API endpoint to get latency statistics"""
     try:
-        session_only = request.args.get("session_only", "true").lower() in ("true", "1", "yes")
-        stats = OrderLatency.get_latency_stats(session_only=session_only)
+        stats = OrderLatency.get_latency_stats()
 
         # Add histogram data for each broker
         broker_histograms = {}
         for broker in stats.get("broker_stats", {}):
-            broker_histograms[broker] = get_histogram_data(broker, session_only=session_only)
+            broker_histograms[broker] = get_histogram_data(broker)
 
         stats["broker_histograms"] = broker_histograms
         return jsonify(stats)
     except Exception as e:
         logger.exception(f"Error fetching latency stats: {e}")
-        return jsonify({"error": str(e)}), 500
-
-
-@latency_bp.route("/api/reset", methods=["POST"])
-@check_session_validity
-@limiter.limit("10/minute")
-def reset_stats():
-    """API endpoint to reset/clear current stats cache and refresh daily metrics"""
-    try:
-        OrderLatency.clear_stats_cache()
-        fresh_stats = OrderLatency.get_latency_stats(session_only=True)
-        return jsonify({"status": "success", "message": "Stats cache refreshed", "stats": fresh_stats})
-    except Exception as e:
-        logger.exception(f"Error resetting latency stats: {e}")
         return jsonify({"error": str(e)}), 500
 
 
@@ -249,14 +231,13 @@ def reset_stats():
 def get_broker_stats(broker):
     """API endpoint to get broker-specific latency statistics"""
     try:
-        session_only = request.args.get("session_only", "true").lower() in ("true", "1", "yes")
-        stats = OrderLatency.get_latency_stats(session_only=session_only)
+        stats = OrderLatency.get_latency_stats()
         broker_stats = stats.get("broker_stats", {}).get(broker, {})
         if not broker_stats:
             return jsonify({"error": "Broker not found"}), 404
 
         # Add histogram data
-        broker_stats["histogram"] = get_histogram_data(broker, session_only=session_only)
+        broker_stats["histogram"] = get_histogram_data(broker)
         return jsonify(broker_stats)
     except Exception as e:
         logger.exception(f"Error fetching broker stats: {e}")
