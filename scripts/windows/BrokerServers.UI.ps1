@@ -112,8 +112,12 @@ $buttons = @('StartButton', 'StopButton', 'RestartButton') | ForEach-Object { $w
 $log = $window.FindName('Activity')
 $iconPath = Join-Path $PSScriptRoot 'TradingServers-Glass.ico'
 if (Test-Path -LiteralPath $iconPath) {
-    $iconUri = New-Object Uri($iconPath)
-    $window.Icon = [Windows.Media.Imaging.BitmapFrame]::Create($iconUri)
+    # Load the pixels eagerly, so an open controller never locks its installed icon.
+    $iconStream = [IO.File]::OpenRead($iconPath)
+    try {
+        $window.Icon = [Windows.Media.Imaging.BitmapFrame]::Create($iconStream, [Windows.Media.Imaging.BitmapCreateOptions]::PreservePixelFormat, [Windows.Media.Imaging.BitmapCacheOption]::OnLoad)
+        $window.Icon.Freeze()
+    } finally { $iconStream.Dispose() }
     $window.FindName('AppIcon').Source = $window.Icon
 }
 $window.FindName('CloseWindow').Add_Click({ $window.Close() })

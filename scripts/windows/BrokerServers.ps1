@@ -223,14 +223,45 @@ function Show-Controller {
 }
 
 if ($Action -eq 'Menu') {
+    if (-not ('TradingControllerWindow' -as [type])) {
+        Add-Type @'
+using System;
+using System.Runtime.InteropServices;
+public static class TradingControllerWindow {
+    [DllImport("user32.dll")] public static extern bool ShowWindowAsync(IntPtr handle, int command);
+    [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr handle);
+    [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr handle);
+}
+'@
+    }
     $uiMutex = New-Object Threading.Mutex($false, 'Local\OpenAlgoBrokerServersUI')
     $uiLock = $false
+    $uiPidPath = Join-Path $StateRoot 'ui.pid'
     try {
         try { $uiLock = $uiMutex.WaitOne(0) } catch [Threading.AbandonedMutexException] { $uiLock = $true }
         if (-not $uiLock) {
-            Add-Type -AssemblyName System.Windows.Forms
-            [Windows.Forms.MessageBox]::Show('Trading Servers is already open.', 'Trading Servers') | Out-Null
-        } else { Show-Controller }
+            # Restore and focus the existing GUI instead of leaving it behind Chrome.
+            $deadline = (Get-Date).AddSeconds(5)
+            do {
+                $existingPid = if (Test-Path -LiteralPath $uiPidPath) { (Get-Content -LiteralPath $uiPidPath -Raw).Trim() } else { '' }
+                if ($existingPid -match '^\d+$') {
+                    $existing = Get-CimInstance Win32_Process -Filter "ProcessId=$existingPid" -ErrorAction SilentlyContinue
+                    if ($existing -and $existing.CommandLine -like ('*-File "' + $PSCommandPath + '"*')) {
+                        $existingProcess = Get-Process -Id ([int]$existingPid) -ErrorAction SilentlyContinue
+                        if ($existingProcess -and $existingProcess.MainWindowHandle -ne [IntPtr]::Zero) {
+                            $showCommand = if ([TradingControllerWindow]::IsIconic($existingProcess.MainWindowHandle)) { 9 } else { 5 }
+                            [TradingControllerWindow]::ShowWindowAsync($existingProcess.MainWindowHandle, $showCommand) | Out-Null
+                            [TradingControllerWindow]::SetForegroundWindow($existingProcess.MainWindowHandle) | Out-Null
+                            break
+                        }
+                    }
+                }
+                Start-Sleep -Milliseconds 150
+            } while ((Get-Date) -lt $deadline)
+        } else {
+            $PID | Set-Content -LiteralPath $uiPidPath
+            Show-Controller
+        }
     } finally { if ($uiLock) { $uiMutex.ReleaseMutex() }; $uiMutex.Dispose() }
     exit 0
 }

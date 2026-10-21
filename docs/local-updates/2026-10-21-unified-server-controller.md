@@ -14,7 +14,7 @@ The existing broker installations remain independent: **Kotak at http://127.0.0.
 
 ## Installation and source
 
-- Source: `scripts/windows/BrokerServers.ps1`, `BrokerServers.UI.ps1`, `New-TradingServersIcon.ps1`, `run_broker_instance.py`, and `Install-BrokerServers.ps1`.
+- Source: `scripts/windows/BrokerServers.ps1`, `BrokerServers.UI.ps1`, `New-TradingServersIcon.ps1`, `TradingServersLauncher.cs`, `run_broker_instance.py`, and `Install-BrokerServers.ps1`.
 - Installed controller and local logs: `%LOCALAPPDATA%\OpenAlgo\ServerControl`.
 - Reinstall/update the desktop utility from a checkout with:
 
@@ -54,3 +54,11 @@ The controller now uses WPF with a pale frosted surface, rounded broker cards, b
 The desktop shortcut uses a new blue glass server icon containing 16, 24, 32, 48, 64, 128 and 256 pixel PNG frames in an ICO container. The icon has a new filename so Explorer can replace its previously cached blank icon. The installer checks the user, public and OneDrive desktop locations for known retired launcher targets, preserves unknown shortcuts, and sends shell refresh notifications without restarting Explorer.
 
 At this refresh, the old OpenAlgo shortcut files were already absent from the checked desktop folders; only Trading Servers remained. Shell delete/directory/icon notifications were sent to remove stale desktop entries. The new controller was opened successfully and reported responsive with no startup errors. Its presentation was updated without stopping or restarting either broker service. Start and Restart retain the existing-window Chrome tab behaviour. The prior controller, icon and shortcuts remain in the installer's private recovery folder.
+
+## Desktop launch repair
+
+Following a report of a blank icon and an apparently unopened GUI, the exact desktop shortcut launch was inspected: its WPF window opened visible and responsive, and the standalone icon could be extracted by Windows. The launcher now uses a compiled Windows GUI executable (`TradingServersLauncher.cs`) with the icon embedded, replacing the PowerShell shortcut target. Its filename includes a source/icon signature so shell icon caching and updates to an executable already in use do not block installation. It has no console window and retains the existing controller and broker process isolation.
+
+The executable captures startup output to the private `launcher.log` and displays an error if PowerShell exits unsuccessfully. Double-clicking while the controller already exists now restores and focuses that window instead of showing an already-open message and leaving it behind another application. The controller writes its current UI PID itself. The installer requires the Windows .NET Framework compiler and retains previous native executables and a recovery copy of the replaced shortcut. No trading server restart is required.
+
+The open WPF window was also found to retain a lock on the standalone icon, preventing installer refresh. Icon decoding now uses an eagerly loaded frozen bitmap and closes the input stream. After reinstalling, the exact desktop shortcut opened a visible, responsive controller; Windows extracted its embedded icon successfully, and the icon file could be opened exclusively while the GUI remained open. Reopening the shortcut reused the same controller PID. Broker services were left running throughout. The shell icon refresh utility was invoked after shortcut replacement; Explorer's rendered desktop image was not captured.

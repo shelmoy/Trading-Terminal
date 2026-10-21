@@ -9,7 +9,7 @@ $InstallRoot = [IO.Path]::GetFullPath($InstallRoot)
 foreach ($root in @($PrimaryRoot, $FyersRoot)) {
     if (-not (Test-Path -LiteralPath (Join-Path $root 'app.py'))) { throw "OpenAlgo was not found in $root" }
 }
-foreach ($name in @('BrokerServers.ps1', 'BrokerServers.UI.ps1', 'run_broker_instance.py', 'New-TradingServersIcon.ps1')) {
+foreach ($name in @('BrokerServers.ps1', 'BrokerServers.UI.ps1', 'run_broker_instance.py', 'New-TradingServersIcon.ps1', 'TradingServersLauncher.cs')) {
     if (-not (Test-Path -LiteralPath (Join-Path $PSScriptRoot $name))) { throw "Missing controller source: $name" }
 }
 New-Item -ItemType Directory -Path $InstallRoot -Force | Out-Null
@@ -54,20 +54,40 @@ foreach ($name in @('BrokerServers.ps1', 'BrokerServers.UI.ps1', 'run_broker_ins
 # Multi-resolution glass icon, versioned to invalidate stale shell icon cache.
 & (Join-Path $PSScriptRoot 'New-TradingServersIcon.ps1') -Path (Join-Path $InstallRoot 'TradingServers-Glass.ico')
 
+# A Windows executable supplies both the shell icon and a console-free launch path.
+$compiler = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
+if (-not (Test-Path -LiteralPath $compiler)) { $compiler = Join-Path $env:WINDIR 'Microsoft.NET\Framework\v4.0.30319\csc.exe' }
+if (-not (Test-Path -LiteralPath $compiler)) { throw 'Windows .NET Framework C# compiler was not found.' }
+$signatureText = (Get-FileHash -LiteralPath (Join-Path $PSScriptRoot 'TradingServersLauncher.cs')).Hash + (Get-FileHash -LiteralPath (Join-Path $InstallRoot 'TradingServers-Glass.ico')).Hash
+$signatureHasher = [Security.Cryptography.SHA256]::Create()
+try { $launcherSignature = ([BitConverter]::ToString($signatureHasher.ComputeHash([Text.Encoding]::UTF8.GetBytes($signatureText)))).Replace('-', '').Substring(0, 12) }
+finally { $signatureHasher.Dispose() }
+$launcherPath = Join-Path $InstallRoot ('TradingServers-' + $launcherSignature + '.exe')
+$stagedLauncher = Join-Path $InstallRoot ('TradingServers-' + $stamp + '.exe')
+if (-not (Test-Path -LiteralPath $launcherPath)) {
+    & $compiler /nologo /target:winexe /optimize+ /reference:System.Windows.Forms.dll "/win32icon:$(Join-Path $InstallRoot 'TradingServers-Glass.ico')" "/out:$stagedLauncher" (Join-Path $PSScriptRoot 'TradingServersLauncher.cs')
+    if ($LASTEXITCODE -ne 0) { throw 'Could not compile the desktop launcher.' }
+    # Both paths are direct files in the validated installation root, never directories.
+    Move-Item -LiteralPath $stagedLauncher -Destination $launcherPath
+}
+
 $desktop = [Environment]::GetFolderPath('Desktop')
 $linkPath = Join-Path $desktop 'Trading Servers.lnk'
 $engine = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
 if (Test-Path -LiteralPath $linkPath) {
     $existing = $shell.CreateShortcut($linkPath)
-    if ($existing.TargetPath -ne $engine -or $existing.Arguments -notlike ('*' + (Join-Path $InstallRoot 'BrokerServers.ps1') + '*')) {
+    $oldControllerLink = $existing.TargetPath -eq $engine -and $existing.Arguments -like ('*' + (Join-Path $InstallRoot 'BrokerServers.ps1') + '*')
+    $nativeControllerLink = [IO.Path]::GetDirectoryName($existing.TargetPath) -eq $InstallRoot -and [IO.Path]::GetFileName($existing.TargetPath) -match '^TradingServers(?:-[A-F0-9]{12})?\.exe$'
+    if (-not $oldControllerLink -and -not $nativeControllerLink) {
         throw 'A different Trading Servers shortcut already exists. It was preserved.'
     }
+    Copy-Item -LiteralPath $linkPath -Destination (Join-Path $backupRoot 'previous-Trading Servers.lnk')
 }
 $link = $shell.CreateShortcut($linkPath)
-$link.TargetPath = $engine
-$link.Arguments = '-NoProfile -ExecutionPolicy Bypass -STA -WindowStyle Hidden -File "{0}" -PrimaryRoot "{1}" -FyersRoot "{2}" -StateRoot "{3}"' -f (Join-Path $InstallRoot 'BrokerServers.ps1'), $PrimaryRoot, $FyersRoot, $InstallRoot
+$link.TargetPath = $launcherPath
+$link.Arguments = '-PrimaryRoot "{0}" -FyersRoot "{1}" -StateRoot "{2}"' -f $PrimaryRoot, $FyersRoot, $InstallRoot
 $link.WorkingDirectory = $InstallRoot
-$link.IconLocation = (Join-Path $InstallRoot 'TradingServers-Glass.ico') + ',0'
+$link.IconLocation = $launcherPath + ',0'
 $link.Description = 'Start, stop or restart Kotak and FYERS; open both in Chrome.'
 $link.Save()
 
