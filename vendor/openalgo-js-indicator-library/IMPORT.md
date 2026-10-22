@@ -17,9 +17,19 @@ at commit [`556c0f07de46ec570a614b9de5d2250195c351d6`](https://github.com/market
 
 ## Install or restore
 
-From an OpenAlgo checkout with its pinned frontend chart dependency installed:
+From an OpenAlgo checkout with its pinned chart dependency installed or cached
+by the chart-indicator skill:
 
 ```sh
+node scripts/install_official_indicators.mjs
+```
+
+On a deployment without frontend development dependencies, prepare the skill's
+small cache first. This downloads only the pinned chart package, with no runtime
+dependencies, rather than installing the full frontend development tree:
+
+```sh
+node .claude/skills/chart-indicator/validate.mjs vendor/openalgo-js-indicator-library/indicators/MIT/oa-sma.js
 node scripts/install_official_indicators.mjs
 ```
 

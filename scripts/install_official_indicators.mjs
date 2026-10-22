@@ -57,8 +57,15 @@ async function main() {
     console.log(`All ${manifest.count} official indicators are already installed and match the pinned source.`)
     return
   }
-  if (!existsSync(join(root, 'frontend', 'node_modules', 'openalgo-charts', 'dist', 'openalgo-charts.mjs'))) {
-    throw new Error('The pinned frontend chart dependency must be installed before validating. No packages were downloaded.')
+  const frontendPackage = JSON.parse(readFileSync(join(root, 'frontend', 'package.json'), 'utf8'))
+  const pinned = frontendPackage.dependencies['openalgo-charts'].replace(/^[~^]/, '')
+  const developmentCharts = join(root, 'frontend', 'node_modules', 'openalgo-charts')
+  const charts = existsSync(join(developmentCharts, 'dist', 'openalgo-charts.mjs'))
+    ? developmentCharts
+    : join(dirname(validator), '.cache', `v${pinned}`, 'node_modules', 'openalgo-charts')
+  if (!existsSync(join(charts, 'dist', 'openalgo-charts.mjs')) ||
+      JSON.parse(readFileSync(join(charts, 'package.json'), 'utf8')).version !== pinned) {
+    throw new Error(`Prepare the pinned chart SDK first: node .claude/skills/chart-indicator/validate.mjs "${pending[0].source}". That gate can cache the single pinned package; a full frontend install is unnecessary.`)
   }
 
   const results = []
@@ -91,7 +98,7 @@ async function main() {
   if (results.every((result) => result.code === 0)) await processAll(true)
   mkdirSync(join(root, 'tmp'), { recursive: true })
   const report = join(root, 'tmp', 'official-indicator-install.json')
-  writeFileSync(report, `${JSON.stringify({ commit: manifest.commit, chartsVersion: manifest.chartsVersion, results }, null, 2)}\n`)
+  writeFileSync(report, `${JSON.stringify({ commit: manifest.commit, chartsVersion: pinned, results }, null, 2)}\n`)
   const failures = results.filter((result) => result.code !== 0)
   if (failures.length) throw new Error(`${failures.length} validation/install failure(s). Details: ${report}`)
   for (const entry of manifest.entries) {
