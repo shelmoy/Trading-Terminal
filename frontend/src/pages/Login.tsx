@@ -31,6 +31,20 @@ export default function Login() {
   const [isCheckingSetup, setIsCheckingSetup] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
+  const followLoginRedirect = (redirect: unknown) => {
+    const target = typeof redirect === 'string' ? redirect : '/broker'
+    // A linked broker's server owns cross-instance redirects. Never pass an
+    // absolute URL to React Router (which would append it to /login), or trust
+    // an external browser destination supplied in a response.
+    if (!target.startsWith('/') || target.startsWith('//')) {
+      window.location.replace('/auth/instance-login')
+    } else if (target.startsWith('/auth/')) {
+      window.location.replace(target)
+    } else {
+      navigate(target)
+    }
+  }
+
   // Check if setup is required or already logged in on page load
   useEffect(() => {
     const checkSetup = async () => {
@@ -42,6 +56,18 @@ export default function Login() {
         const setupData = await setupResponse.json()
         if (setupData.needs_setup) {
           navigate('/setup', { replace: true })
+          return
+        }
+
+        // SPA navigation to /login does not run Flask's managed-login guard.
+        // Probe the canonical route without following its redirect; a full
+        // document navigation then lets Flask verify/reuse the primary login.
+        const loginRoute = await fetch('/login', {
+          credentials: 'include',
+          redirect: 'manual',
+        })
+        if (loginRoute.type === 'opaqueredirect') {
+          window.location.replace('/login')
           return
         }
 
@@ -128,7 +154,7 @@ export default function Login() {
       if (!response.ok || data.status === 'error') {
         setError(data.message || 'Login failed. Please try again.')
         if (data.redirect) {
-          navigate(data.redirect)
+          followLoginRedirect(data.redirect)
         }
       } else if (data.status === 'totp_required') {
         // Server has accepted the password but won't issue a session
@@ -140,7 +166,7 @@ export default function Login() {
         setLogin(username, data.broker || '')
         showToast.success('Login successful', 'system')
         // Use redirect from response if provided, otherwise go to broker
-        navigate(data.redirect || '/broker')
+        followLoginRedirect(data.redirect || '/broker')
       }
     } catch (_err) {
       setError('Login failed. Please try again.')
@@ -191,7 +217,7 @@ export default function Login() {
 
       setLogin(username, data.broker || '')
       showToast.success('Login successful', 'system')
-      navigate(data.redirect || '/broker')
+      followLoginRedirect(data.redirect || '/broker')
     } catch (_err) {
       setError('Failed to verify TOTP. Please try again.')
     } finally {
