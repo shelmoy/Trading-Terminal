@@ -1,0 +1,4483 @@
+{
+  "repository": "https://github.com/marketcalls/openalgo-js-indicator-library",
+  "commit": "556c0f07de46ec570a614b9de5d2250195c351d6",
+  "importedOn": "2026-10-22",
+  "chartsVersion": "2.6.7",
+  "sha256Encoding": "UTF-8 with LF line endings",
+  "count": 497,
+  "entries": [
+    {
+      "path": "indicators/GPL-3.0/oa-acceleration-bands.js",
+      "file": "oa-acceleration-bands.js",
+      "id": "oa-acceleration-bands",
+      "name": "Acceleration Bands (AB)",
+      "category": "Channels",
+      "license": "GPL-3.0",
+      "sha256": "42ac9f22bbd35f59b3b44471279e6dd5bca2e2b3613d28d967f0e963259aa1f7"
+    },
+    {
+      "path": "indicators/GPL-3.0/oa-adaptive-laguerre-filter.js",
+      "file": "oa-adaptive-laguerre-filter.js",
+      "id": "oa-adaptive-laguerre-filter",
+      "name": "Adaptive Laguerre Filter (ALF)",
+      "category": "Moving Averages",
+      "license": "GPL-3.0",
+      "sha256": "7213d88632d6d22de3149c5904362dd10605032d28b363d514eb570069290ee0"
+    },
+    {
+      "path": "indicators/GPL-3.0/oa-adaptive-rsi-moving-average.js",
+      "file": "oa-adaptive-rsi-moving-average.js",
+      "id": "oa-adaptive-rsi-moving-average",
+      "name": "Adaptive RSI Moving Average (ARSIMA)",
+      "category": "Moving Averages",
+      "license": "GPL-3.0",
+      "sha256": "657cb796fe086f143e356289afa892c169e3bdbd950674f2947df2f6e5452afc"
+    },
+    {
+      "path": "indicators/GPL-3.0/oa-ahrens-moving-average.js",
+      "file": "oa-ahrens-moving-average.js",
+      "id": "oa-ahrens-moving-average",
+      "name": "Ahrens Moving Average (AHMA)",
+      "category": "Moving Averages",
+      "license": "GPL-3.0",
+      "sha256": "867849ce7adc6d04935df70b28984ffbaf983112748e10c6e1eaee36ee4fa5cb"
+    },
+    {
+      "path": "indicators/GPL-3.0/oa-alpha-decreasing-exponential-moving-average.js",
+      "file": "oa-alpha-decreasing-exponential-moving-average.js",
+      "id": "oa-alpha-decreasing-exponential-moving-average",
+      "name": "Alpha-Decreasing Exponential Moving Average (ADEMA)",
+      "category": "Moving Averages",
+      "license": "GPL-3.0",
+      "sha256": "f5e031b4ae71abe59a53afe3396c14e005be9bdc8b5c1795e446d3cd3c99e05d"
+    },
+    {
+      "path": "indicators/GPL-3.0/oa-apirine-adaptive-exponential-moving-average.js",
+      "file": "oa-apirine-adaptive-exponential-moving-average.js",
+      "id": "oa-apirine-adaptive-exponential-moving-average",
+      "name": "Adaptive Exponential Moving Average (AEMA)",
+      "category": "Moving Averages",
+      "license": "GPL-3.0",
+      "sha256": "2ed6c2f98b7ed8f43495358bed9c0a8c0de42c4b7ae9ffbc0c075b139ed07425"
+    },
+    {
+      "path": "indicators/GPL-3.0/oa-apirine-adaptive-moving-average.js",
+      "file": "oa-apirine-adaptive-moving-average.js",
+      "id": "oa-apirine-adaptive-moving-average",
+      "name": "Apirine Adaptive Moving Average (AAMA)",
+      "category": "Moving Averages",
+      "license": "GPL-3.0",
+      "sha256": "0e60544854611b421ebdbaa1880dd4eb9b5a43980bf2f98eb4023a54a0321d08"
+    },
+    {
+      "path": "indicators/GPL-3.0/oa-arnaud-legoux-moving-average.js",
+      "file": "oa-arnaud-legoux-moving-average.js",
+      "id": "oa-arnaud-legoux-moving-average",
+      "name": "Arnaud Legoux Moving Average (ALMA)",
+      "category": "Moving Averages",
+      "license": "GPL-3.0",
+      "sha256": "49e143744087efaf42e4352679f3e8ddce44a67829a7afbcc1256f2cfb132cbb"
+    },
+    {
+      "path": "indicators/GPL-3.0/oa-bitmex-withdrawals-cutoff-time.js",
+      "file": "oa-bitmex-withdrawals-cutoff-time.js",
+      "id": "oa-bitmex-withdrawals-cutoff-time",
+      "name": "BitMEX Withdrawals Cutoff Time",
+      "category": "Highlighters",
+      "license": "GPL-3.0",
+      "sha256": "11d266eaa2b7ed867c6d7e2a68b4cc8c8329ee439dc43a1b14c8a431647d9b38"
+    },
+    {
+      "path": "indicators/GPL-3.0/oa-bryant-adaptive-moving-average.js",
+      "file": "oa-bryant-adaptive-moving-average.js",
+      "id": "oa-bryant-adaptive-moving-average",
+      "name": "Bryant Adaptive Moving Average (BAMA)",
+      "category": "Moving Averages",
+      "license": "GPL-3.0",
+      "sha256": "75c7bd4166aa7acd6bb787bfd3adc9e9e35a55db19639055ea6806e434419ba2"
+    },
+    {
+      "path": "indicators/GPL-3.0/oa-butterworth-filter.js",
+      "file": "oa-butterworth-filter.js",
+      "id": "oa-butterworth-filter",
+      "name": "Butterworth Filter (BF)",
+      "category": "Moving Averages",
+      "license": "GPL-3.0",
+      "sha256": "f638a2b62fa37e9671882c628761411abf661fd6dcf9fa65ab9737027abe93af"
+    },
+    {
+      "path": "indicators/GPL-3.0/oa-corrected-moving-average.js",
+      "file": "oa-corrected-moving-average.js",
+      "id": "oa-corrected-moving-average",
+      "name": "Corrected Moving Average",
+      "category": "Moving Averages",
+      "license": "GPL-3.0",
+      "sha256": "5d1817ab7f2bbd18f579dbc1cc4e330b48d1379dfc874e94b194fbc1313b32cd"
+    },
+    {
+      "path": "indicators/GPL-3.0/oa-distance-coefficient-filter.js",
+      "file": "oa-distance-coefficient-filter.js",
+      "id": "oa-distance-coefficient-filter",
+      "name": "Distance Coefficient Filter (EDCF)",
+      "category": "Moving Averages",
+      "license": "GPL-3.0",
+      "sha256": "5c986d8cd85706d4ea44f8b8817fb3c2c03689137ccedc35e2fc20090bac29f9"
+    },
+    {
+      "path": "indicators/GPL-3.0/oa-distance-weighted-moving-average.js",
+      "file": "oa-distance-weighted-moving-average.js",
+      "id": "oa-distance-weighted-moving-average",
+      "name": "Distance Weighted Moving Average (DWMA)",
+      "category": "Moving Averages",
+      "license": "GPL-3.0",
+      "sha256": "c52baf97bf9cb71a1a43deeb9014eb9f2f4d14572b60e2c784b1e1668c8b6d52"
+    },
+    {
+      "path": "indicators/GPL-3.0/oa-double-exponential-moving-average.js",
+      "file": "oa-double-exponential-moving-average.js",
+      "id": "oa-double-exponential-moving-average",
+      "name": "Double Exponential Moving Average (DEMA)",
+      "category": "Moving Averages",
+      "license": "GPL-3.0",
+      "sha256": "7f37d41d704ade76d68b6c4d3e3ee667dfc9d41cad503f0788574a7b62acf249"
+    },
+    {
+      "path": "indicators/GPL-3.0/oa-double-weighted-moving-average.js",
+      "file": "oa-double-weighted-moving-average.js",
+      "id": "oa-double-weighted-moving-average",
+      "name": "Double Weighted Moving Average (DWMA)",
+      "category": "Moving Averages",
+      "license": "GPL-3.0",
+      "sha256": "d0cf2642e6f348da159c4097130427d2dc0d8d33d348020a84c08e08dcc5edde"
+    },
+    {
+      "path": "indicators/GPL-3.0/oa-ehlers-deviation-scaled-moving-average.js",
+      "file": "oa-ehlers-deviation-scaled-moving-average.js",
+      "id": "oa-ehlers-deviation-scaled-moving-average",
+      "name": "Ehlers Deviation-Scaled Moving Average (EDSMA)",
+      "category": "Moving Averages",
+      "license": "GPL-3.0",
+      "sha256": "5743dd09e6b164c1f219c21a54634bb08f1114316057f5f33e48dfed20edc951"
+    },
+    {
+      "path": "indicators/GPL-3.0/oa-ehlers-distance-coefficient-filter.js",
+      "file": "oa-ehlers-distance-coefficient-filter.js",
+      "id": "oa-ehlers-distance-coefficient-filter",
+      "name": "Ehlers Distance Coefficient Filter (EDCF)",
+      "category": "Moving Averages",
+      "license": "GPL-3.0",
+      "sha256": "b72dff16add453496eedbb382f6a8fb15d5ab45dca28b83b8c6c37b85bd16e5e"
+    },
+    {
+      "path": "indicators/GPL-3.0/oa-ehlers-leading-indicator.js",
+      "file": "oa-ehlers-leading-indicator.js",
+      "id": "oa-ehlers-leading-indicator",
+      "name": "Ehlers Leading Indicator (ELI)",
+      "category": "Moving Averages",
+      "license": "GPL-3.0",
+      "sha256": "23c66d383ac0200bbd5591a632bed443b7dbdd1033dd99f1e1f3cbd3dcd3df55"
+    },
+    {
+      "path": "indicators/GPL-3.0/oa-ehlers-mesa-adaptive-moving-averages.js",
+      "file": "oa-ehlers-mesa-adaptive-moving-averages.js",
+      "id": "oa-ehlers-mesa-adaptive-moving-averages",
+      "name": "Ehlers MESA Adaptive Moving Averages (MAMA & FAMA)",
+      "category": "Moving Averages",
+      "license": "GPL-3.0",
+      "sha256": "b421c38c794ea833674ecb05407efef1f1b32136e4dcacd58f0840450993f1bf"
+    },
+    {
+      "path": "indicators/GPL-3.0/oa-ehlers-modified-optimum-elliptic-filter.js",
+      "file": "oa-ehlers-modified-optimum-elliptic-filter.js",
+      "id": "oa-ehlers-modified-optimum-elliptic-filter",
+      "name": "Ehlers Modified Optimum Elliptic Filter (MOEF)",
+      "category": "Moving Averages",
+      "license": "GPL-3.0",
+      "sha256": "5007e34431e3465f460824a5baa1b61603daf3206c6d932cca44d2438907635c"
+    },
+    {
+      "path": "indicators/GPL-3.0/oa-ehlers-optimum-elliptic-filter.js",
+      "file": "oa-ehlers-optimum-elliptic-filter.js",
+      "id": "oa-ehlers-optimum-elliptic-filter",
+      "name": "Ehlers Optimum Elliptic Filter (OEF)",
+      "category": "Moving Averages",
+      "license": "GPL-3.0",
+      "sha256": "dc18f35571ab14842cf0236b4b9a374db1e960262c24c494f9a94f9eaa821a38"
+    },
+    {
+      "path": "indicators/GPL-3.0/oa-ehlers-super-smoother-filter.js",
+      "file": "oa-ehlers-super-smoother-filter.js",
+      "id": "oa-ehlers-super-smoother-filter",
+      "name": "Ehlers Super Smoother Filter (ESSF)",
+      "category": "Moving Averages",
+      "license": "GPL-3.0",
+      "sha256": "003411ac24396c5e277d11a17c6892cebf96e24dcbd18bbb3f2c8477c3d49115"
+    },
+    {
+      "path": "indicators/GPL-3.0/oa-elastic-volume-weighted-moving-average.js",
+      "file": "oa-elastic-volume-weighted-moving-average.js",
+      "id": "oa-elastic-volume-weighted-moving-average",
+      "name": "Elastic Volume Weighted Moving Average (EVWMA)",
+      "category": "Moving Averages",
+      "license": "GPL-3.0",
+      "sha256": "9281bdba22589b0b4a753da59858dc80b8b869cf2c0c24b8adae62f71428fdad"
+    },
+    {
+      "path": "indicators/GPL-3.0/oa-exponential-moving-average.js",
+      "file": "oa-exponential-moving-average.js",
+      "id": "oa-exponential-moving-average",
+      "name": "Exponential Moving Average (EMA)",
+      "category": "Moving Averages",
+      "license": "GPL-3.0",
+      "sha256": "22faaf3387ea8bcb69d8430a9df496ee9105e677d5b3117b6efa9d4f2719e753"
+    },
+    {
+      "path": "indicators/GPL-3.0/oa-farey-sequence-weighted-moving-average.js",
+      "file": "oa-farey-sequence-weighted-moving-average.js",
+      "id": "oa-farey-sequence-weighted-moving-average",
+      "name": "Farey Sequence Weighted Moving Average (FSWMA)",
+      "category": "Moving Averages",
+      "license": "GPL-3.0",
+      "sha256": "a39c11133e947965c74d1f4efe3299ca7acbbfd04521a1c02c116205b20839c4"
+    },
+    {
+      "path": "indicators/GPL-3.0/oa-fibonacci-weighted-moving-average.js",
+      "file": "oa-fibonacci-weighted-moving-average.js",
+      "id": "oa-fibonacci-weighted-moving-average",
+      "name": "Fibonacci Weighted Moving Average",
+      "category": "Moving Averages",
+      "license": "GPL-3.0",
+      "sha256": "6d83ef4abdd04c788782351bd6985565c0c90bceb4498472a48737112b555738"
+    },
+    {
+      "path": "indicators/GPL-3.0/oa-finite-impulse-response-filter.js",
+      "file": "oa-finite-impulse-response-filter.js",
+      "id": "oa-finite-impulse-response-filter",
+      "name": "Finite Impulse Response (FIR) Filter (FIRF)",
+      "category": "Moving Averages",
+      "license": "GPL-3.0",
+      "sha256": "0f17299082b4030730aa97103d759051b7b5c3276447c9cbfa194cf32225a23c"
+    },
+    {
+      "path": "indicators/GPL-3.0/oa-fractal-adaptive-moving-average.js",
+      "file": "oa-fractal-adaptive-moving-average.js",
+      "id": "oa-fractal-adaptive-moving-average",
+      "name": "Fractal Adaptive Moving Average (FRAMA)",
+      "category": "Moving Averages",
+      "license": "GPL-3.0",
+      "sha256": "fe8b05f62a7577505dae07a13af1dd1be3a3c46be815fe951ecd549161ac12eb"
+    },
+    {
+      "path": "indicators/GPL-3.0/oa-gaussian-filter.js",
+      "file": "oa-gaussian-filter.js",
+      "id": "oa-gaussian-filter",
+      "name": "Gaussian Filter (GF)",
+      "category": "Moving Averages",
+      "license": "GPL-3.0",
+      "sha256": "9315ca63f9b7916f5eddb40aadd99a4fc92265f09e6f895c21013ad94cc0bcaa"
+    },
+    {
+      "path": "indicators/GPL-3.0/oa-hampel-filter.js",
+      "file": "oa-hampel-filter.js",
+      "id": "oa-hampel-filter",
+      "name": "Hampel Filter (HF)",
+      "category": "Moving Averages",
+      "license": "GPL-3.0",
+      "sha256": "59b235d08fcb6f80e01b344359f1992056df122fad6f62aec49aa6884e7d1d9e"
+    },
+    {
+      "path": "indicators/GPL-3.0/oa-henderson-weighted-moving-average.js",
+      "file": "oa-henderson-weighted-moving-average.js",
+      "id": "oa-henderson-weighted-moving-average",
+      "name": "Henderson Weighted Moving Average",
+      "category": "Moving Averages",
+      "license": "GPL-3.0",
+      "sha256": "d58cd438b92793e218d9a0fb7507951724ada23b86bee9577883ce4ced53b212"
+    },
+    {
+      "path": "indicators/GPL-3.0/oa-holt-exponential-moving-average.js",
+      "file": "oa-holt-exponential-moving-average.js",
+      "id": "oa-holt-exponential-moving-average",
+      "name": "Holt Exponential Moving Average (HEMA)",
+      "category": "Moving Averages",
+      "license": "GPL-3.0",
+      "sha256": "3d03cb6750a5aa4f007ba2d663d013f4c587d4600736ca79f9265fd134fb6481"
+    },
+    {
+      "path": "indicators/GPL-3.0/oa-hull-moving-average.js",
+      "file": "oa-hull-moving-average.js",
+      "id": "oa-hull-moving-average",
+      "name": "Hull Moving Average (HMA)",
+      "category": "Moving Averages",
+      "license": "GPL-3.0",
+      "sha256": "02496c4ebcf9c9d0190ce24a6c9fb90e3035fcb57ebfd41fc628a61c09e3d0dd"
+    },
+    {
+      "path": "indicators/GPL-3.0/oa-infinite-impulse-response-filter.js",
+      "file": "oa-infinite-impulse-response-filter.js",
+      "id": "oa-infinite-impulse-response-filter",
+      "name": "Infinite Impulse Response (IIR) Filter (IIRF)",
+      "category": "Moving Averages",
+      "license": "GPL-3.0",
+      "sha256": "774d02f466c76facdaafd4f0fac2e714779d3164423f7225ac02445e7e42f753"
+    },
+    {
+      "path": "indicators/GPL-3.0/oa-interquartile-range-bands.js",
+      "file": "oa-interquartile-range-bands.js",
+      "id": "oa-interquartile-range-bands",
+      "name": "Interquartile Range Bands (IQRB)",
+      "category": "Channels",
+      "license": "GPL-3.0",
+      "sha256": "6827f612750e491497f06d7dbc7544b659f98a3a8817798c7f82da4e716e8cb6"
+    },
+    {
+      "path": "indicators/GPL-3.0/oa-inverse-distance-weighted-moving-average.js",
+      "file": "oa-inverse-distance-weighted-moving-average.js",
+      "id": "oa-inverse-distance-weighted-moving-average",
+      "name": "Inverse Distance Weighted Moving Average",
+      "category": "Moving Averages",
+      "license": "GPL-3.0",
+      "sha256": "0030e84efe49f4d80e152a266f63865d0da9702385db0a3d7a1912e1f04dc74e"
+    },
+    {
+      "path": "indicators/GPL-3.0/oa-jurik-moving-average.js",
+      "file": "oa-jurik-moving-average.js",
+      "id": "oa-jurik-moving-average",
+      "name": "Jurik Moving Average (JMA)",
+      "category": "Moving Averages",
+      "license": "GPL-3.0",
+      "sha256": "a7ca22cf66a7ed34c9d03f987fe2c4db23f196b6c9f50c238f5b862d01d508a2"
+    },
+    {
+      "path": "indicators/GPL-3.0/oa-kaufman-adaptive-moving-average.js",
+      "file": "oa-kaufman-adaptive-moving-average.js",
+      "id": "oa-kaufman-adaptive-moving-average",
+      "name": "Kaufman Adaptive Moving Average (KAMA)",
+      "category": "Moving Averages",
+      "license": "GPL-3.0",
+      "sha256": "e6fad3c3c2fa3d59330720adf5c50f77a31edc95b396f0c842e9739f7de4e8a2"
+    },
+    {
+      "path": "indicators/GPL-3.0/oa-kirshenbaum-bands.js",
+      "file": "oa-kirshenbaum-bands.js",
+      "id": "oa-kirshenbaum-bands",
+      "name": "Kirshenbaum Bands (KB)",
+      "category": "Channels",
+      "license": "GPL-3.0",
+      "sha256": "84d27c972dd4115a7f9e18214e1945558f0cfb4a3292d4646f362050576dc8b8"
+    },
+    {
+      "path": "indicators/GPL-3.0/oa-laguerre-filter.js",
+      "file": "oa-laguerre-filter.js",
+      "id": "oa-laguerre-filter",
+      "name": "Laguerre Filter (LF)",
+      "category": "Moving Averages",
+      "license": "GPL-3.0",
+      "sha256": "cfa5b80f4e018eff7b01b5eb63cda02218eabf97e4572c89722723385bd440f9"
+    },
+    {
+      "path": "indicators/GPL-3.0/oa-leap-years.js",
+      "file": "oa-leap-years.js",
+      "id": "oa-leap-years",
+      "name": "Leap Years",
+      "category": "Highlighters",
+      "license": "GPL-3.0",
+      "sha256": "db8bedbdc66cb1ca3a6322e3d143a6db7d720da728e42f2f7575359d0666df96"
+    },
+    {
+      "path": "indicators/GPL-3.0/oa-least-squares-moving-average.js",
+      "file": "oa-least-squares-moving-average.js",
+      "id": "oa-least-squares-moving-average",
+      "name": "Least Squares Moving Average (LSMA)",
+      "category": "Moving Averages",
+      "license": "GPL-3.0",
+      "sha256": "2630be180ee51f8470698c2d42b4e43a641b41a2e7471bab37d084a45c520699"
+    },
+    {
+      "path": "indicators/GPL-3.0/oa-leo-moving-average.js",
+      "file": "oa-leo-moving-average.js",
+      "id": "oa-leo-moving-average",
+      "name": "Leo Moving Average (LMA)",
+      "category": "Moving Averages",
+      "license": "GPL-3.0",
+      "sha256": "439eb657b22e44055f963d2237c49bbf49cbf7f2e08eb6a36b4496ee9e13d6ca"
+    },
+    {
+      "path": "indicators/GPL-3.0/oa-linear-weighted-moving-average.js",
+      "file": "oa-linear-weighted-moving-average.js",
+      "id": "oa-linear-weighted-moving-average",
+      "name": "Linear Weighted Moving Average (LWMA)",
+      "category": "Moving Averages",
+      "license": "GPL-3.0",
+      "sha256": "2493efd5b7d32c262d0bf1435b14b48451c865842da4e87356dd3bd5de105bca"
+    },
+    {
+      "path": "indicators/GPL-3.0/oa-mcginley-dynamic.js",
+      "file": "oa-mcginley-dynamic.js",
+      "id": "oa-mcginley-dynamic",
+      "name": "McGinley Dynamic (MD)",
+      "category": "Moving Averages",
+      "license": "GPL-3.0",
+      "sha256": "9b19113769981bfcb6d71583e391f776eba0bfbc60ff88dac18ff236743b235b"
+    },
+    {
+      "path": "indicators/GPL-3.0/oa-mcnicholl-moving-average.js",
+      "file": "oa-mcnicholl-moving-average.js",
+      "id": "oa-mcnicholl-moving-average",
+      "name": "McNicholl Moving Average (MNMA)",
+      "category": "Moving Averages",
+      "license": "GPL-3.0",
+      "sha256": "28a5a81cf2116c48ea68e00448ad754285ad99caece17a503cbb04349f1281ab"
+    },
+    {
+      "path": "indicators/GPL-3.0/oa-mean-absolute-deviation-bands.js",
+      "file": "oa-mean-absolute-deviation-bands.js",
+      "id": "oa-mean-absolute-deviation-bands",
+      "name": "Mean Absolute Deviation Bands (MADB)",
+      "category": "Channels",
+      "license": "GPL-3.0",
+      "sha256": "79287e7e3182d30d9c83ee9a9627edb404589f159f66e3fd6287e0fb080480b6"
+    },
+    {
+      "path": "indicators/GPL-3.0/oa-middle-high-low-moving-average.js",
+      "file": "oa-middle-high-low-moving-average.js",
+      "id": "oa-middle-high-low-moving-average",
+      "name": "Middle-High-Low Moving Average (MHLMA)",
+      "category": "Moving Averages",
+      "license": "GPL-3.0",
+      "sha256": "8dd2357e099793ddae2b0b06568bdd5162b5258efdf93a4dd5b7f5e6e860a6b9"
+    },
+    {
+      "path": "indicators/GPL-3.0/oa-moving-average-channel.js",
+      "file": "oa-moving-average-channel.js",
+      "id": "oa-moving-average-channel",
+      "name": "Moving Average Channel (MAC)",
+      "category": "Channels",
+      "license": "GPL-3.0",
+      "sha256": "d6f9cca0cd8da0d2cee89862003db18afdbdf4659005733e8c27dbccf035d6d8"
+    },
+    {
+      "path": "indicators/GPL-3.0/oa-moving-geometric-mean.js",
+      "file": "oa-moving-geometric-mean.js",
+      "id": "oa-moving-geometric-mean",
+      "name": "Moving Geometric Mean (MGM)",
+      "category": "Moving Averages",
+      "license": "GPL-3.0",
+      "sha256": "fa73128a0aebb979319b5c677f894ca2814c8bb42dbad972a7f2989c5c93aaeb"
+    },
+    {
+      "path": "indicators/GPL-3.0/oa-moving-harmonic-mean.js",
+      "file": "oa-moving-harmonic-mean.js",
+      "id": "oa-moving-harmonic-mean",
+      "name": "Moving Harmonic Mean (MHM)",
+      "category": "Moving Averages",
+      "license": "GPL-3.0",
+      "sha256": "d7ff1e62689c4960597201e30fc7bf30cfada41cfc9cce8c7ceccb7815b3f014"
+    },
+    {
+      "path": "indicators/GPL-3.0/oa-quarters.js",
+      "file": "oa-quarters.js",
+      "id": "oa-quarters",
+      "name": "Quarters",
+      "category": "Highlighters",
+      "license": "GPL-3.0",
+      "sha256": "673e25c2e747b37e53d8729d9251a4ba84021f807b97a6230042d396a46ed243"
+    },
+    {
+      "path": "indicators/GPL-3.0/oa-range-candles.js",
+      "file": "oa-range-candles.js",
+      "id": "oa-range-candles",
+      "name": "Range Candles",
+      "category": "Highlighters",
+      "license": "GPL-3.0",
+      "sha256": "9dccb9dcffb434faf17111f5a996ec6e7fc227aa7a492debcd525705a7b8a36a"
+    },
+    {
+      "path": "indicators/GPL-3.0/oa-stoller-average-range-channels.js",
+      "file": "oa-stoller-average-range-channels.js",
+      "id": "oa-stoller-average-range-channels",
+      "name": "Stoller Average Range Channels (STARC) Bands (STARC)",
+      "category": "Channels",
+      "license": "GPL-3.0",
+      "sha256": "8bb429444350601b852c4e5174f097b90c670888b4d92ed029d73123bc2b00e8"
+    },
+    {
+      "path": "indicators/GPL-3.0/oa-vortex-bands.js",
+      "file": "oa-vortex-bands.js",
+      "id": "oa-vortex-bands",
+      "name": "Vortex Bands (VB)",
+      "category": "Channels",
+      "license": "GPL-3.0",
+      "sha256": "bb3f292922e151357b480a96fd15f1713dbcfb2d72ccf6d75407a840cf642ae0"
+    },
+    {
+      "path": "indicators/GPL-3.0/oa-weekdays-gaps.js",
+      "file": "oa-weekdays-gaps.js",
+      "id": "oa-weekdays-gaps",
+      "name": "Weekdays Gaps",
+      "category": "Highlighters",
+      "license": "GPL-3.0",
+      "sha256": "42d619c9bac549d05c0a108b8d887325a2343ee3abc15b4c76f9c44886370acf"
+    },
+    {
+      "path": "indicators/MIT/oa-aberr.js",
+      "file": "oa-aberr.js",
+      "id": "oa-aberr",
+      "name": "Aberration (ABBER)",
+      "category": "Channels",
+      "license": "MIT",
+      "sha256": "2a144e6de0dc61edc7edcca10b1cbc473459eb7ad4d29b3ea809fc81be23fd2f"
+    },
+    {
+      "path": "indicators/MIT/oa-ac.js",
+      "file": "oa-ac.js",
+      "id": "oa-ac",
+      "name": "Accelerator Oscillator (AC)",
+      "category": "Oscillators",
+      "license": "MIT",
+      "sha256": "0b8279a1b146605d485443cfcdfd40f49172c73ffa609518453748266e4ec51d"
+    },
+    {
+      "path": "indicators/MIT/oa-accbands.js",
+      "file": "oa-accbands.js",
+      "id": "oa-accbands",
+      "name": "Acceleration Bands (ACCBANDS)",
+      "category": "Channels",
+      "license": "MIT",
+      "sha256": "4f9563980f16201637b2d56559c56cf5c0addcbf3457fe36441cb5305453560c"
+    },
+    {
+      "path": "indicators/MIT/oa-accel.js",
+      "file": "oa-accel.js",
+      "id": "oa-accel",
+      "name": "Acceleration (Slope of Slope) (ACCEL)",
+      "category": "Numerics",
+      "license": "MIT",
+      "sha256": "60872247561e51dcde2223542cb00398a455e480edf0ba6790640203c3fad943"
+    },
+    {
+      "path": "indicators/MIT/oa-adl.js",
+      "file": "oa-adl.js",
+      "id": "oa-adl",
+      "name": "Accumulation/Distribution Line (ADL)",
+      "category": "Volume",
+      "license": "MIT",
+      "sha256": "7dc3ffa723e4e0c526e217e4dd60e7f00a8119663209782ef963f3a28b93c2f3"
+    },
+    {
+      "path": "indicators/MIT/oa-adosc.js",
+      "file": "oa-adosc.js",
+      "id": "oa-adosc",
+      "name": "Chaikin A/D Oscillator (ADOSC)",
+      "category": "Volume",
+      "license": "MIT",
+      "sha256": "26ae2314e88ac1caf18c15ca8417b6d1138b3c08ccb7c9f72b1717b7a970681c"
+    },
+    {
+      "path": "indicators/MIT/oa-adr.js",
+      "file": "oa-adr.js",
+      "id": "oa-adr",
+      "name": "Average Daily Range (ADR)",
+      "category": "Volatility",
+      "license": "MIT",
+      "sha256": "1628147769ddf40adf1cbdc4dad03d594f0c00059975555358845536d87ad38e"
+    },
+    {
+      "path": "indicators/MIT/oa-adx.js",
+      "file": "oa-adx.js",
+      "id": "oa-adx",
+      "name": "Average Directional Movement Index (ADX)",
+      "category": "Dynamics",
+      "license": "MIT",
+      "sha256": "b9d7e082271c810f6329bdbf3808057dc44aa1df9a98f6299ab26d91556b8910"
+    },
+    {
+      "path": "indicators/MIT/oa-adxr.js",
+      "file": "oa-adxr.js",
+      "id": "oa-adxr",
+      "name": "Average Directional Movement Index Rating (ADXR)",
+      "category": "Dynamics",
+      "license": "MIT",
+      "sha256": "b6e6e4d715d851546ddd77448f52e9ad0413f11b017347c82191c746e1cdc89d"
+    },
+    {
+      "path": "indicators/MIT/oa-adxvma.js",
+      "file": "oa-adxvma.js",
+      "id": "oa-adxvma",
+      "name": "ADX Variable Moving Average (ADXVMA)",
+      "category": "Trends IIR",
+      "license": "MIT",
+      "sha256": "58dfc5b1045c10618315e4adc0dd6ab35335c3211b7e6cb02c30ceefc20e5118"
+    },
+    {
+      "path": "indicators/MIT/oa-afirma.js",
+      "file": "oa-afirma.js",
+      "id": "oa-afirma",
+      "name": "Autoregressive FIR Moving Average (AFIRMA)",
+      "category": "Forecasts",
+      "license": "MIT",
+      "sha256": "ffe97499562407a82383b9a9ebbf96832690d0693f4beae2527b5a01499f3be8"
+    },
+    {
+      "path": "indicators/MIT/oa-agc.js",
+      "file": "oa-agc.js",
+      "id": "oa-agc",
+      "name": "Ehlers Automatic Gain Control (AGC)",
+      "category": "Filters",
+      "license": "MIT",
+      "sha256": "3d480136a1915cf8a91717c16f41f3fdaa9feb3ebd955cf8b77065f87b1b64b2"
+    },
+    {
+      "path": "indicators/MIT/oa-ahrens.js",
+      "file": "oa-ahrens.js",
+      "id": "oa-ahrens",
+      "name": "Ahrens Moving Average (AHRENS)",
+      "category": "Trends IIR",
+      "license": "MIT",
+      "sha256": "554c166a205cae381fd515afb3e98ca9f10feca2bbbc02ca0048a25fd9933550"
+    },
+    {
+      "path": "indicators/MIT/oa-alaguerre.js",
+      "file": "oa-alaguerre.js",
+      "id": "oa-alaguerre",
+      "name": "Ehlers Adaptive Laguerre Filter (ALAGUERRE)",
+      "category": "Filters",
+      "license": "MIT",
+      "sha256": "e11b71cc3d3efbff3d87fc4013100cb9cad00cc3fe9e3821d9ff71d117a96cf9"
+    },
+    {
+      "path": "indicators/MIT/oa-alligator.js",
+      "file": "oa-alligator.js",
+      "id": "oa-alligator",
+      "name": "Williams Alligator",
+      "category": "Dynamics",
+      "license": "MIT",
+      "sha256": "03c88bc38b562f1ed46e913c96584049a8844778510f1539a8da9e874af4f2fb"
+    },
+    {
+      "path": "indicators/MIT/oa-alma.js",
+      "file": "oa-alma.js",
+      "id": "oa-alma",
+      "name": "Arnaud Legoux Moving Average (ALMA)",
+      "category": "Trends FIR",
+      "license": "MIT",
+      "sha256": "43964c1a48e1cd65996a92b5069c69ad26fc0004c687dd54661dae82df6704c9"
+    },
+    {
+      "path": "indicators/MIT/oa-amat.js",
+      "file": "oa-amat.js",
+      "id": "oa-amat",
+      "name": "Archer Moving Averages Trends (AMAT)",
+      "category": "Dynamics",
+      "license": "MIT",
+      "sha256": "ee7d9ad26e65db26b557d80a296e66a09442886775068697e58bcb2770fe2334"
+    },
+    {
+      "path": "indicators/MIT/oa-ao.js",
+      "file": "oa-ao.js",
+      "id": "oa-ao",
+      "name": "Awesome Oscillator (AO)",
+      "category": "Oscillators",
+      "license": "MIT",
+      "sha256": "711f500d0281d8f718c5e1295355dcb0d26571276fbf7788c8f3cff2e117d4db"
+    },
+    {
+      "path": "indicators/MIT/oa-aobv.js",
+      "file": "oa-aobv.js",
+      "id": "oa-aobv",
+      "name": "AOBV - Archer On-Balance Volume (AOBV)",
+      "category": "Volume",
+      "license": "MIT",
+      "sha256": "705eba86f0f484df7e7d3426109d895fc00151d4ddb49e4193e4732b27ca4d52"
+    },
+    {
+      "path": "indicators/MIT/oa-apchannel.js",
+      "file": "oa-apchannel.js",
+      "id": "oa-apchannel",
+      "name": "Andrews' Pitchfork (AP)",
+      "category": "Channels",
+      "license": "MIT",
+      "sha256": "9e635fd6aa2bccc03ab6f90a274442deade1aadbe7913cb1b0f6290b5506b45f"
+    },
+    {
+      "path": "indicators/MIT/oa-apo.js",
+      "file": "oa-apo.js",
+      "id": "oa-apo",
+      "name": "Absolute Price Oscillator (APO)",
+      "category": "Oscillators",
+      "license": "MIT",
+      "sha256": "9cd5850bd857eb1e71e3f51c881e46ae0c218943eb664e3c567e178536d2dec5"
+    },
+    {
+      "path": "indicators/MIT/oa-apz.js",
+      "file": "oa-apz.js",
+      "id": "oa-apz",
+      "name": "Adaptive Price Zone",
+      "category": "Channels",
+      "license": "MIT",
+      "sha256": "f84a6e2aa268eb051cac782b4e932bc6242c112f8b2541807b39fc7c3cc1c0d3"
+    },
+    {
+      "path": "indicators/MIT/oa-aroon.js",
+      "file": "oa-aroon.js",
+      "id": "oa-aroon",
+      "name": "Aroon (AROON)",
+      "category": "Dynamics",
+      "license": "MIT",
+      "sha256": "a941d972214138c612db3bd28bf5f4a5a92bcc5cb3570a6286c9a4d4a7b432a2"
+    },
+    {
+      "path": "indicators/MIT/oa-aroonosc.js",
+      "file": "oa-aroonosc.js",
+      "id": "oa-aroonosc",
+      "name": "Aroon Oscillator",
+      "category": "Dynamics",
+      "license": "MIT",
+      "sha256": "7c26dcb2d236b97388671c6d71656d72f1df7dd46c926c4e088893bbdb11317c"
+    },
+    {
+      "path": "indicators/MIT/oa-asi.js",
+      "file": "oa-asi.js",
+      "id": "oa-asi",
+      "name": "Accumulation Swing Index (ASI)",
+      "category": "Momentum",
+      "license": "MIT",
+      "sha256": "6dd2733936cfbf62732aaa284e7509e650a3364d2c7d48378a24f72a7f0efc87"
+    },
+    {
+      "path": "indicators/MIT/oa-atan2.js",
+      "file": "oa-atan2.js",
+      "id": "oa-atan2",
+      "name": "Two-Argument Arctangent (ATAN2)",
+      "category": "Numerics",
+      "license": "MIT",
+      "sha256": "125625e51cac26e8f98381e7116fd08bdedfc1adfcd1c74d7ff8ebd76b33b7c4"
+    },
+    {
+      "path": "indicators/MIT/oa-atr.js",
+      "file": "oa-atr.js",
+      "id": "oa-atr",
+      "name": "Average True Range (ATR)",
+      "category": "Volatility",
+      "license": "MIT",
+      "sha256": "22287dfd834ef648dd1b8092463eefa0e9fc0ee5139b2f734a89e111310aca03"
+    },
+    {
+      "path": "indicators/MIT/oa-atrbands.js",
+      "file": "oa-atrbands.js",
+      "id": "oa-atrbands",
+      "name": "ATR Bands (ATRBANDS)",
+      "category": "Channels",
+      "license": "MIT",
+      "sha256": "843b30d8c271242a77e90d42d4d59d3743db0147ea088eb27c049ad0a493ae88"
+    },
+    {
+      "path": "indicators/MIT/oa-atrn.js",
+      "file": "oa-atrn.js",
+      "id": "oa-atrn",
+      "name": "Average True Range Normalized (ATRN)",
+      "category": "Volatility",
+      "license": "MIT",
+      "sha256": "48f1612077cca05b91c90ce199a1093c7ff1f31946ef10478d312fde8a43dfa2"
+    },
+    {
+      "path": "indicators/MIT/oa-atrp.js",
+      "file": "oa-atrp.js",
+      "id": "oa-atrp",
+      "name": "Average True Range Percent (ATRP)",
+      "category": "Volatility",
+      "license": "MIT",
+      "sha256": "abc006860416e7a262a8fa051b8c28a4c0a855196640228f3c7838808a95abf5"
+    },
+    {
+      "path": "indicators/MIT/oa-avgprice.js",
+      "file": "oa-avgprice.js",
+      "id": "oa-avgprice",
+      "name": "AVGPRICE: Average Price",
+      "category": "Price Core",
+      "license": "MIT",
+      "sha256": "005423196f453c5f2987ab6179515e25edc714a2249034a47f6be07e782a2a2b"
+    },
+    {
+      "path": "indicators/MIT/oa-baxterking.js",
+      "file": "oa-baxterking.js",
+      "id": "oa-baxterking",
+      "name": "Baxter-King Band-Pass Filter (BAXTERKING)",
+      "category": "Filters",
+      "license": "MIT",
+      "sha256": "811ba9c18fe5293317be63e78f1a0543d3f88c9d0f2be4f5c728f7801a8b8b78"
+    },
+    {
+      "path": "indicators/MIT/oa-bbands.js",
+      "file": "oa-bbands.js",
+      "id": "oa-bbands",
+      "name": "Bollinger Bands (BBANDS)",
+      "category": "Channels",
+      "license": "MIT",
+      "sha256": "c4f97d4ee46d742ce4acba9f5249e08501f28beb3bfe82e7b834d32463aeeddf"
+    },
+    {
+      "path": "indicators/MIT/oa-bbb.js",
+      "file": "oa-bbb.js",
+      "id": "oa-bbb",
+      "name": "Bollinger %B",
+      "category": "Oscillators",
+      "license": "MIT",
+      "sha256": "b46ba82fb7b50e7e07a3c6758c7851a683919e5a6a01b7b17a581045c458194c"
+    },
+    {
+      "path": "indicators/MIT/oa-bbi.js",
+      "file": "oa-bbi.js",
+      "id": "oa-bbi",
+      "name": "Bulls Bears Index (BBI)",
+      "category": "Oscillators",
+      "license": "MIT",
+      "sha256": "78617f2732ab49c43e39a6fd60b8f92e665a1c64f1e2946863d402d43e7cf2f6"
+    },
+    {
+      "path": "indicators/MIT/oa-bbs.js",
+      "file": "oa-bbs.js",
+      "id": "oa-bbs",
+      "name": "Bollinger Band Squeeze (BBS)",
+      "category": "Oscillators",
+      "license": "MIT",
+      "sha256": "2d85ae68113b2b9a8c5c74496810af7722a85b2fbfcd2c99411e1addeb1f568b"
+    },
+    {
+      "path": "indicators/MIT/oa-bbw.js",
+      "file": "oa-bbw.js",
+      "id": "oa-bbw",
+      "name": "Bollinger Band Width (BBW)",
+      "category": "Volatility",
+      "license": "MIT",
+      "sha256": "3940c7e438db111fd95de49ef5c310c0d45e12ccaa057900342e3d19474cd7ee"
+    },
+    {
+      "path": "indicators/MIT/oa-bbwn.js",
+      "file": "oa-bbwn.js",
+      "id": "oa-bbwn",
+      "name": "Bollinger Band Width Normalized (BBWN)",
+      "category": "Volatility",
+      "license": "MIT",
+      "sha256": "1da3860bc063cb8921bd7d28d7ca9ca9a462ee8bb58b947e7362ed9abfd18094"
+    },
+    {
+      "path": "indicators/MIT/oa-bbwp.js",
+      "file": "oa-bbwp.js",
+      "id": "oa-bbwp",
+      "name": "Bollinger Band Width Percentile (BBWP)",
+      "category": "Volatility",
+      "license": "MIT",
+      "sha256": "a76bba10b50c62c4d2bce96e0c05451634dbaeb716319d0d6ebc8d9e30a4f601"
+    },
+    {
+      "path": "indicators/MIT/oa-bessel.js",
+      "file": "oa-bessel.js",
+      "id": "oa-bessel",
+      "name": "Bessel 2nd Order Filter (BESSEL)",
+      "category": "Filters",
+      "license": "MIT",
+      "sha256": "4a0b36b14e2f5c8c46f854acb93ce4a71a441a48bd772d37f1f6ac132cab375e"
+    },
+    {
+      "path": "indicators/MIT/oa-betadist.js",
+      "file": "oa-betadist.js",
+      "id": "oa-betadist",
+      "name": "Beta Distribution CDF (BETADIST)",
+      "category": "Numerics",
+      "license": "MIT",
+      "sha256": "0458eac3cdc36ef34e0a4589f09a64755894fdf9201652eb044ed0ad0416cf17"
+    },
+    {
+      "path": "indicators/MIT/oa-bias.js",
+      "file": "oa-bias.js",
+      "id": "oa-bias",
+      "name": "Bias (BIAS)",
+      "category": "Momentum",
+      "license": "MIT",
+      "sha256": "853786f9c665e2fd96e8979ed04f4a00a5aa68d127e9dba52a443d7e5d99bdd7"
+    },
+    {
+      "path": "indicators/MIT/oa-bilateral.js",
+      "file": "oa-bilateral.js",
+      "id": "oa-bilateral",
+      "name": "Bilateral Filter (BILATERAL)",
+      "category": "Filters",
+      "license": "MIT",
+      "sha256": "5d7c21aff25bb2eae2f8bafe7d791a2ea74a5df9956f382f70dd1a26ee2ce860"
+    },
+    {
+      "path": "indicators/MIT/oa-binomdist.js",
+      "file": "oa-binomdist.js",
+      "id": "oa-binomdist",
+      "name": "Binomial Distribution CDF (BINOMDIST)",
+      "category": "Numerics",
+      "license": "MIT",
+      "sha256": "97975fa2221412aeda89db134eb6db77e8e24db3d5e4c145aa653d1ccc135400"
+    },
+    {
+      "path": "indicators/MIT/oa-blma.js",
+      "file": "oa-blma.js",
+      "id": "oa-blma",
+      "name": "Blackman Moving Average (BLMA)",
+      "category": "Trends FIR",
+      "license": "MIT",
+      "sha256": "cdcc2ceaae69aecbd3065d705048508056259bc1e021fc52b4f3721f7b095384"
+    },
+    {
+      "path": "indicators/MIT/oa-bop.js",
+      "file": "oa-bop.js",
+      "id": "oa-bop",
+      "name": "Balance of Power (BOP)",
+      "category": "Momentum",
+      "license": "MIT",
+      "sha256": "e8df86d4eaf7ef4fe84297bfa4a709e999857cde8fa90c13049fd2d0a8452586"
+    },
+    {
+      "path": "indicators/MIT/oa-bpf.js",
+      "file": "oa-bpf.js",
+      "id": "oa-bpf",
+      "name": "Bandpass Filter (BPF)",
+      "category": "Filters",
+      "license": "MIT",
+      "sha256": "efecf4aff3fd24871b5cfc2b9f5dcf6fa135c150e22c8bf6169c68ed54442d0f"
+    },
+    {
+      "path": "indicators/MIT/oa-brar.js",
+      "file": "oa-brar.js",
+      "id": "oa-brar",
+      "name": "Bull-Bear Power Ratio (BRAR)",
+      "category": "Oscillators",
+      "license": "MIT",
+      "sha256": "bc56013286ad125e83132341558859d86faf50261204abce1584144bd4e08726"
+    },
+    {
+      "path": "indicators/MIT/oa-butter.js",
+      "file": "oa-butter.js",
+      "id": "oa-butter",
+      "name": "Butterworth 2nd Order Filter (BUTTER)",
+      "category": "Filters",
+      "license": "MIT",
+      "sha256": "3646338029fb316cdf2391edc0500badabda7def49c0eb777501ff7134335ed3"
+    },
+    {
+      "path": "indicators/MIT/oa-butter2.js",
+      "file": "oa-butter2.js",
+      "id": "oa-butter2",
+      "name": "Ehlers 2-Pole Butterworth Filter (BUTTER2)",
+      "category": "Filters",
+      "license": "MIT",
+      "sha256": "65a5513e801afce87862b731a7eeaa50d77c71bd4d41b1010fc340374dd2fab3"
+    },
+    {
+      "path": "indicators/MIT/oa-butter3.js",
+      "file": "oa-butter3.js",
+      "id": "oa-butter3",
+      "name": "Ehlers 3-Pole Butterworth Filter (BUTTER3)",
+      "category": "Filters",
+      "license": "MIT",
+      "sha256": "378a0da6a811fe5c888589300ce5826153350c8f3ffa541f259f81480221eacb"
+    },
+    {
+      "path": "indicators/MIT/oa-bwma.js",
+      "file": "oa-bwma.js",
+      "id": "oa-bwma",
+      "name": "Bessel-Weighted Moving Average (BWMA)",
+      "category": "Trends FIR",
+      "license": "MIT",
+      "sha256": "9064262d93b8f14ea274fc05f619259bf6e5cfba3d72f479d6b0dbce20e80278"
+    },
+    {
+      "path": "indicators/MIT/oa-cci.js",
+      "file": "oa-cci.js",
+      "id": "oa-cci",
+      "name": "Commodity Channel Index (CCI)",
+      "category": "Momentum",
+      "license": "MIT",
+      "sha256": "0d2a142e72df356ab50a7b3a752fef3e4768dec4227ed3d6d545e069ee2413f6"
+    },
+    {
+      "path": "indicators/MIT/oa-ccor.js",
+      "file": "oa-ccor.js",
+      "id": "oa-ccor",
+      "name": "Ehlers Correlation Cycle (CCOR)",
+      "category": "Cycles",
+      "license": "MIT",
+      "sha256": "5daf868f764249c773deb59c5f4605ea9bf01e28d02441307911080135568276"
+    },
+    {
+      "path": "indicators/MIT/oa-ccv.js",
+      "file": "oa-ccv.js",
+      "id": "oa-ccv",
+      "name": "Close-to-Close Volatility (CCV)",
+      "category": "Volatility",
+      "license": "MIT",
+      "sha256": "d355809a1516a853fe37c6dc055ac191afc15655385ef2580f320b9ed2243805"
+    },
+    {
+      "path": "indicators/MIT/oa-ccyc.js",
+      "file": "oa-ccyc.js",
+      "id": "oa-ccyc",
+      "name": "Ehlers Cyber Cycle (CCYC)",
+      "category": "Cycles",
+      "license": "MIT",
+      "sha256": "c318bcb7436f04b39f6d05587ac02ef7da58ad3dfc36f0929149effeed11e468"
+    },
+    {
+      "path": "indicators/MIT/oa-cfb.js",
+      "file": "oa-cfb.js",
+      "id": "oa-cfb",
+      "name": "Composite Fractal Behavior (CFB)",
+      "category": "Momentum",
+      "license": "MIT",
+      "sha256": "74f9466811d01d221ead72256bc77befdedb0b95c299f01a798766761602bd22"
+    },
+    {
+      "path": "indicators/MIT/oa-cfitz.js",
+      "file": "oa-cfitz.js",
+      "id": "oa-cfitz",
+      "name": "Christiano-Fitzgerald Band-Pass Filter (CFITZ)",
+      "category": "Filters",
+      "license": "MIT",
+      "sha256": "7cc989035759c8a2398fb2158210fd66d35648d0121df8d6bc0deee6c0564643"
+    },
+    {
+      "path": "indicators/MIT/oa-cfo.js",
+      "file": "oa-cfo.js",
+      "id": "oa-cfo",
+      "name": "Chande Forecast Oscillator",
+      "category": "Oscillators",
+      "license": "MIT",
+      "sha256": "c85f13a0f4859b04d363ed9753f6c31c0558bc9d4f80261ee244e8d394c6bb46"
+    },
+    {
+      "path": "indicators/MIT/oa-cg.js",
+      "file": "oa-cg.js",
+      "id": "oa-cg",
+      "name": "Center of Gravity (CG)",
+      "category": "Cycles",
+      "license": "MIT",
+      "sha256": "aa426ca8bee52e198be3c836879655cabe6e75eba0566605a69d89d245ce5ac8"
+    },
+    {
+      "path": "indicators/MIT/oa-change.js",
+      "file": "oa-change.js",
+      "id": "oa-change",
+      "name": "Percentage Change (CHANGE)",
+      "category": "Numerics",
+      "license": "MIT",
+      "sha256": "4fd68e8f5551181be00a6a8161c1a858d767bd7f30c612f9ab26d391a956e5a0"
+    },
+    {
+      "path": "indicators/MIT/oa-cheby1.js",
+      "file": "oa-cheby1.js",
+      "id": "oa-cheby1",
+      "name": "Chebyshev Type I Filter (CHEBY1)",
+      "category": "Filters",
+      "license": "MIT",
+      "sha256": "ddcbcad2060ee29a89c2b6a28254420095d73846aef113728c9d6ed32926f8b5"
+    },
+    {
+      "path": "indicators/MIT/oa-cheby2.js",
+      "file": "oa-cheby2.js",
+      "id": "oa-cheby2",
+      "name": "Chebyshev Type II Filter (CHEBY2)",
+      "category": "Filters",
+      "license": "MIT",
+      "sha256": "9dfcc06eed851ffe3c2194db88c5e756368ccc10273853a744ef2c5978317720"
+    },
+    {
+      "path": "indicators/MIT/oa-chop.js",
+      "file": "oa-chop.js",
+      "id": "oa-chop",
+      "name": "Choppiness Index",
+      "category": "Dynamics",
+      "license": "MIT",
+      "sha256": "86cbc73b2e3afa66138a1883d32b04e0364aca2d8e0fc78c3c337890015b3c44"
+    },
+    {
+      "path": "indicators/MIT/oa-cma.js",
+      "file": "oa-cma.js",
+      "id": "oa-cma",
+      "name": "Cumulative Moving Average",
+      "category": "Statistics",
+      "license": "MIT",
+      "sha256": "6f155289c3088200d10f464c2d8b16c5014fcfd4fe4697c13ddcb647649faa12"
+    },
+    {
+      "path": "indicators/MIT/oa-cmf.js",
+      "file": "oa-cmf.js",
+      "id": "oa-cmf",
+      "name": "Chaikin Money Flow (CMF)",
+      "category": "Volume",
+      "license": "MIT",
+      "sha256": "e17f775bdee84619788d1ef218c020e361abbe79de5e072d9e6bfe5cf2d68c56"
+    },
+    {
+      "path": "indicators/MIT/oa-cmo.js",
+      "file": "oa-cmo.js",
+      "id": "oa-cmo",
+      "name": "Chande Momentum Oscillator (CMO)",
+      "category": "Momentum",
+      "license": "MIT",
+      "sha256": "70ddff521109bac792178b7d75c6f781cc62e85c8ac2e1edbad0907668cab829"
+    },
+    {
+      "path": "indicators/MIT/oa-cointegration.js",
+      "file": "oa-cointegration.js",
+      "id": "oa-cointegration",
+      "name": "Cointegration (COINTEGRATION)",
+      "category": "Statistics",
+      "license": "MIT",
+      "sha256": "fb714b6f013dc211f085a33c27eebc03ccedfc318ee886de5a0b08275b8af6e2"
+    },
+    {
+      "path": "indicators/MIT/oa-conv.js",
+      "file": "oa-conv.js",
+      "id": "oa-conv",
+      "name": "Convolution Moving Average (CONV)",
+      "category": "Trends FIR",
+      "license": "MIT",
+      "sha256": "774e737e563e45a3ce0b5dbde7cf0a96fc628ee407218e9fce4e838c2474c35d"
+    },
+    {
+      "path": "indicators/MIT/oa-coppock.js",
+      "file": "oa-coppock.js",
+      "id": "oa-coppock",
+      "name": "Coppock Curve (COPPOCK)",
+      "category": "Oscillators",
+      "license": "MIT",
+      "sha256": "264fed40f00dd09e62098c1a8ae3673927e3dae329d6678139af1097b1f5775f"
+    },
+    {
+      "path": "indicators/MIT/oa-coral.js",
+      "file": "oa-coral.js",
+      "id": "oa-coral",
+      "name": "Coral Filter (CORAL)",
+      "category": "Trends IIR",
+      "license": "MIT",
+      "sha256": "42a8a71e11295f737d5b398092fa3c0bfd6e27a80891645441edf12af77ae543"
+    },
+    {
+      "path": "indicators/MIT/oa-correlation.js",
+      "file": "oa-correlation.js",
+      "id": "oa-correlation",
+      "name": "Pearson's Correlation (CORRELATION)",
+      "category": "Statistics",
+      "license": "MIT",
+      "sha256": "e584a5bfb802c4748d9c11cdc2c743967880b6d9fe94fcaa181e02ac4354283e"
+    },
+    {
+      "path": "indicators/MIT/oa-covariance.js",
+      "file": "oa-covariance.js",
+      "id": "oa-covariance",
+      "name": "Covariance (COVARIANCE)",
+      "category": "Statistics",
+      "license": "MIT",
+      "sha256": "a56d1842734e0e8425689433448ed2271cfa6b9c81d8df4be07a3f0df03b2a6c"
+    },
+    {
+      "path": "indicators/MIT/oa-crma.js",
+      "file": "oa-crma.js",
+      "id": "oa-crma",
+      "name": "Cubic Regression Moving Average (CRMA)",
+      "category": "Trends FIR",
+      "license": "MIT",
+      "sha256": "c2d06766233d5a255b1f150409025bf1b64f8f1ebb1666a07bbbe510a2e9ed94"
+    },
+    {
+      "path": "indicators/MIT/oa-crsi.js",
+      "file": "oa-crsi.js",
+      "id": "oa-crsi",
+      "name": "Connors RSI (CRSI)",
+      "category": "Oscillators",
+      "license": "MIT",
+      "sha256": "296b763f7efd214df25339b307fc67e57e6e2203df7ff2af57b7d92d4b087c60"
+    },
+    {
+      "path": "indicators/MIT/oa-cti.js",
+      "file": "oa-cti.js",
+      "id": "oa-cti",
+      "name": "Correlation Trend Indicator (CTI)",
+      "category": "Oscillators",
+      "license": "MIT",
+      "sha256": "ed83c9db7ea7ba2747236bc70f7fceeb53a8d9678ad50b8884fbe5988533d821"
+    },
+    {
+      "path": "indicators/MIT/oa-cummean.js",
+      "file": "oa-cummean.js",
+      "id": "oa-cummean",
+      "name": "Cumulative Mean (CUMMEAN)",
+      "category": "Statistics",
+      "license": "MIT",
+      "sha256": "06b759b8539f5981a1857fc1f0a96a69efcf71f38baa4c588b115d0452a4294f"
+    },
+    {
+      "path": "indicators/MIT/oa-cv.js",
+      "file": "oa-cv.js",
+      "id": "oa-cv",
+      "name": "Conditional Volatility (CV)",
+      "category": "Volatility",
+      "license": "MIT",
+      "sha256": "9269a1281376352d8c0064cbf67c808ede55e5a8861a4fcdcdcd21cc48e4e303"
+    },
+    {
+      "path": "indicators/MIT/oa-cvi.js",
+      "file": "oa-cvi.js",
+      "id": "oa-cvi",
+      "name": "Chaikin's Volatility (CVI)",
+      "category": "Volatility",
+      "license": "MIT",
+      "sha256": "0c8490b33a103511a36432116de7d79796e31ddac01a6649fab5c42d43c10f02"
+    },
+    {
+      "path": "indicators/MIT/oa-cwt.js",
+      "file": "oa-cwt.js",
+      "id": "oa-cwt",
+      "name": "Continuous Wavelet Transform (CWT)",
+      "category": "Numerics",
+      "license": "MIT",
+      "sha256": "32dc533b97eaafbf5fe9218f01a90c9557fc670c4c8c9c1c3cf0b46dbea593ed"
+    },
+    {
+      "path": "indicators/MIT/oa-dchannel.js",
+      "file": "oa-dchannel.js",
+      "id": "oa-dchannel",
+      "name": "Donchian Channels (DCHANNEL)",
+      "category": "Channels",
+      "license": "MIT",
+      "sha256": "7da7e3ee98efde93c22241d440de52af593a5ac64db5f359c172bb484d23937a"
+    },
+    {
+      "path": "indicators/MIT/oa-decaychannel.js",
+      "file": "oa-decaychannel.js",
+      "id": "oa-decaychannel",
+      "name": "Decay Min-Max Channel (DECAYCHANNEL)",
+      "category": "Channels",
+      "license": "MIT",
+      "sha256": "30c0c4fa3ec854e24317e82c22d4f6f852f190278f80bed3c2eb94e0840a175d"
+    },
+    {
+      "path": "indicators/MIT/oa-deco.js",
+      "file": "oa-deco.js",
+      "id": "oa-deco",
+      "name": "Ehlers Decycler Oscillator (DECO)",
+      "category": "Oscillators",
+      "license": "MIT",
+      "sha256": "364dbd7162b7aa4223e9cc9bdb5cd47820d523245b044a2bb62497480a102f83"
+    },
+    {
+      "path": "indicators/MIT/oa-decycler.js",
+      "file": "oa-decycler.js",
+      "id": "oa-decycler",
+      "name": "Ehlers Decycler (DECYCLER)",
+      "category": "Trends IIR",
+      "license": "MIT",
+      "sha256": "bd453ebb0323da54b83412c9920f4cef5fe5a1c309f561d02d9af776030a7052"
+    },
+    {
+      "path": "indicators/MIT/oa-dem.js",
+      "file": "oa-dem.js",
+      "id": "oa-dem",
+      "name": "DeMarker Oscillator (DEM)",
+      "category": "Oscillators",
+      "license": "MIT",
+      "sha256": "25059a7db91beec1267df8dae551308539639bc1a0ad7b1947134f17417b60a2"
+    },
+    {
+      "path": "indicators/MIT/oa-dema.js",
+      "file": "oa-dema.js",
+      "id": "oa-dema",
+      "name": "Double Exponential Moving Average (DEMA)",
+      "category": "Trends IIR",
+      "license": "MIT",
+      "sha256": "a3f47a2f1173df57ac64e2cb412121845e082c32ae9af960034fcdd19835facd"
+    },
+    {
+      "path": "indicators/MIT/oa-dirty.js",
+      "file": "oa-dirty.js",
+      "id": "oa-dirty",
+      "name": "Dirty Data Injection (DIRTY)",
+      "category": "Errors",
+      "license": "MIT",
+      "sha256": "aa33c02fe839174611859207ed8fdff20b009fe6f619938a2139fe3027d8ab7b"
+    },
+    {
+      "path": "indicators/MIT/oa-dmx.js",
+      "file": "oa-dmx.js",
+      "id": "oa-dmx",
+      "name": "Jurik Directional Movement Index (DMX)",
+      "category": "Dynamics",
+      "license": "MIT",
+      "sha256": "047f1556a3d61c809d40428d7fa634f77434af3213d41a5435a562d0ef799308"
+    },
+    {
+      "path": "indicators/MIT/oa-dosc.js",
+      "file": "oa-dosc.js",
+      "id": "oa-dosc",
+      "name": "Derivative Oscillator (DOSC)",
+      "category": "Oscillators",
+      "license": "MIT",
+      "sha256": "6140e2e91a3df707b976ea7723eec2a38197cd64c7e4d16e080c7bc51ef9968d"
+    },
+    {
+      "path": "indicators/MIT/oa-dpo.js",
+      "file": "oa-dpo.js",
+      "id": "oa-dpo",
+      "name": "Detrended Price Oscillator (DPO)",
+      "category": "Oscillators",
+      "license": "MIT",
+      "sha256": "e7028f8b148d9c3000174f987917d4504f9d5db11c08097d5ac28ff3f96906dc"
+    },
+    {
+      "path": "indicators/MIT/oa-dsma.js",
+      "file": "oa-dsma.js",
+      "id": "oa-dsma",
+      "name": "Deviation-Scaled Moving Average (DSMA)",
+      "category": "Trends IIR",
+      "license": "MIT",
+      "sha256": "ded23fa4a3ead313a39bfcae4ecab528110ab2721401e466d8f61444a8679c53"
+    },
+    {
+      "path": "indicators/MIT/oa-dsp.js",
+      "file": "oa-dsp.js",
+      "id": "oa-dsp",
+      "name": "Detrended Synthetic Price (DSP)",
+      "category": "Cycles",
+      "license": "MIT",
+      "sha256": "6a2940e6099468504872d202afa420a58aca2460ea69eaff4393f3fd436fd8bc"
+    },
+    {
+      "path": "indicators/MIT/oa-dwma.js",
+      "file": "oa-dwma.js",
+      "id": "oa-dwma",
+      "name": "Double Weighted Moving Average (DWMA)",
+      "category": "Trends FIR",
+      "license": "MIT",
+      "sha256": "8d99a2f8aed38f23b89d6107bd68383c52e0b89626b178341be7cad5ff475848"
+    },
+    {
+      "path": "indicators/MIT/oa-dwt.js",
+      "file": "oa-dwt.js",
+      "id": "oa-dwt",
+      "name": "Discrete Wavelet Transform (DWT)",
+      "category": "Numerics",
+      "license": "MIT",
+      "sha256": "1ff27a1ce7aeef35c55ce77b39a6714c2eb877b7ad7aac7400b6af5a4c904379"
+    },
+    {
+      "path": "indicators/MIT/oa-dx.js",
+      "file": "oa-dx.js",
+      "id": "oa-dx",
+      "name": "Directional Movement Index (DX)",
+      "category": "Dynamics",
+      "license": "MIT",
+      "sha256": "e9b73ef204a405eb048c5cf574701bf8ee668ffff00aea858093f538db98096e"
+    },
+    {
+      "path": "indicators/MIT/oa-dymoi.js",
+      "file": "oa-dymoi.js",
+      "id": "oa-dymoi",
+      "name": "Dynamic Momentum Index (DYMOI)",
+      "category": "Oscillators",
+      "license": "MIT",
+      "sha256": "0f77624dc7a709e3047ae8293c8c6bb2dd91091efb215c17be3419b95462050e"
+    },
+    {
+      "path": "indicators/MIT/oa-eacp.js",
+      "file": "oa-eacp.js",
+      "id": "oa-eacp",
+      "name": "EACP: Ehlers Autocorrelation Periodogram",
+      "category": "Cycles",
+      "license": "MIT",
+      "sha256": "74f93289a90a5def96169dde5aa8604be680220b883cee358f6da38cb9745f27"
+    },
+    {
+      "path": "indicators/MIT/oa-ebsw.js",
+      "file": "oa-ebsw.js",
+      "id": "oa-ebsw",
+      "name": "Ehlers Even Better Sinewave (EBSW)",
+      "category": "Cycles",
+      "license": "MIT",
+      "sha256": "684482b0f75d73a0465c3d9cab2a19adcb03e3b86f03516dfe0c79ce058d210d"
+    },
+    {
+      "path": "indicators/MIT/oa-edcf.js",
+      "file": "oa-edcf.js",
+      "id": "oa-edcf",
+      "name": "EDCF: Ehlers Distance Coefficient Filter",
+      "category": "Filters",
+      "license": "MIT",
+      "sha256": "ad35cb8af128584310d3947f18b214200d1b3e644c960aa1f0e89e42cf834ba4"
+    },
+    {
+      "path": "indicators/MIT/oa-efi.js",
+      "file": "oa-efi.js",
+      "id": "oa-efi",
+      "name": "Elder's Force Index (EFI)",
+      "category": "Volume",
+      "license": "MIT",
+      "sha256": "fced385f954f41625e2c2a0ecfa84d7e6f1a05aa95ba49c9e07769234c8ce96c"
+    },
+    {
+      "path": "indicators/MIT/oa-elliptic.js",
+      "file": "oa-elliptic.js",
+      "id": "oa-elliptic",
+      "name": "Elliptic 2nd Order Filter (ELLIPTIC)",
+      "category": "Filters",
+      "license": "MIT",
+      "sha256": "bba0009eaea2b41f67a378c1ac61468073bbd61989a5f948dc5fa5d853bb7fdc"
+    },
+    {
+      "path": "indicators/MIT/oa-ema.js",
+      "file": "oa-ema.js",
+      "id": "oa-ema",
+      "name": "Exponential Moving Average (EMA)",
+      "category": "Trends IIR",
+      "license": "MIT",
+      "sha256": "dff033be1b7984c95f2cc1f8c508165bb9390cb949d48b4493e9b0c8f77f011a"
+    },
+    {
+      "path": "indicators/MIT/oa-entropy.js",
+      "file": "oa-entropy.js",
+      "id": "oa-entropy",
+      "name": "Entropy (ENTROPY)",
+      "category": "Statistics",
+      "license": "MIT",
+      "sha256": "944aded81cedf4ce7cb60f481a836e8885c787d5fed61bf83862ec82e05c535a"
+    },
+    {
+      "path": "indicators/MIT/oa-eom.js",
+      "file": "oa-eom.js",
+      "id": "oa-eom",
+      "name": "Ease of Movement (EOM)",
+      "category": "Volume",
+      "license": "MIT",
+      "sha256": "a1d50dd4c3567f47c3d21657680dbed95e69169328f90f693c9929826c6b3f51"
+    },
+    {
+      "path": "indicators/MIT/oa-epma.js",
+      "file": "oa-epma.js",
+      "id": "oa-epma",
+      "name": "Endpoint Moving Average (EPMA)",
+      "category": "Trends FIR",
+      "license": "MIT",
+      "sha256": "ec968014ca808634870b8305c9a068cfc50c354c0dea37786813ab45e3a8ec63"
+    },
+    {
+      "path": "indicators/MIT/oa-er.js",
+      "file": "oa-er.js",
+      "id": "oa-er",
+      "name": "Efficiency Ratio (ER)",
+      "category": "Oscillators",
+      "license": "MIT",
+      "sha256": "2f39162a8775c2edefca53ed1555b4ec8fbc1ffa357281d242f13a9fe096ab00"
+    },
+    {
+      "path": "indicators/MIT/oa-eri.js",
+      "file": "oa-eri.js",
+      "id": "oa-eri",
+      "name": "Elder Ray Index (ERI)",
+      "category": "Oscillators",
+      "license": "MIT",
+      "sha256": "da8ba7f993091834c607f4f200282f5c1a4fb5e8bf5ff948f265c4dd04dc78bb"
+    },
+    {
+      "path": "indicators/MIT/oa-etherm.js",
+      "file": "oa-etherm.js",
+      "id": "oa-etherm",
+      "name": "Elder's Thermometer (ETHERM)",
+      "category": "Volatility",
+      "license": "MIT",
+      "sha256": "48faba5e53167679eb0448fda708b354277ed811cec32df926b7ee9de382ae3c"
+    },
+    {
+      "path": "indicators/MIT/oa-evwma.js",
+      "file": "oa-evwma.js",
+      "id": "oa-evwma",
+      "name": "Elastic Volume Weighted Moving Average (EVWMA)",
+      "category": "Volume",
+      "license": "MIT",
+      "sha256": "05ce898c4cf7d722781c4f9509cb2a319986ad2c0002fbfaa58b47680fd49cef"
+    },
+    {
+      "path": "indicators/MIT/oa-ewma.js",
+      "file": "oa-ewma.js",
+      "id": "oa-ewma",
+      "name": "Exponential Weighted MA Volatility",
+      "category": "Volatility",
+      "license": "MIT",
+      "sha256": "3e2f06ac1031b05deb79d2802fb7fd9d0001c8473e187005902a85c24c3bbec8"
+    },
+    {
+      "path": "indicators/MIT/oa-exp.js",
+      "file": "oa-exp.js",
+      "id": "oa-exp",
+      "name": "Exponential Transformation (EXP)",
+      "category": "Numerics",
+      "license": "MIT",
+      "sha256": "8edcfbbfc7121f2b0227e0c3ae1e559a2518993d2998a1289dcca4b42bc88476"
+    },
+    {
+      "path": "indicators/MIT/oa-expdist.js",
+      "file": "oa-expdist.js",
+      "id": "oa-expdist",
+      "name": "Exponential Distribution CDF (EXPDIST)",
+      "category": "Numerics",
+      "license": "MIT",
+      "sha256": "a4557a107767c833b152014b53e6b2139fc8b368ca575012879f39ebae4a9013"
+    },
+    {
+      "path": "indicators/MIT/oa-exptrans.js",
+      "file": "oa-exptrans.js",
+      "id": "oa-exptrans",
+      "name": "Exponential Transformation (EXP)",
+      "category": "Numerics",
+      "license": "MIT",
+      "sha256": "40f679dbbc4081167e026e6ab546346a4d5dcb7485407b048392c3a4ad1550b2"
+    },
+    {
+      "path": "indicators/MIT/oa-fcb.js",
+      "file": "oa-fcb.js",
+      "id": "oa-fcb",
+      "name": "Fractal Chaos Bands (FCB)",
+      "category": "Channels",
+      "license": "MIT",
+      "sha256": "0fa8425daa3a208f8246e8e0a61e93af464ccd654d4b2d213e47c9980605c63e"
+    },
+    {
+      "path": "indicators/MIT/oa-fdist.js",
+      "file": "oa-fdist.js",
+      "id": "oa-fdist",
+      "name": "F-Distribution CDF (FDIST)",
+      "category": "Numerics",
+      "license": "MIT",
+      "sha256": "d488ea95ba6481d197e89f12aa2efcd32471b5634829964abfa5cf66cc5de42b"
+    },
+    {
+      "path": "indicators/MIT/oa-fft.js",
+      "file": "oa-fft.js",
+      "id": "oa-fft",
+      "name": "FFT Dominant Cycle (Radix-2 FFT)",
+      "category": "Numerics",
+      "license": "MIT",
+      "sha256": "3de7ee03ca90c2a051ce3ad3fbdf9f711c2ff1344bb662cf7bcd1ecf8b84297a"
+    },
+    {
+      "path": "indicators/MIT/oa-fi.js",
+      "file": "oa-fi.js",
+      "id": "oa-fi",
+      "name": "Force Index (FI)",
+      "category": "Oscillators",
+      "license": "MIT",
+      "sha256": "d30182fda8d0f6d2f363be10d04289a212ced74fae27b007a7809dbab16f514e"
+    },
+    {
+      "path": "indicators/MIT/oa-fisher.js",
+      "file": "oa-fisher.js",
+      "id": "oa-fisher",
+      "name": "Fisher Transform",
+      "category": "Oscillators",
+      "license": "MIT",
+      "sha256": "471af8f554c336419bef21cce5f48476c98779b1826d60cbfb1e381846161864"
+    },
+    {
+      "path": "indicators/MIT/oa-fisher04.js",
+      "file": "oa-fisher04.js",
+      "id": "oa-fisher04",
+      "name": "Fisher04 - Ehlers 2004 Cybernetic Analysis",
+      "category": "Oscillators",
+      "license": "MIT",
+      "sha256": "461835c4f63beff17b65ca4ef6c8a292948a9b66a56dca8f36b764fb4f31d709"
+    },
+    {
+      "path": "indicators/MIT/oa-fractals.js",
+      "file": "oa-fractals.js",
+      "id": "oa-fractals",
+      "name": "Williams Fractals",
+      "category": "Reversals",
+      "license": "MIT",
+      "sha256": "aede5450d20680acb5871ae934d7671e96b816b5a6ce48e434248b0a27407247"
+    },
+    {
+      "path": "indicators/MIT/oa-frama.js",
+      "file": "oa-frama.js",
+      "id": "oa-frama",
+      "name": "Fractal Adaptive Moving Average (FRAMA)",
+      "category": "Trends IIR",
+      "license": "MIT",
+      "sha256": "2b90156d006431ef4a778f7d8c03634ffcd15bbd26177cd85a8f22c38b1cd7ee"
+    },
+    {
+      "path": "indicators/MIT/oa-fwma.js",
+      "file": "oa-fwma.js",
+      "id": "oa-fwma",
+      "name": "Fibonacci Weighted Moving Average (FWMA)",
+      "category": "Trends FIR",
+      "license": "MIT",
+      "sha256": "1ad5e9a0712213d1a5bf5234c6eead29e47480224cec138cc5e77a7353bfc82e"
+    },
+    {
+      "path": "indicators/MIT/oa-gammadist.js",
+      "file": "oa-gammadist.js",
+      "id": "oa-gammadist",
+      "name": "Gamma Distribution CDF (GAMMADIST)",
+      "category": "Numerics",
+      "license": "MIT",
+      "sha256": "d531152863603376aba7ed67ba6283f44da266bf0f8cd0daba93285dc4502f1a"
+    },
+    {
+      "path": "indicators/MIT/oa-gator.js",
+      "file": "oa-gator.js",
+      "id": "oa-gator",
+      "name": "Williams Gator Oscillator",
+      "category": "Oscillators",
+      "license": "MIT",
+      "sha256": "efb669c94210c0a14d19a8f9648c230643496bfbd83281045d043536d1c754f5"
+    },
+    {
+      "path": "indicators/MIT/oa-gauss.js",
+      "file": "oa-gauss.js",
+      "id": "oa-gauss",
+      "name": "Gaussian Filter (GAUSS)",
+      "category": "Filters",
+      "license": "MIT",
+      "sha256": "ad73cef2243fca551c45f94306f40495592483ce82f43fd49b5cbbe6c9374123"
+    },
+    {
+      "path": "indicators/MIT/oa-gdema.js",
+      "file": "oa-gdema.js",
+      "id": "oa-gdema",
+      "name": "Generalized Double Exponential Moving Average (GDEMA)",
+      "category": "Trends IIR",
+      "license": "MIT",
+      "sha256": "f56f693833bc8b0fcea054ff27f577f3cc57bfb23f6c2b4636d4a62e5c92d573"
+    },
+    {
+      "path": "indicators/MIT/oa-geomean.js",
+      "file": "oa-geomean.js",
+      "id": "oa-geomean",
+      "name": "Geometric Mean (GEOMEAN)",
+      "category": "Statistics",
+      "license": "MIT",
+      "sha256": "3b8c582b1f25428a8335a098d5059711bd64e0bdda79fa085bb9c80cfda57bcb"
+    },
+    {
+      "path": "indicators/MIT/oa-ghla.js",
+      "file": "oa-ghla.js",
+      "id": "oa-ghla",
+      "name": "Gann High-Low Activator",
+      "category": "Dynamics",
+      "license": "MIT",
+      "sha256": "e8dd6cc9c33294283dc1e330bd13c19f97932689f3160a79e9c1987078b6fd68"
+    },
+    {
+      "path": "indicators/MIT/oa-gkv.js",
+      "file": "oa-gkv.js",
+      "id": "oa-gkv",
+      "name": "Garman-Klass Volatility (GKV)",
+      "category": "Volatility",
+      "license": "MIT",
+      "sha256": "01328bfb4881357b2ce61b70d70c1adf1184517078eb9e2be925881a82566f24"
+    },
+    {
+      "path": "indicators/MIT/oa-granger.js",
+      "file": "oa-granger.js",
+      "id": "oa-granger",
+      "name": "Granger Causality Test (GRANGER)",
+      "category": "Statistics",
+      "license": "MIT",
+      "sha256": "3eb75c23570fb30ffe9fd07283d9bfb548b06bad88eb3a98c954d93ef044ba62"
+    },
+    {
+      "path": "indicators/MIT/oa-gwma.js",
+      "file": "oa-gwma.js",
+      "id": "oa-gwma",
+      "name": "Gaussian-Weighted Moving Average (GWMA)",
+      "category": "Trends FIR",
+      "license": "MIT",
+      "sha256": "03eb7ff1fc74c385b8a51027e44c8f5ce0cad70d96c530bb17fb8f354dfcb69e"
+    },
+    {
+      "path": "indicators/MIT/oa-ha.js",
+      "file": "oa-ha.js",
+      "id": "oa-ha",
+      "name": "HA: Heikin-Ashi",
+      "category": "Price Core",
+      "license": "MIT",
+      "sha256": "53f644cb9794023fc705f32be5f6d39f798ee4e081316ab6c91511886e6e4d16"
+    },
+    {
+      "path": "indicators/MIT/oa-hamma.js",
+      "file": "oa-hamma.js",
+      "id": "oa-hamma",
+      "name": "Hamming Moving Average (HAMMA)",
+      "category": "Trends FIR",
+      "license": "MIT",
+      "sha256": "2c0a6507a82563fc7af53b5512250041b7a821cd284425211331f70aa0ba2434"
+    },
+    {
+      "path": "indicators/MIT/oa-hanma.js",
+      "file": "oa-hanma.js",
+      "id": "oa-hanma",
+      "name": "Hanning Moving Average (HANMA)",
+      "category": "Trends FIR",
+      "license": "MIT",
+      "sha256": "0acf24898480bfb2a1531a976ed49d85cb49f2628b0b42553b440aad976e44fc"
+    },
+    {
+      "path": "indicators/MIT/oa-hann.js",
+      "file": "oa-hann.js",
+      "id": "oa-hann",
+      "name": "Hann FIR Filter (HANN)",
+      "category": "Filters",
+      "license": "MIT",
+      "sha256": "f7b2f65514068d3838f73cc6c354bd6d8d3a0166fe6f2e9665872885f81be61b"
+    },
+    {
+      "path": "indicators/MIT/oa-harmean.js",
+      "file": "oa-harmean.js",
+      "id": "oa-harmean",
+      "name": "Harmonic Mean (HARMEAN)",
+      "category": "Statistics",
+      "license": "MIT",
+      "sha256": "1d6a00365959ebcbfb7c5bf81d88ce6152153f535a900d65c2517342b80233f4"
+    },
+    {
+      "path": "indicators/MIT/oa-hema.js",
+      "file": "oa-hema.js",
+      "id": "oa-hema",
+      "name": "Hull Exponential Moving Average (HEMA)",
+      "category": "Trends IIR",
+      "license": "MIT",
+      "sha256": "62c954e5199a0729c61de3b44d03ff04996052fa74d0599ed18a460e599628b1"
+    },
+    {
+      "path": "indicators/MIT/oa-hend.js",
+      "file": "oa-hend.js",
+      "id": "oa-hend",
+      "name": "Henderson Moving Average (HEND)",
+      "category": "Trends FIR",
+      "license": "MIT",
+      "sha256": "b913c7da6b2d7e2111ee2ae2563847a1dad28cadf1664d1c18edb5d2f4cc02f9"
+    },
+    {
+      "path": "indicators/MIT/oa-highest.js",
+      "file": "oa-highest.js",
+      "id": "oa-highest",
+      "name": "Highest Value (HIGHEST)",
+      "category": "Numerics",
+      "license": "MIT",
+      "sha256": "951c14ccf4788b8e2c29d2646e27a13ddeb6ae585d12ba3df6465d9363596e85"
+    },
+    {
+      "path": "indicators/MIT/oa-hl2.js",
+      "file": "oa-hl2.js",
+      "id": "oa-hl2",
+      "name": "Midprice (HL2)",
+      "category": "Numerics",
+      "license": "MIT",
+      "sha256": "6b8b5728cbc403084b5c20975d1386c6576cf0f6ea9e2414f746ab938a1585d9"
+    },
+    {
+      "path": "indicators/MIT/oa-hlc3.js",
+      "file": "oa-hlc3.js",
+      "id": "oa-hlc3",
+      "name": "Typical Price (HLC3)",
+      "category": "Numerics",
+      "license": "MIT",
+      "sha256": "b679ee67dc7f1d1faddcc2b29a268976f7fd12a9c9787affd6cfe1b3aaf51c5f"
+    },
+    {
+      "path": "indicators/MIT/oa-hlcc4.js",
+      "file": "oa-hlcc4.js",
+      "id": "oa-hlcc4",
+      "name": "Weighted Close (HLCC4)",
+      "category": "Numerics",
+      "license": "MIT",
+      "sha256": "f8da0819807ec9528d395c859ae56e3b00e8b009974c76db9ee82c2c58303b5a"
+    },
+    {
+      "path": "indicators/MIT/oa-hlv.js",
+      "file": "oa-hlv.js",
+      "id": "oa-hlv",
+      "name": "High-Low Volatility (HLV)",
+      "category": "Volatility",
+      "license": "MIT",
+      "sha256": "cc82616f003a042767c540e87f7e23f43abc95e182f9c572f7ee6817568d58e2"
+    },
+    {
+      "path": "indicators/MIT/oa-hma.js",
+      "file": "oa-hma.js",
+      "id": "oa-hma",
+      "name": "Hull Moving Average (HMA)",
+      "category": "Trends FIR",
+      "license": "MIT",
+      "sha256": "546573debc26233c700743d6a315ddd56ce6f4c6a23aefb88b947d39352bb636"
+    },
+    {
+      "path": "indicators/MIT/oa-holt.js",
+      "file": "oa-holt.js",
+      "id": "oa-holt",
+      "name": "Holt Exponential Moving Average (HOLT)",
+      "category": "Trends IIR",
+      "license": "MIT",
+      "sha256": "982b7c5f83a1e580d108b826463fdfa2b47a08b042a7d0897a58997af2107f1d"
+    },
+    {
+      "path": "indicators/MIT/oa-homod.js",
+      "file": "oa-homod.js",
+      "id": "oa-homod",
+      "name": "HOMOD: Homodyne Discriminator Dominant Cycle",
+      "category": "Cycles",
+      "license": "MIT",
+      "sha256": "a1d8011623574d35e6ec4c389f76a478ced446edfc75590e451d9bbf837f7d1a"
+    },
+    {
+      "path": "indicators/MIT/oa-hp.js",
+      "file": "oa-hp.js",
+      "id": "oa-hp",
+      "name": "Hodrick-Prescott Filter (HP)",
+      "category": "Filters",
+      "license": "MIT",
+      "sha256": "8f69ffc206df1c82e5bfa5a914e7247ab1728e92f51f76d5d9112dd4fb3cfebc"
+    },
+    {
+      "path": "indicators/MIT/oa-hpf.js",
+      "file": "oa-hpf.js",
+      "id": "oa-hpf",
+      "name": "Highpass Filter (2-Pole) (HPF)",
+      "category": "Filters",
+      "license": "MIT",
+      "sha256": "5487d8748fa33a51ecc3afa0c2cf2ddf3f1cf12430349f4f0a930c28482e1df0"
+    },
+    {
+      "path": "indicators/MIT/oa-ht-dcperiod.js",
+      "file": "oa-ht-dcperiod.js",
+      "id": "oa-ht-dcperiod",
+      "name": "HT_DCPERIOD: Hilbert Transform Dominant Cycle Period",
+      "category": "Cycles",
+      "license": "MIT",
+      "sha256": "8479862429cb4a5407695b95b52a078d2e1499c648777d16b91ac3f772038a8a"
+    },
+    {
+      "path": "indicators/MIT/oa-ht-dcphase.js",
+      "file": "oa-ht-dcphase.js",
+      "id": "oa-ht-dcphase",
+      "name": "HT_DCPHASE: Hilbert Transform Dominant Cycle Phase",
+      "category": "Cycles",
+      "license": "MIT",
+      "sha256": "bc99153ee8aec42c660441973311b6fb62c27d3d3b8cb1f47a1af301b086561a"
+    },
+    {
+      "path": "indicators/MIT/oa-ht-phasor.js",
+      "file": "oa-ht-phasor.js",
+      "id": "oa-ht-phasor",
+      "name": "HT_PHASOR: Hilbert Transform Phasor Components",
+      "category": "Cycles",
+      "license": "MIT",
+      "sha256": "f5583df4d657fda7e8a16660d4c9b4143ba1d9121905b0e0270bc8efac0e90e9"
+    },
+    {
+      "path": "indicators/MIT/oa-ht-sine.js",
+      "file": "oa-ht-sine.js",
+      "id": "oa-ht-sine",
+      "name": "HT_SINE: Hilbert Transform - SineWave",
+      "category": "Cycles",
+      "license": "MIT",
+      "sha256": "ac4602f1a6814231ecc7ca1d61dd55890fc5b36504ac03b5ef62d5cf721309b9"
+    },
+    {
+      "path": "indicators/MIT/oa-ht-trendmode.js",
+      "file": "oa-ht-trendmode.js",
+      "id": "oa-ht-trendmode",
+      "name": "HT_TRENDMODE: Hilbert Transform Trend Mode",
+      "category": "Dynamics",
+      "license": "MIT",
+      "sha256": "c8652445f94629861400366f2ad635390a740fa2f1f5285f07c918c672a72437"
+    },
+    {
+      "path": "indicators/MIT/oa-htit.js",
+      "file": "oa-htit.js",
+      "id": "oa-htit",
+      "name": "Hilbert Trendline (HTIT)",
+      "category": "Trends IIR",
+      "license": "MIT",
+      "sha256": "7625843feff2ede12586b210daa191a074b968481cd20a69a6ab62221da13605"
+    },
+    {
+      "path": "indicators/MIT/oa-huber.js",
+      "file": "oa-huber.js",
+      "id": "oa-huber",
+      "name": "Huber Loss (HUBER)",
+      "category": "Errors",
+      "license": "MIT",
+      "sha256": "137ff3db74c918a7180530a02773ed9ee00a9e905abe4605a60a7016f0fac56f"
+    },
+    {
+      "path": "indicators/MIT/oa-hurst.js",
+      "file": "oa-hurst.js",
+      "id": "oa-hurst",
+      "name": "Hurst Exponent (HURST)",
+      "category": "Statistics",
+      "license": "MIT",
+      "sha256": "82e57a1482669930977798dd8f8e43c68781c793e4881a98fd5d371ee73fcf57"
+    },
+    {
+      "path": "indicators/MIT/oa-hv.js",
+      "file": "oa-hv.js",
+      "id": "oa-hv",
+      "name": "Historical Volatility (HV)",
+      "category": "Volatility",
+      "license": "MIT",
+      "sha256": "5d36d1e45b6c316853b3d2f90159f2ed79d538506024a7e777990eee0a2d8cd9"
+    },
+    {
+      "path": "indicators/MIT/oa-hwma.js",
+      "file": "oa-hwma.js",
+      "id": "oa-hwma",
+      "name": "Holt-Winters Moving Average (HWMA)",
+      "category": "Trends IIR",
+      "license": "MIT",
+      "sha256": "ada0d4270cff2a98c91607cf3a8ed4090ab2726e1efda510ad055baa130cff52"
+    },
+    {
+      "path": "indicators/MIT/oa-ichimoku.js",
+      "file": "oa-ichimoku.js",
+      "id": "oa-ichimoku",
+      "name": "Ichimoku Cloud",
+      "category": "Dynamics",
+      "license": "MIT",
+      "sha256": "83b254659caf845c1d80b59286458c4c7179b58027345f65e53cf1dd29486489"
+    },
+    {
+      "path": "indicators/MIT/oa-ifft.js",
+      "file": "oa-ifft.js",
+      "id": "oa-ifft",
+      "name": "Inverse Fast Fourier Transform (IFFT)",
+      "category": "Numerics",
+      "license": "MIT",
+      "sha256": "72685d665ed1cedc29450223d89c6ead4179e81b36d481eaae3758ab6cce7433"
+    },
+    {
+      "path": "indicators/MIT/oa-iii.js",
+      "file": "oa-iii.js",
+      "id": "oa-iii",
+      "name": "Intraday Intensity Index (III)",
+      "category": "Volume",
+      "license": "MIT",
+      "sha256": "ca7208006631c322281141ab3da246640e0570c6880013fc9245041180de3813"
+    },
+    {
+      "path": "indicators/MIT/oa-ilrs.js",
+      "file": "oa-ilrs.js",
+      "id": "oa-ilrs",
+      "name": "Integral of Linear Regression Slope (ILRS)",
+      "category": "Trends FIR",
+      "license": "MIT",
+      "sha256": "dd7a6748aa9172d1e8a55819ad2669aaee1d29c2ea507d9e45206eeb46f1ec0d"
+    },
+    {
+      "path": "indicators/MIT/oa-imi.js",
+      "file": "oa-imi.js",
+      "id": "oa-imi",
+      "name": "Intraday Momentum Index (IMI)",
+      "category": "Oscillators",
+      "license": "MIT",
+      "sha256": "8fc2b09ae189649134b804fe047af9a86cb03386289eab6a5b5775f3197bd97c"
+    },
+    {
+      "path": "indicators/MIT/oa-inertia.js",
+      "file": "oa-inertia.js",
+      "id": "oa-inertia",
+      "name": "Inertia",
+      "category": "Oscillators",
+      "license": "MIT",
+      "sha256": "309a65ebed0583c363424b262cedbbb99458e8693116626aecb67dff5e9dae3c"
+    },
+    {
+      "path": "indicators/MIT/oa-iqr.js",
+      "file": "oa-iqr.js",
+      "id": "oa-iqr",
+      "name": "Interquartile Range (IQR)",
+      "category": "Statistics",
+      "license": "MIT",
+      "sha256": "809fa8b5687eff9431a7ec7521dee752b2a7ecf55b4516a08aee13360b629c6a"
+    },
+    {
+      "path": "indicators/MIT/oa-jb.js",
+      "file": "oa-jb.js",
+      "id": "oa-jb",
+      "name": "Jarque-Bera Test (JB)",
+      "category": "Statistics",
+      "license": "MIT",
+      "sha256": "3dceb23ee2c4f360841331880d8f19d65c1a2bc17eb3e0901450ebe839a0d3e0"
+    },
+    {
+      "path": "indicators/MIT/oa-jbands.js",
+      "file": "oa-jbands.js",
+      "id": "oa-jbands",
+      "name": "Jurik Volatility Bands (JBANDS)",
+      "category": "Channels",
+      "license": "MIT",
+      "sha256": "c00607f823a2bad48e45c5380314089755fc960b225d15da468e16a5d6d8ec99"
+    },
+    {
+      "path": "indicators/MIT/oa-jerk.js",
+      "file": "oa-jerk.js",
+      "id": "oa-jerk",
+      "name": "Acceleration, Slope of Slope (JERK)",
+      "category": "Numerics",
+      "license": "MIT",
+      "sha256": "678b65fea9c9288f0b5d33a0da89e3c49495307d7370aa101e2faf8924896fc1"
+    },
+    {
+      "path": "indicators/MIT/oa-jma.js",
+      "file": "oa-jma.js",
+      "id": "oa-jma",
+      "name": "Jurik Moving Average (JMA)",
+      "category": "Trends IIR",
+      "license": "MIT",
+      "sha256": "1c6676b004eca39bf71d6ea47eb59a35498fff752a4e22438dcecf5bd1650e1f"
+    },
+    {
+      "path": "indicators/MIT/oa-jolt.js",
+      "file": "oa-jolt.js",
+      "id": "oa-jolt",
+      "name": "Acceleration, Slope of Slope (JOLT)",
+      "category": "Numerics",
+      "license": "MIT",
+      "sha256": "0e8914772c3c7037b0cabc502f58796497875f8e879f30db66df1675d53eb8e3"
+    },
+    {
+      "path": "indicators/MIT/oa-jvolty.js",
+      "file": "oa-jvolty.js",
+      "id": "oa-jvolty",
+      "name": "Jurik Volatility (JVOLTY)",
+      "category": "Volatility",
+      "license": "MIT",
+      "sha256": "b5b4c7f9dd9fee457dd79504d3b38832f0032c674f0f6fa09ecdcc571ae32da4"
+    },
+    {
+      "path": "indicators/MIT/oa-jvoltyn.js",
+      "file": "oa-jvoltyn.js",
+      "id": "oa-jvoltyn",
+      "name": "Normalized Jurik Volatility (JVOLTYN)",
+      "category": "Volatility",
+      "license": "MIT",
+      "sha256": "df905f955aa6446405cf65d01d80708ad0949a88b88bfb48d5b5efddecde0948"
+    },
+    {
+      "path": "indicators/MIT/oa-kaiser.js",
+      "file": "oa-kaiser.js",
+      "id": "oa-kaiser",
+      "name": "Kaiser Window Moving Average (KAISER)",
+      "category": "Trends FIR",
+      "license": "MIT",
+      "sha256": "b5586df5a2fbeb9d70ed3d88e6fdc455454a7e191b3c9c7bdad92fd917065363"
+    },
+    {
+      "path": "indicators/MIT/oa-kalman.js",
+      "file": "oa-kalman.js",
+      "id": "oa-kalman",
+      "name": "Kalman Filter (KALMAN)",
+      "category": "Filters",
+      "license": "MIT",
+      "sha256": "e9659cae030175c6fcc6732a8af771b25244d670c9cd50b07a4af294310ec9c7"
+    },
+    {
+      "path": "indicators/MIT/oa-kama.js",
+      "file": "oa-kama.js",
+      "id": "oa-kama",
+      "name": "Kaufman's Adaptive Moving Average (KAMA)",
+      "category": "Trends IIR",
+      "license": "MIT",
+      "sha256": "e925112117870349d9f1897974e4e2b56253f778a6b76093acfa6cbdc9b8fdcc"
+    },
+    {
+      "path": "indicators/MIT/oa-kchannel.js",
+      "file": "oa-kchannel.js",
+      "id": "oa-kchannel",
+      "name": "Keltner Channel (KCHANNEL)",
+      "category": "Channels",
+      "license": "MIT",
+      "sha256": "5918aeb2c7ba359157666dabb702f10b415caf50bdb4818e3908e103a6100737"
+    },
+    {
+      "path": "indicators/MIT/oa-kdj.js",
+      "file": "oa-kdj.js",
+      "id": "oa-kdj",
+      "name": "KDJ",
+      "category": "Oscillators",
+      "license": "MIT",
+      "sha256": "8497d05fda29140adf6dd9804911e8ec3f9e1ab8d2c10b0fde67028ec7db7c3c"
+    },
+    {
+      "path": "indicators/MIT/oa-kendall.js",
+      "file": "oa-kendall.js",
+      "id": "oa-kendall",
+      "name": "Kendall Rank Correlation (KENDALL)",
+      "category": "Statistics",
+      "license": "MIT",
+      "sha256": "a42d42870f3990457d887ce7ed3269ea5e88664aa040466e841c8fcbadd4320d"
+    },
+    {
+      "path": "indicators/MIT/oa-kf.js",
+      "file": "oa-kf.js",
+      "id": "oa-kf",
+      "name": "Kalman Filter (KF)",
+      "category": "Filters",
+      "license": "MIT",
+      "sha256": "5c18521fdda89d568733987ce1308ab39fe458421e92ba4b3578a98bd5ed3eb8"
+    },
+    {
+      "path": "indicators/MIT/oa-kri.js",
+      "file": "oa-kri.js",
+      "id": "oa-kri",
+      "name": "Kairi Relative Index (KRI)",
+      "category": "Oscillators",
+      "license": "MIT",
+      "sha256": "8383a77052ffa6d7085771fd8e50139c13807f1902cf0a8903a4fc11b3304a58"
+    },
+    {
+      "path": "indicators/MIT/oa-kst.js",
+      "file": "oa-kst.js",
+      "id": "oa-kst",
+      "name": "KST Oscillator (KST)",
+      "category": "Oscillators",
+      "license": "MIT",
+      "sha256": "1d00a934707b5d7327387f01d4f02b44b9b0a5722f6aae0b5b186a4b719489f7"
+    },
+    {
+      "path": "indicators/MIT/oa-kurtosis.js",
+      "file": "oa-kurtosis.js",
+      "id": "oa-kurtosis",
+      "name": "Kurtosis, tailedness (KURTOSIS)",
+      "category": "Statistics",
+      "license": "MIT",
+      "sha256": "cd9ce0608c46f77b19830594515a8b8c5c7210a301e67b52b3cd614b9e5dec49"
+    },
+    {
+      "path": "indicators/MIT/oa-kvo.js",
+      "file": "oa-kvo.js",
+      "id": "oa-kvo",
+      "name": "Klinger Volume Oscillator (KVO)",
+      "category": "Volume",
+      "license": "MIT",
+      "sha256": "c3a4bb837473e6fe471e3773dd13519adabaa17ab9fc0381284ceca358c4cb7c"
+    },
+    {
+      "path": "indicators/MIT/oa-laguerre.js",
+      "file": "oa-laguerre.js",
+      "id": "oa-laguerre",
+      "name": "Ehlers Laguerre Filter (LAGUERRE)",
+      "category": "Filters",
+      "license": "MIT",
+      "sha256": "07fcaaccaaaeeaa95d32b7bacc37934f52550710bc3f9e0139c43084666a51f2"
+    },
+    {
+      "path": "indicators/MIT/oa-lanczos.js",
+      "file": "oa-lanczos.js",
+      "id": "oa-lanczos",
+      "name": "Lanczos (Sinc) Window Moving Average (LANCZOS)",
+      "category": "Trends FIR",
+      "license": "MIT",
+      "sha256": "4920cd4e87e3a625308ede0177b70d9248f2b8e77de16848676ca8f0293a1a2b"
+    },
+    {
+      "path": "indicators/MIT/oa-lema.js",
+      "file": "oa-lema.js",
+      "id": "oa-lema",
+      "name": "Leader EMA (LEMA)",
+      "category": "Trends IIR",
+      "license": "MIT",
+      "sha256": "1ff1824cfda8ca598adcad7774dac81b235af16b9ad94cab01a7866301d799c5"
+    },
+    {
+      "path": "indicators/MIT/oa-linear.js",
+      "file": "oa-linear.js",
+      "id": "oa-linear",
+      "name": "Linear Transformation (LINEAR)",
+      "category": "Numerics",
+      "license": "MIT",
+      "sha256": "6a1fc6f49b1d42010bd0c40113d99aed5e79b138b01815586979df70125d9e12"
+    },
+    {
+      "path": "indicators/MIT/oa-lineartrans.js",
+      "file": "oa-lineartrans.js",
+      "id": "oa-lineartrans",
+      "name": "Linear Transformation (LINEAR)",
+      "category": "Numerics",
+      "license": "MIT",
+      "sha256": "dcfd4a191db677c4ab84cf590efb0eed456593e20cc214dd787afca390527f04"
+    },
+    {
+      "path": "indicators/MIT/oa-linreg.js",
+      "file": "oa-linreg.js",
+      "id": "oa-linreg",
+      "name": "Linear Regression (LINREG)",
+      "category": "Statistics",
+      "license": "MIT",
+      "sha256": "67ab445c829a886a35edc8c645484e2c4b5514d5f9eb908eb53b8ec053b781cc"
+    },
+    {
+      "path": "indicators/MIT/oa-lms.js",
+      "file": "oa-lms.js",
+      "id": "oa-lms",
+      "name": "Least Mean Squares Adaptive Filter (LMS)",
+      "category": "Filters",
+      "license": "MIT",
+      "sha256": "c62c70b0207098f71a87b5f11e0302647cbb858aa485366798f8ed2233b0bc50"
+    },
+    {
+      "path": "indicators/MIT/oa-loess.js",
+      "file": "oa-loess.js",
+      "id": "oa-loess",
+      "name": "LOESS Filter",
+      "category": "Filters",
+      "license": "MIT",
+      "sha256": "43bb24ea2eb1c39b6f5a00030dd09c444a598a2b9160ddd8e87cb3293d864fb2"
+    },
+    {
+      "path": "indicators/MIT/oa-log.js",
+      "file": "oa-log.js",
+      "id": "oa-log",
+      "name": "Logarithmic Transformation (LOG)",
+      "category": "Numerics",
+      "license": "MIT",
+      "sha256": "5c735dbf9b6f6f09bcb806c2c247d450cbc8135629abb0707d42eaca208c8b63"
+    },
+    {
+      "path": "indicators/MIT/oa-logcosh.js",
+      "file": "oa-logcosh.js",
+      "id": "oa-logcosh",
+      "name": "Log-Cosh Loss",
+      "category": "Errors",
+      "license": "MIT",
+      "sha256": "fae1a01b4777966dc1a500c8fc9c5c5e53f08d37863b4dfbac25539695cd7f2f"
+    },
+    {
+      "path": "indicators/MIT/oa-lognormdist.js",
+      "file": "oa-lognormdist.js",
+      "id": "oa-lognormdist",
+      "name": "Log-Normal Distribution CDF (LOGNORMDIST)",
+      "category": "Numerics",
+      "license": "MIT",
+      "sha256": "a461e1423eff08db0ff94709878344f2c76d5cff342e8fe694ede5a98f0b5797"
+    },
+    {
+      "path": "indicators/MIT/oa-logtrans.js",
+      "file": "oa-logtrans.js",
+      "id": "oa-logtrans",
+      "name": "Logarithmic Transformation (LOG)",
+      "category": "Numerics",
+      "license": "MIT",
+      "sha256": "aa16626af6fbdf7e897889a70fd6282c86148f03e1d13deb4bb4ebfb7283572c"
+    },
+    {
+      "path": "indicators/MIT/oa-lowest.js",
+      "file": "oa-lowest.js",
+      "id": "oa-lowest",
+      "name": "Lowest Value (LOWEST)",
+      "category": "Numerics",
+      "license": "MIT",
+      "sha256": "28243c4664fa852c918801512f9a0da2c5c4a5fb9ff5c77afba4a62fa5bb6362"
+    },
+    {
+      "path": "indicators/MIT/oa-lrsi.js",
+      "file": "oa-lrsi.js",
+      "id": "oa-lrsi",
+      "name": "LRSI: Laguerre RSI",
+      "category": "Oscillators",
+      "license": "MIT",
+      "sha256": "fea646a538a209ce64e75642e5b7c1fa192dd83340b1ebbdeb922ce1296fc6bd"
+    },
+    {
+      "path": "indicators/MIT/oa-lsma.js",
+      "file": "oa-lsma.js",
+      "id": "oa-lsma",
+      "name": "Least Squares Moving Average (LSMA)",
+      "category": "Trends FIR",
+      "license": "MIT",
+      "sha256": "d94ab71642d33f44d61cfd287fa872f15b868304b8d626aa7cdf94672986242e"
+    },
+    {
+      "path": "indicators/MIT/oa-ltma.js",
+      "file": "oa-ltma.js",
+      "id": "oa-ltma",
+      "name": "Linear Time Moving Average (LTMA)",
+      "category": "Trends IIR",
+      "license": "MIT",
+      "sha256": "c4cb4b0ffcd01e1555e7deeb84d4a84950678c0933b47d9b5a20c4a6c566eaab"
+    },
+    {
+      "path": "indicators/MIT/oa-lunar.js",
+      "file": "oa-lunar.js",
+      "id": "oa-lunar",
+      "name": "Lunar Phase (LUNAR)",
+      "category": "Cycles",
+      "license": "MIT",
+      "sha256": "0af32f4b3804e1f9835342f0e256a9bfa587f23974fff282ca4d23b01811f21b"
+    },
+    {
+      "path": "indicators/MIT/oa-maape.js",
+      "file": "oa-maape.js",
+      "id": "oa-maape",
+      "name": "Mean Arctangent Absolute Percentage Error",
+      "category": "Errors",
+      "license": "MIT",
+      "sha256": "86c95cfb05bb99d112d7c82e1df802fe4a4bb7691e6a223ce063035803e01bfb"
+    },
+    {
+      "path": "indicators/MIT/oa-macd.js",
+      "file": "oa-macd.js",
+      "id": "oa-macd",
+      "name": "Moving Average Convergence Divergence (MACD)",
+      "category": "Momentum",
+      "license": "MIT",
+      "sha256": "c69dd9285c8ca0d662caa5343ebd8202b6f7c48253f91ec81f795d1196d80be8"
+    },
+    {
+      "path": "indicators/MIT/oa-mae.js",
+      "file": "oa-mae.js",
+      "id": "oa-mae",
+      "name": "Mean Absolute Error (MAE)",
+      "category": "Errors",
+      "license": "MIT",
+      "sha256": "0146b11a9da47ecf8442c889358b54b76e75ec7522b5aea90230efeb7e3806e1"
+    },
+    {
+      "path": "indicators/MIT/oa-maenv.js",
+      "file": "oa-maenv.js",
+      "id": "oa-maenv",
+      "name": "MA Envelope (MAE)",
+      "category": "Channels",
+      "license": "MIT",
+      "sha256": "ef39ab6fcac5f44f527aeb9e5ff1b78f25e7d1a6344d986cb32d7e0dadeb03da"
+    },
+    {
+      "path": "indicators/MIT/oa-mama.js",
+      "file": "oa-mama.js",
+      "id": "oa-mama",
+      "name": "MESA Adaptive Moving Average (MAMA)",
+      "category": "Trends IIR",
+      "license": "MIT",
+      "sha256": "829437cdb05500da2af8457dec0b0d072a4c39627a05e3d731e211f7afdf7d45"
+    },
+    {
+      "path": "indicators/MIT/oa-mapd.js",
+      "file": "oa-mapd.js",
+      "id": "oa-mapd",
+      "name": "Mean Absolute %Deviation (MAPD)",
+      "category": "Errors",
+      "license": "MIT",
+      "sha256": "4e07fd080ba8e5387fd38cffafefaed0c33001f883aef34d74e0f689aa9d4e98"
+    },
+    {
+      "path": "indicators/MIT/oa-mape.js",
+      "file": "oa-mape.js",
+      "id": "oa-mape",
+      "name": "Mean Absolute %Error (MAPE)",
+      "category": "Errors",
+      "license": "MIT",
+      "sha256": "77beb48ba1896f5a2f0f3ee52a6789e10b3e0e510691fe7e2af16c4201b995b9"
+    },
+    {
+      "path": "indicators/MIT/oa-marketfi.js",
+      "file": "oa-marketfi.js",
+      "id": "oa-marketfi",
+      "name": "MARKETFI: Market Facilitation Index",
+      "category": "Oscillators",
+      "license": "MIT",
+      "sha256": "52c66b121d1f82efe2ea425b1fc5b7cde3a6f22249fac1dd2aab80da6904720c"
+    },
+    {
+      "path": "indicators/MIT/oa-mase.js",
+      "file": "oa-mase.js",
+      "id": "oa-mase",
+      "name": "Mean Absolute Scaled Error (MASE)",
+      "category": "Errors",
+      "license": "MIT",
+      "sha256": "1580536d150d70dd2eab56cb5450a84311286bf7e3ea95c2cd509a5927630d43"
+    },
+    {
+      "path": "indicators/MIT/oa-massi.js",
+      "file": "oa-massi.js",
+      "id": "oa-massi",
+      "name": "Mass Index (MASSI)",
+      "category": "Volatility",
+      "license": "MIT",
+      "sha256": "1f08d9ff12e01d5ea62fd29a4e6407d7a56854c45d0851a293c9a46a1ad2876d"
+    },
+    {
+      "path": "indicators/MIT/oa-mavp.js",
+      "file": "oa-mavp.js",
+      "id": "oa-mavp",
+      "name": "Moving Average Variable Period (MAVP)",
+      "category": "Trends IIR",
+      "license": "MIT",
+      "sha256": "3fb3fd4049a162b7d32a6859738b277cef8fe95178f708616878b76cdae0645e"
+    },
+    {
+      "path": "indicators/MIT/oa-mcnma.js",
+      "file": "oa-mcnma.js",
+      "id": "oa-mcnma",
+      "name": "MCNMA - McNicholl EMA",
+      "category": "Trends IIR",
+      "license": "MIT",
+      "sha256": "f0a44d6a0144a8c671b1372fcb41bef6f18ce001e5ad13f9d20af4e380337278"
+    },
+    {
+      "path": "indicators/MIT/oa-mdae.js",
+      "file": "oa-mdae.js",
+      "id": "oa-mdae",
+      "name": "Median Absolute Error",
+      "category": "Errors",
+      "license": "MIT",
+      "sha256": "170041c5cc500539ebb66a99aeb256acbf270a3fcf97a66e721834295fdf7034"
+    },
+    {
+      "path": "indicators/MIT/oa-mdape.js",
+      "file": "oa-mdape.js",
+      "id": "oa-mdape",
+      "name": "Median Absolute Percentage Error",
+      "category": "Errors",
+      "license": "MIT",
+      "sha256": "64991fe5283ab908dcb33822c6111b39ed430b9eda062ddcafa621e7e9b12009"
+    },
+    {
+      "path": "indicators/MIT/oa-me.js",
+      "file": "oa-me.js",
+      "id": "oa-me",
+      "name": "Mean Error (ME)",
+      "category": "Errors",
+      "license": "MIT",
+      "sha256": "1b93808c6b546efeec0f2a91120a2377c198d59e1d64182f99a363450952db47"
+    },
+    {
+      "path": "indicators/MIT/oa-meandev.js",
+      "file": "oa-meandev.js",
+      "id": "oa-meandev",
+      "name": "Mean Deviation (MEANDEV)",
+      "category": "Statistics",
+      "license": "MIT",
+      "sha256": "c21881eb4dd84699ae6980a15fcbf627bd3346a9bb95c754b02de6c0883d396d"
+    },
+    {
+      "path": "indicators/MIT/oa-median.js",
+      "file": "oa-median.js",
+      "id": "oa-median",
+      "name": "Median",
+      "category": "Statistics",
+      "license": "MIT",
+      "sha256": "e6e8f3822c6838e5bc46ce00722f84d4ed89c9f100ea82072f7fb2f377abfe9e"
+    },
+    {
+      "path": "indicators/MIT/oa-medprice.js",
+      "file": "oa-medprice.js",
+      "id": "oa-medprice",
+      "name": "MEDPRICE: Median Price",
+      "category": "Price Core",
+      "license": "MIT",
+      "sha256": "879cf1fadcf8ce25f476fe31fe1e550997abc2171778a8680c01f6139135a3da"
+    },
+    {
+      "path": "indicators/MIT/oa-mfi.js",
+      "file": "oa-mfi.js",
+      "id": "oa-mfi",
+      "name": "Money Flow Index (MFI)",
+      "category": "Volume",
+      "license": "MIT",
+      "sha256": "8cd7c2f2873990cf1b7aa659b3cc61811fad3e498028b6c62712488fd30d93cb"
+    },
+    {
+      "path": "indicators/MIT/oa-mgdi.js",
+      "file": "oa-mgdi.js",
+      "id": "oa-mgdi",
+      "name": "McGinley Dynamic Indicator (MGDI)",
+      "category": "Trends IIR",
+      "license": "MIT",
+      "sha256": "bd549d3af62d315aaa4c619a7bb6f5417ac83a7575b76e06c1cd2db1a45326e1"
+    },
+    {
+      "path": "indicators/MIT/oa-midpoint.js",
+      "file": "oa-midpoint.js",
+      "id": "oa-midpoint",
+      "name": "Midpoint (MIDPOINT)",
+      "category": "Price Core",
+      "license": "MIT",
+      "sha256": "9881cad97fe95b1b96d5776d6c5cf240c58a0e955a702a9c3559f7b308200971"
+    },
+    {
+      "path": "indicators/MIT/oa-midprice.js",
+      "file": "oa-midprice.js",
+      "id": "oa-midprice",
+      "name": "MIDPRICE: Midpoint Price over Period",
+      "category": "Price Core",
+      "license": "MIT",
+      "sha256": "03de45b97740d6f1c3c5668105aa601edd3253dc45e52a380daf6ab65053cdb9"
+    },
+    {
+      "path": "indicators/MIT/oa-mlp.js",
+      "file": "oa-mlp.js",
+      "id": "oa-mlp",
+      "name": "Multilayer Perceptron Predictor",
+      "category": "Forecasts",
+      "license": "MIT",
+      "sha256": "38bb57dca37feccdf5e0c773b2cff0411c54110271d1de97dbc03f28bd3b0bbc"
+    },
+    {
+      "path": "indicators/MIT/oa-mma.js",
+      "file": "oa-mma.js",
+      "id": "oa-mma",
+      "name": "Modified Moving Average (MMA)",
+      "category": "Trends IIR",
+      "license": "MIT",
+      "sha256": "472491c3132250f708a124d630447d46e68be1f87b9f9bda9094817fd7dca537"
+    },
+    {
+      "path": "indicators/MIT/oa-mmchannel.js",
+      "file": "oa-mmchannel.js",
+      "id": "oa-mmchannel",
+      "name": "Min-Max Channel (MMCHANNEL)",
+      "category": "Channels",
+      "license": "MIT",
+      "sha256": "e1521bf682690e732013ece14ffd2ba074669775fa965a934d71271e67415622"
+    },
+    {
+      "path": "indicators/MIT/oa-mode.js",
+      "file": "oa-mode.js",
+      "id": "oa-mode",
+      "name": "Mode",
+      "category": "Statistics",
+      "license": "MIT",
+      "sha256": "f9b5970e576bf96fefcf821def0757195ca3746abd11c8ad31757f099f7f05b4"
+    },
+    {
+      "path": "indicators/MIT/oa-modf.js",
+      "file": "oa-modf.js",
+      "id": "oa-modf",
+      "name": "Modular Filter (MODF)",
+      "category": "Filters",
+      "license": "MIT",
+      "sha256": "a0527f5a040c5175afe30369d57fe4f5566bdb1bc99bdc30ef62b6e5f7b49fc8"
+    },
+    {
+      "path": "indicators/MIT/oa-mom.js",
+      "file": "oa-mom.js",
+      "id": "oa-mom",
+      "name": "Momentum (MOM)",
+      "category": "Momentum",
+      "license": "MIT",
+      "sha256": "aed9a73092d6a910aef73c5e2094cd72b46a4ba32750aea8f72bb0cc244895bb"
+    },
+    {
+      "path": "indicators/MIT/oa-mpe.js",
+      "file": "oa-mpe.js",
+      "id": "oa-mpe",
+      "name": "Mean %Error (MPE)",
+      "category": "Errors",
+      "license": "MIT",
+      "sha256": "d9cf9bfc42ac8ef1fb69a36c360a107a6bf4e80936ee2da51c72c5301081d7b1"
+    },
+    {
+      "path": "indicators/MIT/oa-mrae.js",
+      "file": "oa-mrae.js",
+      "id": "oa-mrae",
+      "name": "Mean Relative Absolute Error",
+      "category": "Errors",
+      "license": "MIT",
+      "sha256": "7d30b90e174a53f86ecd769e1942be0f357486ea4bda7118370746d4415ed825"
+    },
+    {
+      "path": "indicators/MIT/oa-mse.js",
+      "file": "oa-mse.js",
+      "id": "oa-mse",
+      "name": "Mean Squared Error (MSE)",
+      "category": "Errors",
+      "license": "MIT",
+      "sha256": "d237739e70770bef1157021715c8951abdd03234b9ba681f16c0f7425ef1e4f2"
+    },
+    {
+      "path": "indicators/MIT/oa-msle.js",
+      "file": "oa-msle.js",
+      "id": "oa-msle",
+      "name": "Mean Squared Logarithmic Error (MSLE)",
+      "category": "Errors",
+      "license": "MIT",
+      "sha256": "238a91d67182758798bdd483f705dcd27eae89ddd1712b64958b02b19a91e3de"
+    },
+    {
+      "path": "indicators/MIT/oa-mstoch.js",
+      "file": "oa-mstoch.js",
+      "id": "oa-mstoch",
+      "name": "Ehlers MESA Stochastic (MSTOCH)",
+      "category": "Oscillators",
+      "license": "MIT",
+      "sha256": "367294d027749e010ee4c9d7c971ea18d17ec833a87c37eba652a255f05ca8e6"
+    },
+    {
+      "path": "indicators/MIT/oa-natr.js",
+      "file": "oa-natr.js",
+      "id": "oa-natr",
+      "name": "Normalized Average True Range",
+      "category": "Volatility",
+      "license": "MIT",
+      "sha256": "682c5f8d0254cca48b3225fdd1abc5a95d773130e7c44b1e0ff27280e6070057"
+    },
+    {
+      "path": "indicators/MIT/oa-nlma.js",
+      "file": "oa-nlma.js",
+      "id": "oa-nlma",
+      "name": "Non-Lag Moving Average (NLMA)",
+      "category": "Trends FIR",
+      "license": "MIT",
+      "sha256": "f61c000c66c2b252d7820142f0c581d1623668c9d34765f0636eb05530011355"
+    },
+    {
+      "path": "indicators/MIT/oa-nma.js",
+      "file": "oa-nma.js",
+      "id": "oa-nma",
+      "name": "NMA - Natural Moving Average",
+      "category": "Trends IIR",
+      "license": "MIT",
+      "sha256": "a8467a212332b67a0556590857cfc446e1b464731d95905f86a781960772fcb9"
+    },
+    {
+      "path": "indicators/MIT/oa-normalize.js",
+      "file": "oa-normalize.js",
+      "id": "oa-normalize",
+      "name": "Min-Max Normalization (NORMALIZE)",
+      "category": "Numerics",
+      "license": "MIT",
+      "sha256": "1d91b19024436a42c2c7c011564d28a70e7ced0048eda5bb3cc525f6ca984a1e"
+    },
+    {
+      "path": "indicators/MIT/oa-normdist.js",
+      "file": "oa-normdist.js",
+      "id": "oa-normdist",
+      "name": "Normal Distribution CDF (NORMDIST)",
+      "category": "Numerics",
+      "license": "MIT",
+      "sha256": "a3463518f78a8632e3d337053e7dbbea90e7d0e6f290efb3c426434ae534a31e"
+    },
+    {
+      "path": "indicators/MIT/oa-notch.js",
+      "file": "oa-notch.js",
+      "id": "oa-notch",
+      "name": "Notch Filter (NOTCH)",
+      "category": "Filters",
+      "license": "MIT",
+      "sha256": "6cf514080b419214f76a3525d5359ad3ded6f81356d694f66e6a52b18a33dab2"
+    },
+    {
+      "path": "indicators/MIT/oa-nvi.js",
+      "file": "oa-nvi.js",
+      "id": "oa-nvi",
+      "name": "Negative Volume Index (NVI)",
+      "category": "Volume",
+      "license": "MIT",
+      "sha256": "1690337b54b6241577dec0d71b928e5680fdbedb03c517f547ed37d6645ba755"
+    },
+    {
+      "path": "indicators/MIT/oa-nw.js",
+      "file": "oa-nw.js",
+      "id": "oa-nw",
+      "name": "NW - Nadaraya-Watson Kernel Regression",
+      "category": "Filters",
+      "license": "MIT",
+      "sha256": "ebd2c0950766272c70a9ce99df94b3ca43d10657fde85f10034b2e28af99fced"
+    },
+    {
+      "path": "indicators/MIT/oa-nyqma.js",
+      "file": "oa-nyqma.js",
+      "id": "oa-nyqma",
+      "name": "Nyquist Moving Average (NYQMA)",
+      "category": "Trends FIR",
+      "license": "MIT",
+      "sha256": "d6828ac12750ba85c0ae4d56726a327c4c9f52d3357642686c12a943d4f78e6d"
+    },
+    {
+      "path": "indicators/MIT/oa-obv.js",
+      "file": "oa-obv.js",
+      "id": "oa-obv",
+      "name": "On Balance Volume (OBV)",
+      "category": "Volume",
+      "license": "MIT",
+      "sha256": "a3fc8e8a7d5b941d01b49948a99660f01fe14e940d711345c4c3814c2df57be4"
+    },
+    {
+      "path": "indicators/MIT/oa-oc2.js",
+      "file": "oa-oc2.js",
+      "id": "oa-oc2",
+      "name": "Open-Close Midpoint (OC2)",
+      "category": "Numerics",
+      "license": "MIT",
+      "sha256": "4abf7560faf7b2702ab173899d7d386488cb82af3653d952c97464b3aeb01592"
+    },
+    {
+      "path": "indicators/MIT/oa-ohl3.js",
+      "file": "oa-ohl3.js",
+      "id": "oa-ohl3",
+      "name": "Open-High-Low Average (OHL3)",
+      "category": "Numerics",
+      "license": "MIT",
+      "sha256": "95c8e2da160c4871ed3cee51dd8d0bb02fb299636988a917e188ad143f596565"
+    },
+    {
+      "path": "indicators/MIT/oa-ohlc4.js",
+      "file": "oa-ohlc4.js",
+      "id": "oa-ohlc4",
+      "name": "OHLC Average (OHLC4)",
+      "category": "Numerics",
+      "license": "MIT",
+      "sha256": "8150a19590b0a97091896d08b2cc65dc88c0c0252c813f3ec01f189edfd3225c"
+    },
+    {
+      "path": "indicators/MIT/oa-oneeuro.js",
+      "file": "oa-oneeuro.js",
+      "id": "oa-oneeuro",
+      "name": "One Euro Filter (ONEEURO)",
+      "category": "Filters",
+      "license": "MIT",
+      "sha256": "d9baf4252b18d3e4d48ece2f91e64e8a1781bca28e9e5fe5551d4da962661f73"
+    },
+    {
+      "path": "indicators/MIT/oa-parzen.js",
+      "file": "oa-parzen.js",
+      "id": "oa-parzen",
+      "name": "Parzen Window Moving Average (PARZEN)",
+      "category": "Trends FIR",
+      "license": "MIT",
+      "sha256": "ce57b74f0125b10c29b86641261f2483cbe2e5370beffc6ffc54108560407226"
+    },
+    {
+      "path": "indicators/MIT/oa-pchannel.js",
+      "file": "oa-pchannel.js",
+      "id": "oa-pchannel",
+      "name": "Price Channel (PCHANNEL)",
+      "category": "Channels",
+      "license": "MIT",
+      "sha256": "4c2446fbaa0e5897e2083b6db549b9927d934c19449cab1bd0b5abbc8d608414"
+    },
+    {
+      "path": "indicators/MIT/oa-percentile.js",
+      "file": "oa-percentile.js",
+      "id": "oa-percentile",
+      "name": "Percentile",
+      "category": "Statistics",
+      "license": "MIT",
+      "sha256": "29eb4ca529497c224a0d895dbf42fc010dcf5292a4c3a68113a55366750bda44"
+    },
+    {
+      "path": "indicators/MIT/oa-pfe.js",
+      "file": "oa-pfe.js",
+      "id": "oa-pfe",
+      "name": "PFE: Polarized Fractal Efficiency",
+      "category": "Dynamics",
+      "license": "MIT",
+      "sha256": "e70be59d4bcfdda966feb19fafc0e850f64b6c8b98b79abfe0d34d8aa742dcd0"
+    },
+    {
+      "path": "indicators/MIT/oa-pgo.js",
+      "file": "oa-pgo.js",
+      "id": "oa-pgo",
+      "name": "Pretty Good Oscillator",
+      "category": "Oscillators",
+      "license": "MIT",
+      "sha256": "2ba0d29e68eb60f837a71d1deadd14d82facc404443545afab241878ad0de1c6"
+    },
+    {
+      "path": "indicators/MIT/oa-phasor.js",
+      "file": "oa-phasor.js",
+      "id": "oa-phasor",
+      "name": "Ehlers Phasor Analysis (PHASOR)",
+      "category": "Cycles",
+      "license": "MIT",
+      "sha256": "907bfe74a077eccf5c8737cc3fd5dae2933eb92d4fb2002da6e3d778fb51f70b"
+    },
+    {
+      "path": "indicators/MIT/oa-pivot.js",
+      "file": "oa-pivot.js",
+      "id": "oa-pivot",
+      "name": "Pivot Points (Classic)",
+      "category": "Reversals",
+      "license": "MIT",
+      "sha256": "67fd26f923b94dc9724a69525331c5fcb3f8766c751b59c3668b195eccdbac70"
+    },
+    {
+      "path": "indicators/MIT/oa-pivotcam.js",
+      "file": "oa-pivotcam.js",
+      "id": "oa-pivotcam",
+      "name": "Pivot Points (Camarilla)",
+      "category": "Reversals",
+      "license": "MIT",
+      "sha256": "b1a62d0b95b2514da56a11b5d05effd00892ae8ed90ed441ae847a74d3dc9a41"
+    },
+    {
+      "path": "indicators/MIT/oa-pivotdem.js",
+      "file": "oa-pivotdem.js",
+      "id": "oa-pivotdem",
+      "name": "Pivot Points (DeMark)",
+      "category": "Reversals",
+      "license": "MIT",
+      "sha256": "3225b38683b5b1a94f16b299dac286effd5b651efa7212bf4706ad2fdc0748de"
+    },
+    {
+      "path": "indicators/MIT/oa-pivotext.js",
+      "file": "oa-pivotext.js",
+      "id": "oa-pivotext",
+      "name": "Pivot Points (Extended)",
+      "category": "Reversals",
+      "license": "MIT",
+      "sha256": "1f26a490860670d7afcc916aa5e6c1cdb0449362484916694567e7d0ed417669"
+    },
+    {
+      "path": "indicators/MIT/oa-pivotfib.js",
+      "file": "oa-pivotfib.js",
+      "id": "oa-pivotfib",
+      "name": "Pivot Points (Fibonacci)",
+      "category": "Reversals",
+      "license": "MIT",
+      "sha256": "357178876de9e0fb29d9d7d5221ad38f2cdacd8fc3af93c7a39b33da79e5d4a6"
+    },
+    {
+      "path": "indicators/MIT/oa-pivotwood.js",
+      "file": "oa-pivotwood.js",
+      "id": "oa-pivotwood",
+      "name": "Pivot Points (Woodie)",
+      "category": "Reversals",
+      "license": "MIT",
+      "sha256": "579eb70497feba5a37bfa916fd19d50359d0ca9220efcbe3527fd112ed11b740"
+    },
+    {
+      "path": "indicators/MIT/oa-pma.js",
+      "file": "oa-pma.js",
+      "id": "oa-pma",
+      "name": "Ehlers Predictive Moving Average (PMA)",
+      "category": "Trends FIR",
+      "license": "MIT",
+      "sha256": "387ae9f95cb3d1ded714813cea5e5fc921d3d272ecb4fd8bf31eecf95e1cf3b3"
+    },
+    {
+      "path": "indicators/MIT/oa-pmo.js",
+      "file": "oa-pmo.js",
+      "id": "oa-pmo",
+      "name": "Price Momentum Oscillator (PMO)",
+      "category": "Momentum",
+      "license": "MIT",
+      "sha256": "532814f9d08921e3fbc33e6530ae152176ca003ecfa5e792a2f9cd23e1be56d6"
+    },
+    {
+      "path": "indicators/MIT/oa-poissondist.js",
+      "file": "oa-poissondist.js",
+      "id": "oa-poissondist",
+      "name": "Poisson Distribution CDF (POISSONDIST)",
+      "category": "Numerics",
+      "license": "MIT",
+      "sha256": "2c662428a3648e520f84e42ba4444d99865b3ae5a2c0388d64b0339ee0870368"
+    },
+    {
+      "path": "indicators/MIT/oa-polyfit.js",
+      "file": "oa-polyfit.js",
+      "id": "oa-polyfit",
+      "name": "Polynomial Fitting (POLYFIT)",
+      "category": "Statistics",
+      "license": "MIT",
+      "sha256": "56d74a2d797556fc2d421035c33f260a14755d9a8a4951e508f45fafe0c6025e"
+    },
+    {
+      "path": "indicators/MIT/oa-ppo.js",
+      "file": "oa-ppo.js",
+      "id": "oa-ppo",
+      "name": "Percentage Price Oscillator (PPO)",
+      "category": "Momentum",
+      "license": "MIT",
+      "sha256": "30ec8c0fdbde62c76de9a4d78f8693a1b746a3ae638131f0b6aed6ac871597fe"
+    },
+    {
+      "path": "indicators/MIT/oa-psar.js",
+      "file": "oa-psar.js",
+      "id": "oa-psar",
+      "name": "Parabolic SAR",
+      "category": "Reversals",
+      "license": "MIT",
+      "sha256": "fc49a5f597ac520d433dfeb374f5d9aa70f57f715efe9f8375d121cd636dfb50"
+    },
+    {
+      "path": "indicators/MIT/oa-pseudohuber.js",
+      "file": "oa-pseudohuber.js",
+      "id": "oa-pseudohuber",
+      "name": "Pseudo-Huber Loss",
+      "category": "Errors",
+      "license": "MIT",
+      "sha256": "2aa446827bbcb1cc5c9312e331a233dadffeed114889a151e8568c07494b9dcd"
+    },
+    {
+      "path": "indicators/MIT/oa-psl.js",
+      "file": "oa-psl.js",
+      "id": "oa-psl",
+      "name": "Psychological Line (PSL)",
+      "category": "Oscillators",
+      "license": "MIT",
+      "sha256": "c79f4092be3238189450bbf72f963b324c2f164bbde0750effb4f0a373c2dc6b"
+    },
+    {
+      "path": "indicators/MIT/oa-pv.js",
+      "file": "oa-pv.js",
+      "id": "oa-pv",
+      "name": "Parkinson Volatility (PV)",
+      "category": "Volatility",
+      "license": "MIT",
+      "sha256": "d478fca47bbc2d5c6e126a863d2fc7315ce637047976be828dc473f264b17f18"
+    },
+    {
+      "path": "indicators/MIT/oa-pvd.js",
+      "file": "oa-pvd.js",
+      "id": "oa-pvd",
+      "name": "Price Volume Divergence (PVD)",
+      "category": "Volume",
+      "license": "MIT",
+      "sha256": "dca6f4b9c66a05f86a1a350286d185c528b37eb369799f9e7f523d7fcde2e715"
+    },
+    {
+      "path": "indicators/MIT/oa-pvi.js",
+      "file": "oa-pvi.js",
+      "id": "oa-pvi",
+      "name": "Positive Volume Index (PVI)",
+      "category": "Volume",
+      "license": "MIT",
+      "sha256": "a0dc3a8093a4b46eeee31c40e338c8f8dd6d9c9739111a8fde6feffaebb986c4"
+    },
+    {
+      "path": "indicators/MIT/oa-pvo.js",
+      "file": "oa-pvo.js",
+      "id": "oa-pvo",
+      "name": "Percentage Volume Oscillator (PVO)",
+      "category": "Volume",
+      "license": "MIT",
+      "sha256": "cc7571645c3435f284ce12fae8e87906f8386ba2998d849cffe43a77855c7b6c"
+    },
+    {
+      "path": "indicators/MIT/oa-pvr.js",
+      "file": "oa-pvr.js",
+      "id": "oa-pvr",
+      "name": "Price Volume Rank (PVR)",
+      "category": "Volume",
+      "license": "MIT",
+      "sha256": "473455183f73f0e49a84343cf16a9bb9eab82d9d4134ea5749abdc4aedbfdc87"
+    },
+    {
+      "path": "indicators/MIT/oa-pvt.js",
+      "file": "oa-pvt.js",
+      "id": "oa-pvt",
+      "name": "Price Volume Trend (PVT)",
+      "category": "Volume",
+      "license": "MIT",
+      "sha256": "97c6411a8b4c2fc52154227b2d27dc29110fa214a8fab6f64e08ffb0fbd98eed"
+    },
+    {
+      "path": "indicators/MIT/oa-pwma.js",
+      "file": "oa-pwma.js",
+      "id": "oa-pwma",
+      "name": "Pascal Weighted Moving Average (PWMA)",
+      "category": "Trends FIR",
+      "license": "MIT",
+      "sha256": "e12daf1ff69aebb77a2f77350a9c7ba06d221ebd8d6612225eecb7678e94eb04"
+    },
+    {
+      "path": "indicators/MIT/oa-qema.js",
+      "file": "oa-qema.js",
+      "id": "oa-qema",
+      "name": "Quadruple EMA (QEMA)",
+      "category": "Trends IIR",
+      "license": "MIT",
+      "sha256": "cfaebb88c8f93bcaa4f5b0ec1ba9f6e636d206206124930212ec63cfb48975b3"
+    },
+    {
+      "path": "indicators/MIT/oa-qqe.js",
+      "file": "oa-qqe.js",
+      "id": "oa-qqe",
+      "name": "Quantitative Qualitative Estimation (QQE)",
+      "category": "Oscillators",
+      "license": "MIT",
+      "sha256": "5955b54c390c6be5324acab149d2aed32c3e0c04a2755856678976d85b15d215"
+    },
+    {
+      "path": "indicators/MIT/oa-qrma.js",
+      "file": "oa-qrma.js",
+      "id": "oa-qrma",
+      "name": "Quadratic Regression Moving Average (QRMA)",
+      "category": "Trends FIR",
+      "license": "MIT",
+      "sha256": "6f75d9a142bd347a957428495e26b3ab94506cafa3ac980896dc8f3cd9ed0c2a"
+    },
+    {
+      "path": "indicators/MIT/oa-qstick.js",
+      "file": "oa-qstick.js",
+      "id": "oa-qstick",
+      "name": "Qstick Indicator",
+      "category": "Dynamics",
+      "license": "MIT",
+      "sha256": "6773d595b093c73d7e7594552fb53eb6ca597e68a545f7d0c9036155025627ba"
+    },
+    {
+      "path": "indicators/MIT/oa-quantile.js",
+      "file": "oa-quantile.js",
+      "id": "oa-quantile",
+      "name": "Quantile (QUANTILE)",
+      "category": "Statistics",
+      "license": "MIT",
+      "sha256": "058f86bbcfb6fa93f9a9d3e5ae45a23f8899c097168f0a062c04220e3c0d1240"
+    },
+    {
+      "path": "indicators/MIT/oa-quantileloss.js",
+      "file": "oa-quantileloss.js",
+      "id": "oa-quantileloss",
+      "name": "Quantile Loss (Pinball Loss)",
+      "category": "Errors",
+      "license": "MIT",
+      "sha256": "a91558f6ed4cd22d7f54a3114f8873fed75bfec1928a6fe8262d1e52cbde1a8e"
+    },
+    {
+      "path": "indicators/MIT/oa-rae.js",
+      "file": "oa-rae.js",
+      "id": "oa-rae",
+      "name": "Relative Absolute Error (RAE)",
+      "category": "Errors",
+      "license": "MIT",
+      "sha256": "42ef0af9017249385f02404262f63d7227f37390278f75135dedbc2af361a2a8"
+    },
+    {
+      "path": "indicators/MIT/oa-rain.js",
+      "file": "oa-rain.js",
+      "id": "oa-rain",
+      "name": "Rainbow Moving Average (RAIN)",
+      "category": "Trends FIR",
+      "license": "MIT",
+      "sha256": "70cb8dc4c3e4ecf7ec93988bd909e108e2354ecbcbdd0c29bd150c85715e2c1c"
+    },
+    {
+      "path": "indicators/MIT/oa-ravi.js",
+      "file": "oa-ravi.js",
+      "id": "oa-ravi",
+      "name": "RAVI: Chande Range Action Verification Index",
+      "category": "Dynamics",
+      "license": "MIT",
+      "sha256": "7ea2310786ca0bc696a70e41979f45af1ea7bac0849fa304422b7a42162947a4"
+    },
+    {
+      "path": "indicators/MIT/oa-reflex.js",
+      "file": "oa-reflex.js",
+      "id": "oa-reflex",
+      "name": "Ehlers Reflex Indicator (REFLEX)",
+      "category": "Oscillators",
+      "license": "MIT",
+      "sha256": "fdbf45594a2a57e714be0e2b0d698769c1de88fef32a6f7920f9cf0f379b5262"
+    },
+    {
+      "path": "indicators/MIT/oa-regchannel.js",
+      "file": "oa-regchannel.js",
+      "id": "oa-regchannel",
+      "name": "Regression Channels (REGCHANNEL)",
+      "category": "Channels",
+      "license": "MIT",
+      "sha256": "6058898595aeda344cdcc94c3ea44666d00417254b16a1402161a268c93a0489"
+    },
+    {
+      "path": "indicators/MIT/oa-relu.js",
+      "file": "oa-relu.js",
+      "id": "oa-relu",
+      "name": "Rectified Linear Unit (ReLU)",
+      "category": "Numerics",
+      "license": "MIT",
+      "sha256": "2c84dbbff7c8d14703d7bbf818ca302b6dc8b7144efd9c3a64d598ffd053d581"
+    },
+    {
+      "path": "indicators/MIT/oa-rema.js",
+      "file": "oa-rema.js",
+      "id": "oa-rema",
+      "name": "Regularized EMA (REMA)",
+      "category": "Trends IIR",
+      "license": "MIT",
+      "sha256": "a48663c56e0a1f535ba773eb6c1bbf0713e33a52db6475df73b1732b132cba25"
+    },
+    {
+      "path": "indicators/MIT/oa-reverseema.js",
+      "file": "oa-reverseema.js",
+      "id": "oa-reverseema",
+      "name": "Ehlers Reverse EMA (REVERSEEMA)",
+      "category": "Oscillators",
+      "license": "MIT",
+      "sha256": "2e1f38c0a5e851528efa61aa660e2aade8f910743484169f15e5c0c2cbddf66d"
+    },
+    {
+      "path": "indicators/MIT/oa-rgma.js",
+      "file": "oa-rgma.js",
+      "id": "oa-rgma",
+      "name": "Recursive Gaussian Moving Average (RGMA)",
+      "category": "Trends IIR",
+      "license": "MIT",
+      "sha256": "30383cd84d9ca7d716b2584d666da3751f4c0d4cde2b0bd4371d310cd4198fbb"
+    },
+    {
+      "path": "indicators/MIT/oa-rls.js",
+      "file": "oa-rls.js",
+      "id": "oa-rls",
+      "name": "Recursive Least Squares Adaptive Filter (RLS)",
+      "category": "Filters",
+      "license": "MIT",
+      "sha256": "a141588d9e5cf11742828757a22744cf44475b2f2f5f35e70c716fda8b9257ed"
+    },
+    {
+      "path": "indicators/MIT/oa-rma.js",
+      "file": "oa-rma.js",
+      "id": "oa-rma",
+      "name": "Wilder's Moving Average (RMA)",
+      "category": "Trends IIR",
+      "license": "MIT",
+      "sha256": "bb94a316ae7990bcd06c2edc0fee5be8346f62bebc272456c23fe5d2d82f0198"
+    },
+    {
+      "path": "indicators/MIT/oa-rmed.js",
+      "file": "oa-rmed.js",
+      "id": "oa-rmed",
+      "name": "Ehlers Recursive Median Filter (RMED)",
+      "category": "Filters",
+      "license": "MIT",
+      "sha256": "2a3a1756683874081b934be36a606a47e9960137d555ff611d87f0b98caf98ec"
+    },
+    {
+      "path": "indicators/MIT/oa-rmse.js",
+      "file": "oa-rmse.js",
+      "id": "oa-rmse",
+      "name": "Root Mean Squared Error (RMSE)",
+      "category": "Errors",
+      "license": "MIT",
+      "sha256": "e0cb3d93845812d6704b2a7525d2e35f7347eba53a031192413100806a893809"
+    },
+    {
+      "path": "indicators/MIT/oa-rmsle.js",
+      "file": "oa-rmsle.js",
+      "id": "oa-rmsle",
+      "name": "Root Mean Squared Logarithmic Error (RMSLE)",
+      "category": "Errors",
+      "license": "MIT",
+      "sha256": "351e7e8700b02eb71e21445e47842c63d1d656a1bbb50faf8048217c7033ed43"
+    },
+    {
+      "path": "indicators/MIT/oa-roc.js",
+      "file": "oa-roc.js",
+      "id": "oa-roc",
+      "name": "Rate of Change (ROC)",
+      "category": "Momentum",
+      "license": "MIT",
+      "sha256": "92efae27cbe0d37a60d8ad90b5f90a00c3cb9bb569dc66d42ec602542b64cc9f"
+    },
+    {
+      "path": "indicators/MIT/oa-rocp.js",
+      "file": "oa-rocp.js",
+      "id": "oa-rocp",
+      "name": "Rate of Change Percentage (ROCP)",
+      "category": "Momentum",
+      "license": "MIT",
+      "sha256": "d43fe7441a34faba0e689429050c5b86d424f84b8d81e21b6c387075f697013c"
+    },
+    {
+      "path": "indicators/MIT/oa-rocr.js",
+      "file": "oa-rocr.js",
+      "id": "oa-rocr",
+      "name": "Rate of Change Ratio (ROCR)",
+      "category": "Momentum",
+      "license": "MIT",
+      "sha256": "a3b22023e4bed5aacb517a93bc9cf6e4d4167449fc989c529360ae5400aaa841"
+    },
+    {
+      "path": "indicators/MIT/oa-roofing.js",
+      "file": "oa-roofing.js",
+      "id": "oa-roofing",
+      "name": "Ehlers Roofing Filter (ROOFING)",
+      "category": "Filters",
+      "license": "MIT",
+      "sha256": "8c98574595903e65f8571d2ed1bc7c014f8a4f1b17709d68173632789908479a"
+    },
+    {
+      "path": "indicators/MIT/oa-rse.js",
+      "file": "oa-rse.js",
+      "id": "oa-rse",
+      "name": "Relative Squared Error (RSE)",
+      "category": "Errors",
+      "license": "MIT",
+      "sha256": "ad218ec25819741a8574fcf9cba3f6c3a067e52f88f411a5d0007905dda1d161"
+    },
+    {
+      "path": "indicators/MIT/oa-rsi.js",
+      "file": "oa-rsi.js",
+      "id": "oa-rsi",
+      "name": "Relative Strength Index (RSI)",
+      "category": "Momentum",
+      "license": "MIT",
+      "sha256": "fbf43d1872d85d65037c03cb9dfb4c8689382afd000600e92dc693154fa5f45d"
+    },
+    {
+      "path": "indicators/MIT/oa-rsquared.js",
+      "file": "oa-rsquared.js",
+      "id": "oa-rsquared",
+      "name": "R² Coefficient of Determination (RSQUARED)",
+      "category": "Errors",
+      "license": "MIT",
+      "sha256": "c6f0d73bd8dbca839dbdff25b4c368b7c9e6cc896b907a4951e8f130b56c4e32"
+    },
+    {
+      "path": "indicators/MIT/oa-rsv.js",
+      "file": "oa-rsv.js",
+      "id": "oa-rsv",
+      "name": "Rogers-Satchell Volatility (RSV)",
+      "category": "Volatility",
+      "license": "MIT",
+      "sha256": "3c00b12ddebcf8fa825f5e12fa01e8a82818b420ec369e15d00dc32f298612ab"
+    },
+    {
+      "path": "indicators/MIT/oa-rsx.js",
+      "file": "oa-rsx.js",
+      "id": "oa-rsx",
+      "name": "Relative Strength Xtra (RSX)",
+      "category": "Momentum",
+      "license": "MIT",
+      "sha256": "bf32c807b9f2254275c2793f88e6d6418b032e99d7763f9c874f2330907b3aae"
+    },
+    {
+      "path": "indicators/MIT/oa-rv.js",
+      "file": "oa-rv.js",
+      "id": "oa-rv",
+      "name": "Realized Volatility (RV)",
+      "category": "Volatility",
+      "license": "MIT",
+      "sha256": "275d8e5ed2ccac836db120c2887aa9cab603b30926c30f817498429fecde441d"
+    },
+    {
+      "path": "indicators/MIT/oa-rvgi.js",
+      "file": "oa-rvgi.js",
+      "id": "oa-rvgi",
+      "name": "Relative Vigor Index (RVGI)",
+      "category": "Oscillators",
+      "license": "MIT",
+      "sha256": "ded8f838778c35dbe24e3644a9f1e021aedaa4acc28ab458dd275fbda76c5425"
+    },
+    {
+      "path": "indicators/MIT/oa-rvi.js",
+      "file": "oa-rvi.js",
+      "id": "oa-rvi",
+      "name": "Relative Volatility Index (RVI)",
+      "category": "Volatility",
+      "license": "MIT",
+      "sha256": "08f10657c9e3ea1a106b8c0825ece7d2a4b9e8b68e3461721edfbbfb038d1d98"
+    },
+    {
+      "path": "indicators/MIT/oa-rwma.js",
+      "file": "oa-rwma.js",
+      "id": "oa-rwma",
+      "name": "RWMA: Range Weighted Moving Average",
+      "category": "Trends FIR",
+      "license": "MIT",
+      "sha256": "5b051d3d7ea57b70ff6eca1accf2e0fa40729e757c136bf354b9a45cc47ec6ba"
+    },
+    {
+      "path": "indicators/MIT/oa-sak.js",
+      "file": "oa-sak.js",
+      "id": "oa-sak",
+      "name": "SAK: Swiss Army Knife Indicator",
+      "category": "Filters",
+      "license": "MIT",
+      "sha256": "dac5d0371112afef580404c1b2270ed26d117e5bbc02a99ee43dff6d3b5efb77"
+    },
+    {
+      "path": "indicators/MIT/oa-sam.js",
+      "file": "oa-sam.js",
+      "id": "oa-sam",
+      "name": "SAM: Smoothed Adaptive Momentum",
+      "category": "Momentum",
+      "license": "MIT",
+      "sha256": "8971932f2fb10bcd3eea56252cd95d18d782677222610bf950c7d40f66941805"
+    },
+    {
+      "path": "indicators/MIT/oa-sdchannel.js",
+      "file": "oa-sdchannel.js",
+      "id": "oa-sdchannel",
+      "name": "Standard Deviation Channel (SDCHANNEL)",
+      "category": "Channels",
+      "license": "MIT",
+      "sha256": "4c58a0c2e09629e1a4a826831caf47664edfded9110ed90c7b0c1d9e05361f71"
+    },
+    {
+      "path": "indicators/MIT/oa-sgf.js",
+      "file": "oa-sgf.js",
+      "id": "oa-sgf",
+      "name": "Savitzky-Golay Filter (SGF)",
+      "category": "Filters",
+      "license": "MIT",
+      "sha256": "1929ccc901d28c1f66e9267eed01eede3600882b7a9b543835f0cce1f1518aea"
+    },
+    {
+      "path": "indicators/MIT/oa-sgma.js",
+      "file": "oa-sgma.js",
+      "id": "oa-sgma",
+      "name": "Savitzky-Golay Moving Average (SGMA)",
+      "category": "Trends FIR",
+      "license": "MIT",
+      "sha256": "d6e7b603f43b3e50fdb2e912a025fd290dd10066d239b6ab3291774766590741"
+    },
+    {
+      "path": "indicators/MIT/oa-sigmoid.js",
+      "file": "oa-sigmoid.js",
+      "id": "oa-sigmoid",
+      "name": "Logistic Function (SIGMOID)",
+      "category": "Numerics",
+      "license": "MIT",
+      "sha256": "d61459960acdfee651de56557a56d40d7cd61642841a0b1e540e652555d7589f"
+    },
+    {
+      "path": "indicators/MIT/oa-sine.js",
+      "file": "oa-sine.js",
+      "id": "oa-sine",
+      "name": "Ehlers Sine Wave (SINE)",
+      "category": "Cycles",
+      "license": "MIT",
+      "sha256": "d6b74d1a85801f6f0d3c5724000a621fa1cb5af73033be6997550cbe9ab73df7"
+    },
+    {
+      "path": "indicators/MIT/oa-sinema.js",
+      "file": "oa-sinema.js",
+      "id": "oa-sinema",
+      "name": "Sine-weighted Moving Average (SINEMA)",
+      "category": "Trends FIR",
+      "license": "MIT",
+      "sha256": "43caafc2a50f1254b13fa198aca044b79a6187d0a79d563a5f223ce230da7609"
+    },
+    {
+      "path": "indicators/MIT/oa-skew.js",
+      "file": "oa-skew.js",
+      "id": "oa-skew",
+      "name": "Skewness (SKEW)",
+      "category": "Statistics",
+      "license": "MIT",
+      "sha256": "94259f09d3ed1099f37e363a770086b88fdedd212d1f4896f57d2504c4bf7203"
+    },
+    {
+      "path": "indicators/MIT/oa-slope.js",
+      "file": "oa-slope.js",
+      "id": "oa-slope",
+      "name": "Slope, Linear Regression (SLOPE)",
+      "category": "Numerics",
+      "license": "MIT",
+      "sha256": "38d139163e3570c1ed774872b11e1721dda7d3370b391bf935f7b5fcd227ec10"
+    },
+    {
+      "path": "indicators/MIT/oa-sma.js",
+      "file": "oa-sma.js",
+      "id": "oa-sma",
+      "name": "Simple Moving Average (SMA)",
+      "category": "Trends FIR",
+      "license": "MIT",
+      "sha256": "2339d126c829ae9c1f1c8469ee3b33a47ea88aff1b12632298cc96310c0e36da"
+    },
+    {
+      "path": "indicators/MIT/oa-smape.js",
+      "file": "oa-smape.js",
+      "id": "oa-smape",
+      "name": "Symmetric Mean Absolute %Error (SMAPE)",
+      "category": "Errors",
+      "license": "MIT",
+      "sha256": "11ead01394ed79370f4ac3058abaa2111696b56f763c6a2c30aeca0046c18742"
+    },
+    {
+      "path": "indicators/MIT/oa-smi.js",
+      "file": "oa-smi.js",
+      "id": "oa-smi",
+      "name": "Stochastic Momentum Index (SMI)",
+      "category": "Oscillators",
+      "license": "MIT",
+      "sha256": "bc0ccddd935519e1766ac7c13e3db3678bc965ef48876bc9780e130c93311a7e"
+    },
+    {
+      "path": "indicators/MIT/oa-solar.js",
+      "file": "oa-solar.js",
+      "id": "oa-solar",
+      "name": "Solar Cycle (SOLAR)",
+      "category": "Cycles",
+      "license": "MIT",
+      "sha256": "fca33462dc47580efcc5be4d98dc3b079b59e4336e7ad55900564dc2927c085d"
+    },
+    {
+      "path": "indicators/MIT/oa-sp15.js",
+      "file": "oa-sp15.js",
+      "id": "oa-sp15",
+      "name": "SP15: Spencer 15-Point Moving Average",
+      "category": "Trends FIR",
+      "license": "MIT",
+      "sha256": "eb8dfee6f4a3f9860ac76609e03f5a718a862edd7df5dfb3ea7d6f7735d0cc06"
+    },
+    {
+      "path": "indicators/MIT/oa-spbf.js",
+      "file": "oa-spbf.js",
+      "id": "oa-spbf",
+      "name": "Ehlers Super Passband Filter (SPBF)",
+      "category": "Filters",
+      "license": "MIT",
+      "sha256": "9a8919c607df4c0f4eb0a3d65311df237e484c2fe35e4384aae47e3daecaa0b8"
+    },
+    {
+      "path": "indicators/MIT/oa-spearman.js",
+      "file": "oa-spearman.js",
+      "id": "oa-spearman",
+      "name": "Spearman Rank Correlation (SPEARMAN)",
+      "category": "Statistics",
+      "license": "MIT",
+      "sha256": "4e3af38fdd06fd4ecbc876aa10ed687a6b3ed16de96c63cf3b771e9c8a11b289"
+    },
+    {
+      "path": "indicators/MIT/oa-sqrt.js",
+      "file": "oa-sqrt.js",
+      "id": "oa-sqrt",
+      "name": "Square Root Transformation (SQRT)",
+      "category": "Numerics",
+      "license": "MIT",
+      "sha256": "37cf3e9ec14fb50499f78fd7176723ecab62c19f2a708508bcaada0cdba11f14"
+    },
+    {
+      "path": "indicators/MIT/oa-sqrttrans.js",
+      "file": "oa-sqrttrans.js",
+      "id": "oa-sqrttrans",
+      "name": "Square Root Transformation (SQRT)",
+      "category": "Numerics",
+      "license": "MIT",
+      "sha256": "476863b49f80df7dbb857ab1555efc6edddd01a9e0bb3e073c47c09e7424b8b7"
+    },
+    {
+      "path": "indicators/MIT/oa-squeeze.js",
+      "file": "oa-squeeze.js",
+      "id": "oa-squeeze",
+      "name": "Squeeze Momentum (SQUEEZE)",
+      "category": "Oscillators",
+      "license": "MIT",
+      "sha256": "e78bf990fda61fb777ae096e9bb934c7ec5a12531cc44cfd04a757da51efe114"
+    },
+    {
+      "path": "indicators/MIT/oa-ssf.js",
+      "file": "oa-ssf.js",
+      "id": "oa-ssf",
+      "name": "Supersmooth Filter (SSF)",
+      "category": "Filters",
+      "license": "MIT",
+      "sha256": "4b411491338a53874ed3b5fc48ecd391a36c790c415f44f5a170e6949a0b37d5"
+    },
+    {
+      "path": "indicators/MIT/oa-ssf2.js",
+      "file": "oa-ssf2.js",
+      "id": "oa-ssf2",
+      "name": "Ehlers 2-Pole Super Smoother Filter (SSF2)",
+      "category": "Filters",
+      "license": "MIT",
+      "sha256": "36ed9024f1505ee7d5e3efc5ce1f912d009006d6bd1bfeca440a49169da21f7a"
+    },
+    {
+      "path": "indicators/MIT/oa-ssf3.js",
+      "file": "oa-ssf3.js",
+      "id": "oa-ssf3",
+      "name": "Ehlers 3-Pole Super Smoother Filter (SSF3)",
+      "category": "Filters",
+      "license": "MIT",
+      "sha256": "3af54a88c1a271a6f52922014c119079da1efb161e55ca1fa923ffc2127d732d"
+    },
+    {
+      "path": "indicators/MIT/oa-ssfdsp.js",
+      "file": "oa-ssfdsp.js",
+      "id": "oa-ssfdsp",
+      "name": "SSF-Based Detrended Synthetic Price",
+      "category": "Cycles",
+      "license": "MIT",
+      "sha256": "aac328eaccd5cc4260454442cc1b91a5c6ee49434990449022bf4bae89f4dbb8"
+    },
+    {
+      "path": "indicators/MIT/oa-standardize.js",
+      "file": "oa-standardize.js",
+      "id": "oa-standardize",
+      "name": "Standardization (Z-score)",
+      "category": "Numerics",
+      "license": "MIT",
+      "sha256": "46e5ffa2ac9945232780f49fb49293b7f08f7940565393a9981ee7de992db3ef"
+    },
+    {
+      "path": "indicators/MIT/oa-starchannel.js",
+      "file": "oa-starchannel.js",
+      "id": "oa-starchannel",
+      "name": "Stoller Average Range Channel (STARCHANNEL)",
+      "category": "Channels",
+      "license": "MIT",
+      "sha256": "588438a9a98d7dc84c52dab363909e579be94a29882b19df4023a3e810aad80e"
+    },
+    {
+      "path": "indicators/MIT/oa-stbands.js",
+      "file": "oa-stbands.js",
+      "id": "oa-stbands",
+      "name": "Super Trend Bands (STBANDS)",
+      "category": "Channels",
+      "license": "MIT",
+      "sha256": "560ab3b38498b429b9b12a770d414a9c84034ada53f6cc2889f3c82cff170710"
+    },
+    {
+      "path": "indicators/MIT/oa-stc.js",
+      "file": "oa-stc.js",
+      "id": "oa-stc",
+      "name": "Schaff Trend Cycle (STC)",
+      "category": "Oscillators",
+      "license": "MIT",
+      "sha256": "777785905da51cd0a8548afcf80029ea2bc0951eeb499e0888862dfaf6a31094"
+    },
+    {
+      "path": "indicators/MIT/oa-stddev.js",
+      "file": "oa-stddev.js",
+      "id": "oa-stddev",
+      "name": "Standard Deviation (STDDEV)",
+      "category": "Statistics",
+      "license": "MIT",
+      "sha256": "3bd04f5f2996a022ae44a2fdea0c812defef701a2cbbd253bdd547b8f0f08bba"
+    },
+    {
+      "path": "indicators/MIT/oa-stderr.js",
+      "file": "oa-stderr.js",
+      "id": "oa-stderr",
+      "name": "Standard Error of Regression (STDERR)",
+      "category": "Statistics",
+      "license": "MIT",
+      "sha256": "070a58f718249b3cec3e73018826e55073eac47a6a4d8b57975457f4f6b802cb"
+    },
+    {
+      "path": "indicators/MIT/oa-stoch.js",
+      "file": "oa-stoch.js",
+      "id": "oa-stoch",
+      "name": "Stochastic Oscillator (STOCH)",
+      "category": "Oscillators",
+      "license": "MIT",
+      "sha256": "23a9783d69d1288748b3b09a1462ce263a280695b043385d2a3d575cdfb35a68"
+    },
+    {
+      "path": "indicators/MIT/oa-stochf.js",
+      "file": "oa-stochf.js",
+      "id": "oa-stochf",
+      "name": "Stochastic Fast (STOCHF)",
+      "category": "Oscillators",
+      "license": "MIT",
+      "sha256": "0d448ae433cabb14b53c16e75bdd8ee0d78d6cfb4c06dab76d02eaed025b8e19"
+    },
+    {
+      "path": "indicators/MIT/oa-stochrsi.js",
+      "file": "oa-stochrsi.js",
+      "id": "oa-stochrsi",
+      "name": "Stochastic RSI (STOCHRSI)",
+      "category": "Oscillators",
+      "license": "MIT",
+      "sha256": "d16b42708dc36d71bf235912864641a7ad1a5a999563d2e72e8d9c627226ed89"
+    },
+    {
+      "path": "indicators/MIT/oa-sum.js",
+      "file": "oa-sum.js",
+      "id": "oa-sum",
+      "name": "Rolling Sum",
+      "category": "Statistics",
+      "license": "MIT",
+      "sha256": "a65963b392371c2c9e0f7f2269b5be0913828d219ff4d31ea6f1770398bf0edd"
+    },
+    {
+      "path": "indicators/MIT/oa-super.js",
+      "file": "oa-super.js",
+      "id": "oa-super",
+      "name": "SuperTrend",
+      "category": "Dynamics",
+      "license": "MIT",
+      "sha256": "9f4ac04e9e6267e7e9e46874828881d05f7c636f529d41d817b354f6d3c10812"
+    },
+    {
+      "path": "indicators/MIT/oa-swings.js",
+      "file": "oa-swings.js",
+      "id": "oa-swings",
+      "name": "Swing High/Low Detection",
+      "category": "Reversals",
+      "license": "MIT",
+      "sha256": "8c4b79ac09daa57be9764774bdacc2159edffdfd636d3eda442410c1a05bab23"
+    },
+    {
+      "path": "indicators/MIT/oa-swma.js",
+      "file": "oa-swma.js",
+      "id": "oa-swma",
+      "name": "SWMA: Symmetric Weighted Moving Average",
+      "category": "Trends FIR",
+      "license": "MIT",
+      "sha256": "db2b8e21385301549e8ba926b3ad2dec23f8b676e57069d2c777e294b12b9ec5"
+    },
+    {
+      "path": "indicators/MIT/oa-t3.js",
+      "file": "oa-t3.js",
+      "id": "oa-t3",
+      "name": "Tillson T3 Moving Average (T3)",
+      "category": "Trends IIR",
+      "license": "MIT",
+      "sha256": "b05003fcac57d6785f51028b039d787f771046c4be00a339cbe29379fa560a3e"
+    },
+    {
+      "path": "indicators/MIT/oa-tanh.js",
+      "file": "oa-tanh.js",
+      "id": "oa-tanh",
+      "name": "Hyperbolic Tangent (TANH)",
+      "category": "Numerics",
+      "license": "MIT",
+      "sha256": "c81171b9f60cd818ba9da105c6c9b8d1c21ded63eb2e17f5692da7bf97639440"
+    },
+    {
+      "path": "indicators/MIT/oa-td-seq.js",
+      "file": "oa-td-seq.js",
+      "id": "oa-td-seq",
+      "name": "TD Sequential (TD_SEQ)",
+      "category": "Oscillators",
+      "license": "MIT",
+      "sha256": "b96be497cbf40978cd3093d3a349d58650994b3a133a416dac868ba007fb11ee"
+    },
+    {
+      "path": "indicators/MIT/oa-tdist.js",
+      "file": "oa-tdist.js",
+      "id": "oa-tdist",
+      "name": "Student's t-Distribution CDF (TDIST)",
+      "category": "Numerics",
+      "license": "MIT",
+      "sha256": "e1eebb983d70a7bd9ee8322462057e9df370fbabf10abe7345d49bd64ecc5d5e"
+    },
+    {
+      "path": "indicators/MIT/oa-tema.js",
+      "file": "oa-tema.js",
+      "id": "oa-tema",
+      "name": "Triple Exponential Moving Average (TEMA)",
+      "category": "Trends IIR",
+      "license": "MIT",
+      "sha256": "d50aeefe01938043b85920f58a6c6e63368981e1ebe8549b9e66db349f59165f"
+    },
+    {
+      "path": "indicators/MIT/oa-theil.js",
+      "file": "oa-theil.js",
+      "id": "oa-theil",
+      "name": "Theil Index (THEIL)",
+      "category": "Statistics",
+      "license": "MIT",
+      "sha256": "a2e11ac8ea83c2d24ff244db12f004b8c9d7498dcc067c5565dabaa09e843f22"
+    },
+    {
+      "path": "indicators/MIT/oa-theilu.js",
+      "file": "oa-theilu.js",
+      "id": "oa-theilu",
+      "name": "Theil's U Statistic (TheilU)",
+      "category": "Errors",
+      "license": "MIT",
+      "sha256": "9e9a52f3e8b9b779c469616e4ad348761d196c18482c9337d75df43fccbb1578"
+    },
+    {
+      "path": "indicators/MIT/oa-tr.js",
+      "file": "oa-tr.js",
+      "id": "oa-tr",
+      "name": "True Range",
+      "category": "Volatility",
+      "license": "MIT",
+      "sha256": "a5bf9d1bc1a32da80b40b8c257865635a62640971798d27753fda4e883c64b9f"
+    },
+    {
+      "path": "indicators/MIT/oa-trama.js",
+      "file": "oa-trama.js",
+      "id": "oa-trama",
+      "name": "TRAMA: Trend Regularity Adaptive Moving Average",
+      "category": "Trends IIR",
+      "license": "MIT",
+      "sha256": "89f99cfa0aa0f4fa2635b002eaa4e3051f51dd8cf3ec133f3e41647dcd94aef6"
+    },
+    {
+      "path": "indicators/MIT/oa-trendflex.js",
+      "file": "oa-trendflex.js",
+      "id": "oa-trendflex",
+      "name": " Ehlers Trendflex Indicator (TRENDFLEX)",
+      "category": "Oscillators",
+      "license": "MIT",
+      "sha256": "e10f64213afb53af7ea21aa2f611989f9982a24cdb312291b1d8e1c168a355d1"
+    },
+    {
+      "path": "indicators/MIT/oa-trim.js",
+      "file": "oa-trim.js",
+      "id": "oa-trim",
+      "name": "TRIM: Trimmed Mean Moving Average",
+      "category": "Statistics",
+      "license": "MIT",
+      "sha256": "d8f18ff0e4dcc508f2e95fc224ca842f41c92d8cc0304a9d87351d088188fa5b"
+    },
+    {
+      "path": "indicators/MIT/oa-trima.js",
+      "file": "oa-trima.js",
+      "id": "oa-trima",
+      "name": "Triangular Moving Average (TRIMA)",
+      "category": "Trends FIR",
+      "license": "MIT",
+      "sha256": "20fa51204d73a7359e9fac549eff0d240b1e884c37b4141bff31f3209f7e110e"
+    },
+    {
+      "path": "indicators/MIT/oa-trix.js",
+      "file": "oa-trix.js",
+      "id": "oa-trix",
+      "name": "TRIX",
+      "category": "Oscillators",
+      "license": "MIT",
+      "sha256": "d689da985b6533f09ebea31b0a9708199ff5aaaa005291eba6c34f0e91c60c18"
+    },
+    {
+      "path": "indicators/MIT/oa-tsf.js",
+      "file": "oa-tsf.js",
+      "id": "oa-tsf",
+      "name": "Time Series Forecast",
+      "category": "Trends FIR",
+      "license": "MIT",
+      "sha256": "df6e6a2a55731cb7b32fd458da4b8cbfbc4f7fc58fe615e097775b286a0fec4e"
+    },
+    {
+      "path": "indicators/MIT/oa-tsi.js",
+      "file": "oa-tsi.js",
+      "id": "oa-tsi",
+      "name": "True Strength Index (TSI)",
+      "category": "Momentum",
+      "license": "MIT",
+      "sha256": "5d66de6ced21b78b6722053c6e79c94a4bbe8da2e049b6489fe8ae8c190a62e1"
+    },
+    {
+      "path": "indicators/MIT/oa-ttm.js",
+      "file": "oa-ttm.js",
+      "id": "oa-ttm",
+      "name": "TTM Trend",
+      "category": "Dynamics",
+      "license": "MIT",
+      "sha256": "b468aea0c4ae51925e7b0961b7b9462581c434c9a5fc99b5ccaaee0fbceb7281"
+    },
+    {
+      "path": "indicators/MIT/oa-ttmscalper.js",
+      "file": "oa-ttmscalper.js",
+      "id": "oa-ttmscalper",
+      "name": "TTM Scalper Alert",
+      "category": "Reversals",
+      "license": "MIT",
+      "sha256": "dd4716f7fdf5a85d84fc8752865d7e06e087be50a9439272bb3f8c3ab3693b36"
+    },
+    {
+      "path": "indicators/MIT/oa-ttmtrend.js",
+      "file": "oa-ttmtrend.js",
+      "id": "oa-ttmtrend",
+      "name": "TTM Trend",
+      "category": "Dynamics",
+      "license": "MIT",
+      "sha256": "e160e11a092c616a7d6136c6702e48aed18513577efdae94b7060185fa529951"
+    },
+    {
+      "path": "indicators/MIT/oa-tukey-w.js",
+      "file": "oa-tukey-w.js",
+      "id": "oa-tukey-w",
+      "name": "TUKEY_W: Tukey (Tapered Cosine) Window MA",
+      "category": "Trends FIR",
+      "license": "MIT",
+      "sha256": "abf442bd6131c2c259ada929fadaf7a8a19977e56998ceaf7274789d725f31d3"
+    },
+    {
+      "path": "indicators/MIT/oa-tukeybiweight.js",
+      "file": "oa-tukeybiweight.js",
+      "id": "oa-tukeybiweight",
+      "name": "Tukey's Biweight Loss (TukeyBiweight)",
+      "category": "Errors",
+      "license": "MIT",
+      "sha256": "61787f7508300efc289d1be60904cf394eec73331ed0daa3cbc42ae531907334"
+    },
+    {
+      "path": "indicators/MIT/oa-tvi.js",
+      "file": "oa-tvi.js",
+      "id": "oa-tvi",
+      "name": "Trade Volume Index (TVI)",
+      "category": "Volume",
+      "license": "MIT",
+      "sha256": "b61f04340cd637460b033d2c81134641114d0373c0c8ab9fef71d3ec418d0b4a"
+    },
+    {
+      "path": "indicators/MIT/oa-twap.js",
+      "file": "oa-twap.js",
+      "id": "oa-twap",
+      "name": "Time Weighted Average Price (TWAP)",
+      "category": "Volume",
+      "license": "MIT",
+      "sha256": "c8c0c6cca78c9946bfd9e4fc589f17f514fd1fab75a4e5ea9adaded3d06f0dc6"
+    },
+    {
+      "path": "indicators/MIT/oa-typprice.js",
+      "file": "oa-typprice.js",
+      "id": "oa-typprice",
+      "name": "TYPPRICE: Typical Price",
+      "category": "Price Core",
+      "license": "MIT",
+      "sha256": "2be4fd5e417dc7c2c30f4b4260ba5389700afedae681965613d73888493803b0"
+    },
+    {
+      "path": "indicators/MIT/oa-ubands.js",
+      "file": "oa-ubands.js",
+      "id": "oa-ubands",
+      "name": "Ehlers Ultimate Bands (UBANDS)",
+      "category": "Channels",
+      "license": "MIT",
+      "sha256": "8edb1f5f941760251914de2d67b3f4f602ce4b904c7fb121fd4296d14a6621da"
+    },
+    {
+      "path": "indicators/MIT/oa-uchannel.js",
+      "file": "oa-uchannel.js",
+      "id": "oa-uchannel",
+      "name": "Ultimate Channel (UCHANNEL)",
+      "category": "Channels",
+      "license": "MIT",
+      "sha256": "5afe63646faf15964887f70ecd6b0c99470ea6cdae17aa9f31e28b7938e3bb5c"
+    },
+    {
+      "path": "indicators/MIT/oa-ui.js",
+      "file": "oa-ui.js",
+      "id": "oa-ui",
+      "name": "Ulcer Index (UI)",
+      "category": "Volatility",
+      "license": "MIT",
+      "sha256": "ee4ba47d8a363cd8fbb94b410e620390d073cb552a84bdec958c4effab889b8e"
+    },
+    {
+      "path": "indicators/MIT/oa-ultosc.js",
+      "file": "oa-ultosc.js",
+      "id": "oa-ultosc",
+      "name": "Ultimate Oscillator (ULTOSC)",
+      "category": "Oscillators",
+      "license": "MIT",
+      "sha256": "87a8790d694788541979ace08c02efcb421a2c64ace49825c8cb2f94e95281b9"
+    },
+    {
+      "path": "indicators/MIT/oa-usf.js",
+      "file": "oa-usf.js",
+      "id": "oa-usf",
+      "name": "Ultrasmooth Filter (USF)",
+      "category": "Filters",
+      "license": "MIT",
+      "sha256": "6bb66c025f7ddd85380e5ddaed4891444b14320ea7a44f771fac35078133fc5f"
+    },
+    {
+      "path": "indicators/MIT/oa-va.js",
+      "file": "oa-va.js",
+      "id": "oa-va",
+      "name": "Volume Accumulation (VA)",
+      "category": "Volume",
+      "license": "MIT",
+      "sha256": "bc617768735d9d538129dac72ef4a0058ccbbc6094a32485843954993c79f42f"
+    },
+    {
+      "path": "indicators/MIT/oa-vama.js",
+      "file": "oa-vama.js",
+      "id": "oa-vama",
+      "name": "Volatility Adjusted Moving Average (VAMA)",
+      "category": "Trends IIR",
+      "license": "MIT",
+      "sha256": "2de950ab0b7674b54eef4cc1e790ec4a360a674a0ca86026529368bd16cf7d38"
+    },
+    {
+      "path": "indicators/MIT/oa-variance.js",
+      "file": "oa-variance.js",
+      "id": "oa-variance",
+      "name": "Variance, Dispersion or Spread (VARIANCE)",
+      "category": "Statistics",
+      "license": "MIT",
+      "sha256": "05dad542e800e26d1230f1b0847472fc0620b9f3bbba24923f51657d7f051f9e"
+    },
+    {
+      "path": "indicators/MIT/oa-vel.js",
+      "file": "oa-vel.js",
+      "id": "oa-vel",
+      "name": "Velocity (VEL)",
+      "category": "Momentum",
+      "license": "MIT",
+      "sha256": "6c5489f8099bebdf27b5851d59106f454b335c6ae95bdf7b7ad7f042fc930d96"
+    },
+    {
+      "path": "indicators/MIT/oa-vf.js",
+      "file": "oa-vf.js",
+      "id": "oa-vf",
+      "name": "Volume Force (VF)",
+      "category": "Volume",
+      "license": "MIT",
+      "sha256": "b3d2de650d50f5740d3c54219fbf27817f554a59170ba14e7a981c8e339e6294"
+    },
+    {
+      "path": "indicators/MIT/oa-vhf.js",
+      "file": "oa-vhf.js",
+      "id": "oa-vhf",
+      "name": "VHF: Vertical Horizontal Filter",
+      "category": "Dynamics",
+      "license": "MIT",
+      "sha256": "e67c517a7ab952afacef55eecf697877662ac2d67baf4323d7ca5a393dd3a934"
+    },
+    {
+      "path": "indicators/MIT/oa-vidya.js",
+      "file": "oa-vidya.js",
+      "id": "oa-vidya",
+      "name": "Variable Index Dynamic Average (VIDYA)",
+      "category": "Trends IIR",
+      "license": "MIT",
+      "sha256": "5659f47c76c7dca58440462909a264021412f1ef8ab1244e40126371b4ff4624"
+    },
+    {
+      "path": "indicators/MIT/oa-vo.js",
+      "file": "oa-vo.js",
+      "id": "oa-vo",
+      "name": "Volume Oscillator (VO)",
+      "category": "Volume",
+      "license": "MIT",
+      "sha256": "c525176e3f96a06273aef4b433c2973c763240fff5df3a184f402bf87b874ab5"
+    },
+    {
+      "path": "indicators/MIT/oa-vortex.js",
+      "file": "oa-vortex.js",
+      "id": "oa-vortex",
+      "name": "Vortex Indicator",
+      "category": "Dynamics",
+      "license": "MIT",
+      "sha256": "2be234e6230bf070261c59e10b2ed991d740cf4db1efdbbb7f220bb353900c12"
+    },
+    {
+      "path": "indicators/MIT/oa-voss.js",
+      "file": "oa-voss.js",
+      "id": "oa-voss",
+      "name": "Ehlers Voss Predictive Filter (VOSS)",
+      "category": "Filters",
+      "license": "MIT",
+      "sha256": "95e726e48b2f077b771c4122bde3b2c0900f4408235565c7225097ef662b9a4f"
+    },
+    {
+      "path": "indicators/MIT/oa-vov.js",
+      "file": "oa-vov.js",
+      "id": "oa-vov",
+      "name": "Volatility of Volatility (VOV)",
+      "category": "Volatility",
+      "license": "MIT",
+      "sha256": "27d4b37dba724d5498606d02b260b346a7d4d7261ac31f2bcb9c2ec4217dd96d"
+    },
+    {
+      "path": "indicators/MIT/oa-vr.js",
+      "file": "oa-vr.js",
+      "id": "oa-vr",
+      "name": "Volatility Ratio (VR)",
+      "category": "Volatility",
+      "license": "MIT",
+      "sha256": "064c09f4628357cf9395da0a7a7879f5da41ec03f03bdda63c073934379c33ad"
+    },
+    {
+      "path": "indicators/MIT/oa-vroc.js",
+      "file": "oa-vroc.js",
+      "id": "oa-vroc",
+      "name": "Volume Rate of Change (VROC)",
+      "category": "Volume",
+      "license": "MIT",
+      "sha256": "c93e0035f4eb3d5c3b36e34320e850f68a8a57fdfaae9417dc87f560b0ebf548"
+    },
+    {
+      "path": "indicators/MIT/oa-vwad.js",
+      "file": "oa-vwad.js",
+      "id": "oa-vwad",
+      "name": "Volume Weighted Accumulation/Distribution (VWAD)",
+      "category": "Volume",
+      "license": "MIT",
+      "sha256": "633ae2f22f55bdbd1c5f77fdb7833b4fb6e27f948f63a967f728ed728c46fd3a"
+    },
+    {
+      "path": "indicators/MIT/oa-vwap.js",
+      "file": "oa-vwap.js",
+      "id": "oa-vwap",
+      "name": "Volume Weighted Average Price (VWAP)",
+      "category": "Volume",
+      "license": "MIT",
+      "sha256": "52e7a89568bd2e3c4b4d413707988bcb2f5d21ad51bdf87ec823f3c493058516"
+    },
+    {
+      "path": "indicators/MIT/oa-vwapbands.js",
+      "file": "oa-vwapbands.js",
+      "id": "oa-vwapbands",
+      "name": "VWAP Bands (VWAPBANDS)",
+      "category": "Channels",
+      "license": "MIT",
+      "sha256": "12fdd2ea1220d33f4bbeac71c2716e235176453e2faa28ad639b453199099cc7"
+    },
+    {
+      "path": "indicators/MIT/oa-vwapsd.js",
+      "file": "oa-vwapsd.js",
+      "id": "oa-vwapsd",
+      "name": "VWAP with Standard Deviation Bands",
+      "category": "Channels",
+      "license": "MIT",
+      "sha256": "457eb4c85434ef06bd567bc35dffd880bcab65843ec02e145286e222ae466453"
+    },
+    {
+      "path": "indicators/MIT/oa-vwma.js",
+      "file": "oa-vwma.js",
+      "id": "oa-vwma",
+      "name": "Volume Weighted Moving Average (VWMA)",
+      "category": "Volume",
+      "license": "MIT",
+      "sha256": "f71379dbe8433171294a1d1e84de7d1ad47ff5144ed4b9c97647a9c616a4b3eb"
+    },
+    {
+      "path": "indicators/MIT/oa-wad.js",
+      "file": "oa-wad.js",
+      "id": "oa-wad",
+      "name": "Williams Accumulation/Distribution (WAD)",
+      "category": "Volume",
+      "license": "MIT",
+      "sha256": "c92840a61d2472fe27c8c77d1fb080c19e240a282be1811f147d5a2fbb450e62"
+    },
+    {
+      "path": "indicators/MIT/oa-wavelet.js",
+      "file": "oa-wavelet.js",
+      "id": "oa-wavelet",
+      "name": "Wavelet Denoising Filter (WAVELET)",
+      "category": "Filters",
+      "license": "MIT",
+      "sha256": "29e039b2afda6c939a1e92ea15f5ff0319dafec42606ce9aef926fdaad8c8b5a"
+    },
+    {
+      "path": "indicators/MIT/oa-wavg.js",
+      "file": "oa-wavg.js",
+      "id": "oa-wavg",
+      "name": "Weighted Average (WAVG)",
+      "category": "Statistics",
+      "license": "MIT",
+      "sha256": "4d310681fc7aa48f0c55633decf945730f0aa0a58cae5857b0478db10e6babf2"
+    },
+    {
+      "path": "indicators/MIT/oa-wclprice.js",
+      "file": "oa-wclprice.js",
+      "id": "oa-wclprice",
+      "name": "WCLPRICE: Weighted Close Price",
+      "category": "Price Core",
+      "license": "MIT",
+      "sha256": "945309b3846cc8eb58553dae7a5407a80296f61167d38837c37b30d99b15c0de"
+    },
+    {
+      "path": "indicators/MIT/oa-weibulldist.js",
+      "file": "oa-weibulldist.js",
+      "id": "oa-weibulldist",
+      "name": "Weibull Distribution CDF (WEIBULLDIST)",
+      "category": "Numerics",
+      "license": "MIT",
+      "sha256": "3d3b049f6f7f99a3af1a2d6eb4003a1643db638e07bd95881958ffc6d72dda4e"
+    },
+    {
+      "path": "indicators/MIT/oa-wiener.js",
+      "file": "oa-wiener.js",
+      "id": "oa-wiener",
+      "name": "Wiener Filter (WIENER)",
+      "category": "Filters",
+      "license": "MIT",
+      "sha256": "b926a5f3245a39b13220ee005d79c397001ae9a9d2caac69ef2efb087a7acada"
+    },
+    {
+      "path": "indicators/MIT/oa-willr.js",
+      "file": "oa-willr.js",
+      "id": "oa-willr",
+      "name": "Williams %R (WILLR)",
+      "category": "Oscillators",
+      "license": "MIT",
+      "sha256": "4a71faf40b09b690e1a33dfed45439d81a685531af349b945ce1f084ee3a3bec"
+    },
+    {
+      "path": "indicators/MIT/oa-wins.js",
+      "file": "oa-wins.js",
+      "id": "oa-wins",
+      "name": "WINS: Winsorized Mean Moving Average",
+      "category": "Statistics",
+      "license": "MIT",
+      "sha256": "562e6895b40c787f004a8c390d12ea90f1cf4fa0f4c9d75a6170e5e0d26f2734"
+    },
+    {
+      "path": "indicators/MIT/oa-wma.js",
+      "file": "oa-wma.js",
+      "id": "oa-wma",
+      "name": "Weighted Moving Average (WMA)",
+      "category": "Trends FIR",
+      "license": "MIT",
+      "sha256": "9805dc45ebb634a14bcf26d310b33feec1d18612e7ef9a1826251eed2f994395"
+    },
+    {
+      "path": "indicators/MIT/oa-wmape.js",
+      "file": "oa-wmape.js",
+      "id": "oa-wmape",
+      "name": "Weighted Mean Absolute Percentage Error",
+      "category": "Errors",
+      "license": "MIT",
+      "sha256": "e3b48818496da24367df6dd6e46c959d2984c63e5f4df0c76e28a8dc99e8766b"
+    },
+    {
+      "path": "indicators/MIT/oa-wrmse.js",
+      "file": "oa-wrmse.js",
+      "id": "oa-wrmse",
+      "name": "Weighted Root Mean Squared Error",
+      "category": "Errors",
+      "license": "MIT",
+      "sha256": "df37722070e86bb8b2d714ca375991c0d2038c0d2fd7accf7462b4e88b29a195"
+    },
+    {
+      "path": "indicators/MIT/oa-yzv.js",
+      "file": "oa-yzv.js",
+      "id": "oa-yzv",
+      "name": "Yang-Zhang Volatility (YZV)",
+      "category": "Volatility",
+      "license": "MIT",
+      "sha256": "96f550820ee2d5ebb7d4d1fadf1926196e20332e73583e224d291ad89837f72f"
+    },
+    {
+      "path": "indicators/MIT/oa-yzvama.js",
+      "file": "oa-yzvama.js",
+      "id": "oa-yzvama",
+      "name": "Yang-Zhang Volatility Adjusted Moving Average (YZVAMA)",
+      "category": "Trends IIR",
+      "license": "MIT",
+      "sha256": "9f8ab4d40f6b1ef69575c64457b0f00d72cfed3e5f20d79ae1a4387af02ff229"
+    },
+    {
+      "path": "indicators/MIT/oa-zldema.js",
+      "file": "oa-zldema.js",
+      "id": "oa-zldema",
+      "name": "Zero-Lag Double EMA (ZLDEMA)",
+      "category": "Trends IIR",
+      "license": "MIT",
+      "sha256": "309e654f4ff5ab9aa499841bd73c2174c211590ca34bfec9665fb8c66d4b487a"
+    },
+    {
+      "path": "indicators/MIT/oa-zlema.js",
+      "file": "oa-zlema.js",
+      "id": "oa-zlema",
+      "name": "Zero-Lag EMA (ZLEMA)",
+      "category": "Trends IIR",
+      "license": "MIT",
+      "sha256": "2a15fb462cd0106f9fda07326c4e055330811b7fd04651ee17911c077fc5aafb"
+    },
+    {
+      "path": "indicators/MIT/oa-zltema.js",
+      "file": "oa-zltema.js",
+      "id": "oa-zltema",
+      "name": "Zero-Lag Triple EMA (ZLTEMA)",
+      "category": "Trends IIR",
+      "license": "MIT",
+      "sha256": "8f9e40c52f23c824143116d3acf231e6580dc4350961d261fda4c2278f91aee3"
+    },
+    {
+      "path": "indicators/MIT/oa-zscore.js",
+      "file": "oa-zscore.js",
+      "id": "oa-zscore",
+      "name": "Z-Score (ZSCORE)",
+      "category": "Statistics",
+      "license": "MIT",
+      "sha256": "d109dbc648403ff26f32f94eb702baa17ba81d831dd1ec2cbc37e79cc03bbec9"
+    },
+    {
+      "path": "indicators/MIT/oa-ztest.js",
+      "file": "oa-ztest.js",
+      "id": "oa-ztest",
+      "name": "One-Sample t-Test (ZTEST)",
+      "category": "Statistics",
+      "license": "MIT",
+      "sha256": "d7505533544da3dfa82745e32789040b69ea396b1f8490b1eabb7feb0eb81816"
+    },
+    {
+      "path": "indicators/MPL-2.0/oa-ict-displacement-candles-scanner.js",
+      "file": "oa-ict-displacement-candles-scanner.js",
+      "id": "oa-ict-displacement-candles-scanner",
+      "name": "ICT Displacement Candles Scanner",
+      "category": "ICT",
+      "license": "MPL-2.0",
+      "sha256": "cd4190b25c11c5c557a09ede26fb786606c025c9101cd30cfa964a344484db2b"
+    },
+    {
+      "path": "indicators/MPL-2.0/oa-ict-displacement-candles.js",
+      "file": "oa-ict-displacement-candles.js",
+      "id": "oa-ict-displacement-candles",
+      "name": "ICT Displacement Candles Indicator",
+      "category": "ICT",
+      "license": "MPL-2.0",
+      "sha256": "7e47c10fad0eecce86c284890e841a84efe507468abe527f9c910d18edc9a398"
+    },
+    {
+      "path": "indicators/MPL-2.0/oa-ict-equal-highs-and-lows-indicator.js",
+      "file": "oa-ict-equal-highs-and-lows-indicator.js",
+      "id": "oa-ict-equal-highs-and-lows-indicator",
+      "name": "ICT Equal Highs and Lows",
+      "category": "ICT",
+      "license": "MPL-2.0",
+      "sha256": "08236d2dbae79fa8c966ff2647d942eddfea96d86bbc1689bb42f1dad36d5284"
+    },
+    {
+      "path": "indicators/MPL-2.0/oa-ict-equal-highs-and-lows-with-screener.js",
+      "file": "oa-ict-equal-highs-and-lows-with-screener.js",
+      "id": "oa-ict-equal-highs-and-lows-with-screener",
+      "name": "ICT Equal Highs and Lows with Screener",
+      "category": "ICT",
+      "license": "MPL-2.0",
+      "sha256": "fd40c28248fa171b43f5b4f86614634c2467b54efc57203e19339bcfae725742"
+    },
+    {
+      "path": "indicators/MPL-2.0/oa-ict-external-range-liquidity-static-multi-timeframe-swing-hi.js",
+      "file": "oa-ict-external-range-liquidity-static-multi-timeframe-swing-hi.js",
+      "id": "oa-ict-external-range-liquidity-static-multi-timeframe-swing-hi",
+      "name": "ICT External Range Liquidity Static Multi-timeframe (Swing High and Low)",
+      "category": "ICT",
+      "license": "MPL-2.0",
+      "sha256": "7c78ce66479e5d7810d0d5cc668fe1d0a554d90a1c956660ccaddd818d353a9d"
+    },
+    {
+      "path": "indicators/MPL-2.0/oa-ict-fair-value-gap-fvg-scanner.js",
+      "file": "oa-ict-fair-value-gap-fvg-scanner.js",
+      "id": "oa-ict-fair-value-gap-fvg-scanner",
+      "name": "ICT Fair Value Gap (FVG) Scanner v2",
+      "category": "ICT",
+      "license": "MPL-2.0",
+      "sha256": "01c78d4161e569fd6e89f1a8b1d009022d2f9c5764e24eb9b17ec22bb6e1093d"
+    },
+    {
+      "path": "indicators/MPL-2.0/oa-ict-liquidity-sweep-pattern-scanner.js",
+      "file": "oa-ict-liquidity-sweep-pattern-scanner.js",
+      "id": "oa-ict-liquidity-sweep-pattern-scanner",
+      "name": "ICT Liquidity Sweep Pattern Scanner",
+      "category": "ICT",
+      "license": "MPL-2.0",
+      "sha256": "c08643efce4a539600566f3c2b17e2874be31fce7133bc8e49b7a69d3b286ce0"
+    },
+    {
+      "path": "indicators/MPL-2.0/oa-ict-liquidity-void-fill-scanner-scanner.js",
+      "file": "oa-ict-liquidity-void-fill-scanner-scanner.js",
+      "id": "oa-ict-liquidity-void-fill-scanner-scanner",
+      "name": "ICT Liquidity Void Fill Scanner",
+      "category": "ICT",
+      "license": "MPL-2.0",
+      "sha256": "8fef02f7d974be94e04868827bf6ab9df7bd77636dabdd64ec9873ce7f5a3743"
+    },
+    {
+      "path": "indicators/MPL-2.0/oa-ict-liquidity-void-fill.js",
+      "file": "oa-ict-liquidity-void-fill.js",
+      "id": "oa-ict-liquidity-void-fill",
+      "name": "ICT Liquidity Void Fill",
+      "category": "ICT",
+      "license": "MPL-2.0",
+      "sha256": "5ec804be0342d1a135fb7946bf24bfb5cfd2f1f5b7e55e47e9f799ef95b268bf"
+    },
+    {
+      "path": "indicators/MPL-2.0/oa-ict-liquidity-void-multi-timeframe.js",
+      "file": "oa-ict-liquidity-void-multi-timeframe.js",
+      "id": "oa-ict-liquidity-void-multi-timeframe",
+      "name": "ICT Liquidity Void Multi-timeframe",
+      "category": "ICT",
+      "license": "MPL-2.0",
+      "sha256": "72521c15f39aa803c607a4feb03b2d7195de54ccccd2c31fee9405bf41fe2131"
+    },
+    {
+      "path": "indicators/MPL-2.0/oa-ict-liquidity-void-screener.js",
+      "file": "oa-ict-liquidity-void-screener.js",
+      "id": "oa-ict-liquidity-void-screener",
+      "name": "ICT Liquidity Void Screener",
+      "category": "ICT",
+      "license": "MPL-2.0",
+      "sha256": "ff68be86f74bdd8d8318877c48e8d29228ecc7ca20830bb087a6a4d86f381918"
+    },
+    {
+      "path": "indicators/MPL-2.0/oa-ict-market-structure-shift-mss-screener.js",
+      "file": "oa-ict-market-structure-shift-mss-screener.js",
+      "id": "oa-ict-market-structure-shift-mss-screener",
+      "name": "ICT Market Structure Shift (MSS) Screener",
+      "category": "ICT",
+      "license": "MPL-2.0",
+      "sha256": "d014c25920e33d92416a35e52e655d36cf4f1e9e58e4bf421c82a466d9b67780"
+    },
+    {
+      "path": "indicators/MPL-2.0/oa-ict-market-structure-shift-mss.js",
+      "file": "oa-ict-market-structure-shift-mss.js",
+      "id": "oa-ict-market-structure-shift-mss",
+      "name": "ICT Market Structure Shift (MSS)",
+      "category": "ICT",
+      "license": "MPL-2.0",
+      "sha256": "4df76d8145a3a2358f1d58b0e9e2a6026e51643dbee4cf59481fc77a97acfd41"
+    },
+    {
+      "path": "indicators/MPL-2.0/oa-ict-mitigation-block-scanner-scanner.js",
+      "file": "oa-ict-mitigation-block-scanner-scanner.js",
+      "id": "oa-ict-mitigation-block-scanner-scanner",
+      "name": "ICT Mitigation Block Scanner",
+      "category": "ICT",
+      "license": "MPL-2.0",
+      "sha256": "9a63f3e1d4582e8602dcda8c315a37f23a04864526879ad64a5958e3578d3c4b"
+    },
+    {
+      "path": "indicators/MPL-2.0/oa-ict-retracement-to-order-block-with-screener.js",
+      "file": "oa-ict-retracement-to-order-block-with-screener.js",
+      "id": "oa-ict-retracement-to-order-block-with-screener",
+      "name": "ICT Retracement to Order Block with Screener",
+      "category": "ICT",
+      "license": "MPL-2.0",
+      "sha256": "7deb7b82ec5fde4454bbb2ba8961fc536aff20c117205551c140593e275246a5"
+    },
+    {
+      "path": "indicators/MPL-2.0/oa-indicator.js",
+      "file": "oa-indicator.js",
+      "id": "oa-indicator",
+      "name": "I2.0 SM Radar",
+      "category": "Custom",
+      "license": "MPL-2.0",
+      "sha256": "b9b8526fcf90e5e6488b9e416def5a1264095486500992efdc9560fa0ce3e766"
+    },
+    {
+      "path": "indicators/MPL-2.0/oa-magnetic-zones---multi-timeframe.js",
+      "file": "oa-magnetic-zones---multi-timeframe.js",
+      "id": "oa-magnetic-zones---multi-timeframe",
+      "name": "Magnetic Zones - Multi Timeframe",
+      "category": "ICT",
+      "license": "MPL-2.0",
+      "sha256": "e0dd3bec2035b1440d31f77ee797e658bd07348d231ea93c1a01fbcd507e8b7e"
+    },
+    {
+      "path": "indicators/MPL-2.0/oa-meridian-futures-context.js",
+      "file": "oa-meridian-futures-context.js",
+      "id": "oa-meridian-futures-context",
+      "name": "Meridian Futures Context",
+      "category": "Meridian",
+      "license": "MPL-2.0",
+      "sha256": "1a6b48e8fab58408df77b71de1563a4798c41366eacbaa5bb11703001ecb1e2d"
+    },
+    {
+      "path": "indicators/MPL-2.0/oa-meridian-futures-levels.js",
+      "file": "oa-meridian-futures-levels.js",
+      "id": "oa-meridian-futures-levels",
+      "name": "Meridian - Futures Levels",
+      "category": "Meridian",
+      "license": "MPL-2.0",
+      "sha256": "b574031551737e90ce29db19d22726cdd80c41bd9eed742437dc933a50a0058c"
+    },
+    {
+      "path": "indicators/MPL-2.0/oa-meridian-futures-profile.js",
+      "file": "oa-meridian-futures-profile.js",
+      "id": "oa-meridian-futures-profile",
+      "name": "Meridian - Futures Profile",
+      "category": "Meridian",
+      "license": "MPL-2.0",
+      "sha256": "a6c4cbc8f7f08e389cd1dcf852dd84695302632f4c30d03229c2081b494d1eb3"
+    },
+    {
+      "path": "indicators/MPL-2.0/oa-meridian-futures-setups-research.js",
+      "file": "oa-meridian-futures-setups-research.js",
+      "id": "oa-meridian-futures-setups-research",
+      "name": "Meridian - Futures Setups Research",
+      "category": "Meridian",
+      "license": "MPL-2.0",
+      "sha256": "5a7297c3a30e147abe5902b3f2c1c6ea73c89fb03ebfc4f677dbed06e75815ae"
+    },
+    {
+      "path": "indicators/MPL-2.0/oa-meridian-futures-setups.js",
+      "file": "oa-meridian-futures-setups.js",
+      "id": "oa-meridian-futures-setups",
+      "name": "Meridian - Futures Setups",
+      "category": "Meridian",
+      "license": "MPL-2.0",
+      "sha256": "c555b32a44aa0649c87767f16df6b1bdfeec74343ab17c2142e73b7b639ba358"
+    },
+    {
+      "path": "indicators/MPL-2.0/oa-meridian-options-context.js",
+      "file": "oa-meridian-options-context.js",
+      "id": "oa-meridian-options-context",
+      "name": "Meridian - Options Context",
+      "category": "Meridian",
+      "license": "MPL-2.0",
+      "sha256": "d58913d7c5353d9445920c3ce6517374c5da1febe6ea1d9a032fc5092066bdec"
+    },
+    {
+      "path": "indicators/MPL-2.0/oa-meridian-options-levels.js",
+      "file": "oa-meridian-options-levels.js",
+      "id": "oa-meridian-options-levels",
+      "name": "Meridian - Options Levels",
+      "category": "Meridian",
+      "license": "MPL-2.0",
+      "sha256": "856ec12780d42854b3ea20ab294aecdaf1d58c3ac23f6b1bf4fd3b3fd1c7a255"
+    },
+    {
+      "path": "indicators/MPL-2.0/oa-momentum-setup---ankush-bajaj-momentum-investing-setup-with-.js",
+      "file": "oa-momentum-setup---ankush-bajaj-momentum-investing-setup-with-.js",
+      "id": "oa-momentum-setup---ankush-bajaj-momentum-investing-setup-with-",
+      "name": "Momentum Setup - Ankush Bajaj Momentum Investing Setup with Scanner",
+      "category": "ICT",
+      "license": "MPL-2.0",
+      "sha256": "bb2a0d80563ec26b7e4c1bd4dcf16dc17cba001fce3bff7292a3da519355bb1b"
+    },
+    {
+      "path": "indicators/MPL-2.0/oa-momentum-setup---ankush-bajaj-momentum-investing-setup.js",
+      "file": "oa-momentum-setup---ankush-bajaj-momentum-investing-setup.js",
+      "id": "oa-momentum-setup---ankush-bajaj-momentum-investing-setup",
+      "name": "Momentum Setup - Ankush Bajaj Momentum Investing Setup",
+      "category": "ICT",
+      "license": "MPL-2.0",
+      "sha256": "1bb950221abcc2cd49817ab5f0fee67d56946b0817fc6086daacf0a367ac0757"
+    },
+    {
+      "path": "indicators/MPL-2.0/oa-momentum-setup---rsi-directional-momentum-scanner.js",
+      "file": "oa-momentum-setup---rsi-directional-momentum-scanner.js",
+      "id": "oa-momentum-setup---rsi-directional-momentum-scanner",
+      "name": "Momentum Setup - RSI Directional Momentum Scanner",
+      "category": "ICT",
+      "license": "MPL-2.0",
+      "sha256": "2249f40faf6468777bd061f737d474075e4a4395160e3ba0796d0f89705a3849"
+    },
+    {
+      "path": "indicators/MPL-2.0/oa-momentum-setup---rsi-directional-momentum.js",
+      "file": "oa-momentum-setup---rsi-directional-momentum.js",
+      "id": "oa-momentum-setup---rsi-directional-momentum",
+      "name": "Momentum Setup - RSI Directional Momentum Indicator",
+      "category": "ICT",
+      "license": "MPL-2.0",
+      "sha256": "372d688d014158fea1c60c3713f55201cc9ceba893d7389987ea9e987c53463f"
+    },
+    {
+      "path": "indicators/MPL-2.0/oa-momentum-setup---vijay-thakare-option-buying-scalping-setup-.js",
+      "file": "oa-momentum-setup---vijay-thakare-option-buying-scalping-setup-.js",
+      "id": "oa-momentum-setup---vijay-thakare-option-buying-scalping-setup-",
+      "name": "Momentum Setup: Vijay Thakare Option Buying Scalping Setup Scanner",
+      "category": "ICT",
+      "license": "MPL-2.0",
+      "sha256": "01442abf1ba12346052473990d02b259c6c8055397adc21272c2bfc5ede94208"
+    },
+    {
+      "path": "indicators/MPL-2.0/oa-momentum-setup---vijay-thakare-option-buying-scalping-setup.js",
+      "file": "oa-momentum-setup---vijay-thakare-option-buying-scalping-setup.js",
+      "id": "oa-momentum-setup---vijay-thakare-option-buying-scalping-setup",
+      "name": "Momentum Setup: Vijay Thakare Option Buying Scalping Setup",
+      "category": "ICT",
+      "license": "MPL-2.0",
+      "sha256": "0ea4804c92e40ac6ca6a88f8ac366b30b5c4f918a03f7be330a1ca2cf7b8a61c"
+    },
+    {
+      "path": "indicators/MPL-2.0/oa-trend-following-setup---sideways-market-skipper-scanner.js",
+      "file": "oa-trend-following-setup---sideways-market-skipper-scanner.js",
+      "id": "oa-trend-following-setup---sideways-market-skipper-scanner",
+      "name": "Trend Following Setup - Sideways Market Skipper Scanner",
+      "category": "ICT",
+      "license": "MPL-2.0",
+      "sha256": "76aab9e553124eb3e665c0bf6e9935f37e35e283376d520fe6c19298d3d0f353"
+    },
+    {
+      "path": "indicators/MPL-2.0/oa-trend-following-setup---sideways-market-skipper.js",
+      "file": "oa-trend-following-setup---sideways-market-skipper.js",
+      "id": "oa-trend-following-setup---sideways-market-skipper",
+      "name": "Trend Following Setup - Sideways Market Skipper",
+      "category": "ICT",
+      "license": "MPL-2.0",
+      "sha256": "5c6254c211dd9871ac6bec707ebcb1dc8855ee3b9c8cced6810d8f7ee7b99007"
+    }
+  ]
+}

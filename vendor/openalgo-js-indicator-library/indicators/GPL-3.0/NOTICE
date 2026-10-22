@@ -1,0 +1,13 @@
+The indicators in this directory are ports of Pine Script studies from
+
+    https://github.com/everget/tradingview-pinescript-indicators
+    Copyright (c) 2018-present Alex Orekhov (everget)
+    Licensed under the GNU General Public License v3.0
+
+A port is a derivative work, so these remain under GPL-3.0. They are NOT
+covered by this repository's MIT licence and cannot be relicensed. The full
+text is in ../../LICENSE-GPL-3.0.txt.
+
+Running them imposes no obligation. Redistributing them, or a work derived
+from them, does: keep the notices, keep the source available, and keep the
+licence.

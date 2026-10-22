@@ -7,6 +7,13 @@ Refresh the chart and it is there.
 Everything you put here is ignored by git, so your indicators stay on your own
 machine and survive `git pull`.
 
+The official 497-study chart library is installed here as runtime files. Its
+pinned sources, licences and attribution are tracked separately under
+`vendor/openalgo-js-indicator-library/`. Restore these copies with
+`node scripts/install_official_indicators.mjs` from the OpenAlgo checkout.
+That command preserves different existing files and the six custom studies
+already shipped with this installation. See `docs/custom-indicators.md`.
+
 ## Only add indicators you have read
 
 A file here is not sandboxed. It runs on the OpenAlgo origin with your logged-in

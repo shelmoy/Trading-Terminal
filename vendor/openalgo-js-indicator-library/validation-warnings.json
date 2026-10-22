@@ -1,0 +1,192 @@
+[
+  {
+    "file": "oa-phasor.js",
+    "warnings": [
+      "oa-phasor: plot 'derivedPeriod' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-phasor: plot 'trendState' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column."
+    ]
+  },
+  {
+    "file": "oa-sigmoid.js",
+    "warnings": [
+      "oa-sigmoid: plot 'sigmoid' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column."
+    ]
+  },
+  {
+    "file": "oa-tanh.js",
+    "warnings": [
+      "oa-tanh: plot 'tanh' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column."
+    ]
+  },
+  {
+    "file": "oa-ict-liquidity-void-fill-scanner-scanner.js",
+    "warnings": [
+      "oa-ict-liquidity-void-fill-scanner-scanner: plot 'bearFibLine' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-ict-liquidity-void-fill-scanner-scanner: plot 'bullFibLine' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column."
+    ]
+  },
+  {
+    "file": "oa-ict-liquidity-void-fill.js",
+    "warnings": [
+      "oa-ict-liquidity-void-fill: plot 'bearFib' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-ict-liquidity-void-fill: plot 'bullFib' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column."
+    ]
+  },
+  {
+    "file": "oa-ict-liquidity-void-screener.js",
+    "warnings": [
+      "oa-ict-liquidity-void-screener: plot 'bearLevel' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-ict-liquidity-void-screener: plot 'bullLevel' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column."
+    ]
+  },
+  {
+    "file": "oa-indicator.js",
+    "warnings": [
+      "oa-indicator: plot 'pwh' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-indicator: plot 'pwl' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-indicator: plot 'pmh' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-indicator: plot 'pml' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column."
+    ]
+  },
+  {
+    "file": "oa-magnetic-zones---multi-timeframe.js",
+    "warnings": [
+      "oa-magnetic-zones---multi-timeframe: plot 'ma1' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-magnetic-zones---multi-timeframe: plot 'ma2' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-magnetic-zones---multi-timeframe: plot 'vwap' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-magnetic-zones---multi-timeframe: plot 'st' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-magnetic-zones---multi-timeframe: plot 'stDir' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column."
+    ]
+  },
+  {
+    "file": "oa-meridian-futures-context.js",
+    "warnings": [
+      "oa-meridian-futures-context: plot 'barRvolPlot' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-meridian-futures-context: plot 'cumRvolPlot' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-meridian-futures-context: plot 'rangeRatioPlot' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column."
+    ]
+  },
+  {
+    "file": "oa-meridian-futures-levels.js",
+    "warnings": [
+      "oa-meridian-futures-levels: plot 'orHigh' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-meridian-futures-levels: plot 'orLow' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-meridian-futures-levels: plot 'orMid' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-meridian-futures-levels: plot 'ibHigh' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-meridian-futures-levels: plot 'ibLow' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-meridian-futures-levels: plot 'ibMid' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-meridian-futures-levels: plot 'onMid' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-meridian-futures-levels: plot 'rthOpen' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-meridian-futures-levels: plot 'vwap' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-meridian-futures-levels: plot 'vu1' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-meridian-futures-levels: plot 'vl1' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-meridian-futures-levels: plot 'vu2' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-meridian-futures-levels: plot 'vl2' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-meridian-futures-levels: plot 'vu3' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-meridian-futures-levels: plot 'vl3' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-meridian-futures-levels: plot 'pwh' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-meridian-futures-levels: plot 'pwl' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-meridian-futures-levels: plot 'fibR1' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-meridian-futures-levels: plot 'fibR2' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-meridian-futures-levels: plot 'fibR3' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-meridian-futures-levels: plot 'fibU1' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-meridian-futures-levels: plot 'fibU2' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-meridian-futures-levels: plot 'fibU3' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-meridian-futures-levels: plot 'fibD1' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-meridian-futures-levels: plot 'fibD2' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-meridian-futures-levels: plot 'fibD3' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column."
+    ]
+  },
+  {
+    "file": "oa-meridian-futures-profile.js",
+    "warnings": [
+      "oa-meridian-futures-profile: plot 'poc' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-meridian-futures-profile: plot 'vah' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-meridian-futures-profile: plot 'val' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-meridian-futures-profile: plot 'mid' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-meridian-futures-profile: plot 'ibh' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-meridian-futures-profile: plot 'ibl' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-meridian-futures-profile: plot 'ibUp1' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-meridian-futures-profile: plot 'ibDn1' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-meridian-futures-profile: plot 'ibUp2' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-meridian-futures-profile: plot 'ibDn2' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-meridian-futures-profile: plot 'prevPoc' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-meridian-futures-profile: plot 'prevVah' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-meridian-futures-profile: plot 'prevVal' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-meridian-futures-profile: plot 'poorHigh' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-meridian-futures-profile: plot 'poorLow' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-meridian-futures-profile: plot 'vpoc' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-meridian-futures-profile: plot 'vvah' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-meridian-futures-profile: plot 'vval' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-meridian-futures-profile: plot 'rthOpen' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-meridian-futures-profile: plot 'rthClose' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column."
+    ]
+  },
+  {
+    "file": "oa-meridian-options-context.js",
+    "warnings": [
+      "oa-meridian-options-context: plot 'rvol' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-meridian-options-context: plot 'rsiMomentum' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-meridian-options-context: plot 'htfComposite' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-meridian-options-context: plot 'legacy' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column."
+    ]
+  },
+  {
+    "file": "oa-meridian-options-levels.js",
+    "warnings": [
+      "oa-meridian-options-levels: plot 'pdh' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-meridian-options-levels: plot 'pdl' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-meridian-options-levels: plot 'pdc' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-meridian-options-levels: plot 'pwh' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-meridian-options-levels: plot 'pwl' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-meridian-options-levels: plot 'pmh' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-meridian-options-levels: plot 'pml' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-meridian-options-levels: plot 'orh' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-meridian-options-levels: plot 'orl' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-meridian-options-levels: plot 'rthOpenPlot' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-meridian-options-levels: plot 'vwapPlot' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-meridian-options-levels: plot 'vwapU1' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-meridian-options-levels: plot 'vwapL1' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-meridian-options-levels: plot 'vwapU2' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-meridian-options-levels: plot 'vwapL2' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-meridian-options-levels: plot 'ema9' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-meridian-options-levels: plot 'ema21' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-meridian-options-levels: plot 'eventAvwapPlot' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-meridian-options-levels: plot 'gapHighPlot' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-meridian-options-levels: plot 'gapLowPlot' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-meridian-options-levels: plot 'gapMidPlot' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-meridian-options-levels: plot 'gapBoundaryPlot' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column."
+    ]
+  },
+  {
+    "file": "oa-momentum-setup---rsi-directional-momentum-scanner.js",
+    "warnings": [
+      "oa-momentum-setup---rsi-directional-momentum-scanner: plot 'level' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column."
+    ]
+  },
+  {
+    "file": "oa-momentum-setup---rsi-directional-momentum.js",
+    "warnings": [
+      "oa-momentum-setup---rsi-directional-momentum: plot 'divLowRsi' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-momentum-setup---rsi-directional-momentum: plot 'divHighRsi' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-momentum-setup---rsi-directional-momentum: plot 'divLowPrice' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-momentum-setup---rsi-directional-momentum: plot 'divHighPrice' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-momentum-setup---rsi-directional-momentum: plot 'breakLineShort' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-momentum-setup---rsi-directional-momentum: plot 'breakLineLong' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-momentum-setup---rsi-directional-momentum: plot 'retLineShort' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column.",
+      "oa-momentum-setup---rsi-directional-momentum: plot 'retLineLong' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column."
+    ]
+  },
+  {
+    "file": "oa-momentum-setup---vijay-thakare-option-buying-scalping-setup-.js",
+    "warnings": [
+      "oa-momentum-setup---vijay-thakare-option-buying-scalping-setup-: plot 'ema4' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column."
+    ]
+  },
+  {
+    "file": "oa-momentum-setup---vijay-thakare-option-buying-scalping-setup.js",
+    "warnings": [
+      "oa-momentum-setup---vijay-thakare-option-buying-scalping-setup: plot 'ema4' is empty across 156 ordinary bars at default settings. Check the lookback, or that calc actually fills this column."
+    ]
+  }
+]

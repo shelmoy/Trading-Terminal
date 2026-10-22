@@ -3,8 +3,35 @@
 Write your own indicators for the `/trading` charting terminal.
 
 Drop a `.js` file into `strategies/indicators/`, open the indicator picker, and
-it is there alongside the 105 built-ins. No build step, no Node.js, no restart of
+it is there alongside the 112 built-ins. No build step, no Node.js, no restart of
 OpenAlgo, no page reload.
+
+## Installed official library
+
+This installation also includes the **497-study official JavaScript chart
+library**, plus its six existing custom studies: **615 picker entries** on
+openalgo-charts 2.6.7. Open **Trading → Indicators → All**, search by name, or
+choose a category. Reopen the picker after installing; a service restart is
+unnecessary. Installing the library does not add every study to the active chart.
+
+The source snapshot and original licence/attribution files are preserved in
+[`vendor/openalgo-js-indicator-library/`](../vendor/openalgo-js-indicator-library/IMPORT.md).
+To restore the runtime copies in either checkout, run from that checkout:
+
+```sh
+node scripts/install_official_indicators.mjs
+```
+
+The installer validates against the installed chart package and refuses to
+overwrite a different existing file or a personal study with a colliding id.
+The per-file hashes and upstream commit are recorded in the vendor manifest.
+Library updates are separate from OpenAlgo platform updates; this is a pinned
+snapshot, not an automatic download of whatever code upstream publishes next.
+
+The separate [OpenScript library](https://openalgo.in/script/library) contains
+502 OpenScript studies. That catalogue uses a different runtime; it is not the
+JavaScript chart library imported here. See the vendor import notes for the
+JavaScript ports' limitations and validator warnings.
 
 ## Only add indicators you have read
 

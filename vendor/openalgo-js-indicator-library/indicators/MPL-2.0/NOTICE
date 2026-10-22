@@ -1,0 +1,15 @@
+The indicators in this directory are ports of Pine Script studies from
+
+    https://github.com/ArunKBhaskar/PineScript     Copyright (c) Arun K Bhaskar
+    https://github.com/sukesan7/meridian-indicators Copyright (c) sukesan7
+    https://github.com/CedInvest/sm-radar-pine      Copyright (c) CedInvest
+
+    all licensed under the Mozilla Public License 2.0
+
+This Source Code Form is subject to the terms of the Mozilla Public License,
+v. 2.0. If a copy of the MPL was not distributed with this file, You can
+obtain one at https://mozilla.org/MPL/2.0/. The full text is also in
+../../LICENSE-MPL-2.0.txt.
+
+MPL-2.0 is file-level copyleft: these files stay MPL-2.0, and so do
+modifications to them. They are NOT covered by this repository's MIT licence.

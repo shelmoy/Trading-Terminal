@@ -1,0 +1,11 @@
+The indicators in this directory are ports of Pine Script studies from
+
+    https://github.com/mihakralj/pinescript
+    Copyright (c) mihakralj
+    Licensed under the MIT License
+
+MIT requires that the copyright notice and the permission notice accompany
+copies and substantial portions of the work. Both are in ../../LICENSE, and
+each file repeats its own source URL and licence in its header.
+
+The ports are Copyright (c) 2026 marketcalls, also MIT.
