@@ -33,6 +33,11 @@ it and must review any replacement library snapshot before installation.
   reports are private `tmp/official-indicator-install.json` files.
 - Existing six custom source hashes are preserved. Previously removed Glass
   Trend and Vela studies are absent from this library.
+- Registering the installed files against the real SDK yields 615 unique chart
+  entries. Both running instances return HTTP 200 for `/faq`; unauthenticated
+  requests for the indicator index and modules correctly return 401. No signed-in
+  Chrome tab was connected to the browser tools, so authenticated picker rendering
+  was not observed. No login cookie or password was obtained to bypass that limit.
 - No application source, SDK pin or frontend bundle changed. The previous
   successful production build remains served; no rebuild, migration or service
   restart was needed. No automated application tests or order actions were run.
