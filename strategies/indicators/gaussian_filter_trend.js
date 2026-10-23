@@ -6,7 +6,8 @@
  * - Adaptive ATR Deadband dynamically scaled by Kaufman's Efficiency Ratio (Kaufman ER + EMA smoothing)
  * - Trailing stepping trendline that filters chop and locks onto directional swings
  * - Presets: Default, Fast Response, Smooth Trend
- * - Electric-blue bullish / luminous-maroon bearish lines with triangle markers at trend flips
+ * - Green bullish / golden-yellow bearish lines, distinct from HalfTrend's blue/red palette
+ * - Medium triangles outside candles and a slightly thicker trend line
  * - Fast Response defaults, with balanced and smooth presets available
  * - Alert triggers without decorative overlays or dashboard tables
  * - Memory & CPU optimized (single-pass arrays, fast math, zero memory leaks)
@@ -18,6 +19,9 @@ export default function ({
   registerIndicator,
   sourceValues,
 }) {
+  const bullColor = '#22c55e'
+  const bearColor = '#facc15'
+
   // True Range calculation on bars
   function calcTR(bars) {
     const n = bars.length
@@ -262,13 +266,13 @@ export default function ({
         key: 'trendLineBull',
         type: 'line',
         title: 'Gaussian Trend Bull',
-        style: { color: '#448aff', lineWidth: 3 },
+        style: { color: bullColor, lineWidth: 4 },
       },
       {
         key: 'trendLineBear',
         type: 'line',
         title: 'Gaussian Trend Bear',
-        style: { color: '#c94f70', lineWidth: 3 },
+        style: { color: bearColor, lineWidth: 4 },
       },
     ],
 
@@ -441,31 +445,33 @@ export default function ({
       const out = []
       const n = bars.length
 
-      const bullColor = '#448aff'
-      const bearColor = '#c94f70'
-
       for (let i = 0; i < n; i++) {
         const sig = values.signals[i]
         if (!sig) continue
 
         const bar = bars[i]
+        // Use candle prices explicitly: aboveBar/belowBar otherwise anchor to
+        // this study's own plot, where HalfTrend's line and labels also sit.
+        const gap = Math.max((bar.high - bar.low) * 0.3, Math.abs(bar.close) * 0.0001)
 
         if (sig === 1) {
-          // One compact triangle below a bullish trend-change candle.
+          // A clear, medium green triangle below the trend-change candle.
           out.push({
             time: bar.time,
-            position: 'belowBar',
+            position: 'atPrice',
+            price: bar.low - gap,
             shape: 'triangleUp',
-            size: 'small',
+            size: 'medium',
             color: bullColor,
           })
         } else if (sig === -1) {
-          // One compact triangle above a bearish trend-change candle.
+          // A clear, medium yellow triangle above the trend-change candle.
           out.push({
             time: bar.time,
-            position: 'aboveBar',
+            position: 'atPrice',
+            price: bar.high + gap,
             shape: 'triangleDown',
-            size: 'small',
+            size: 'medium',
             color: bearColor,
           })
         }
