@@ -7,7 +7,7 @@
  * - Trailing stepping trendline that filters chop and locks onto directional swings
  * - Presets: Default, Fast Response, Smooth Trend
  * - Green bullish / golden-yellow bearish lines, distinct from HalfTrend's blue/red palette
- * - Medium triangles outside candles and a slightly thicker trend line
+ * - Medium triangles outside candles and a thicker dashed trend line
  * - Fast Response defaults, with balanced and smooth presets available
  * - Alert triggers without decorative overlays or dashboard tables
  * - Memory & CPU optimized (single-pass arrays, fast math, zero memory leaks)
@@ -266,13 +266,13 @@ export default function ({
         key: 'trendLineBull',
         type: 'line',
         title: 'Gaussian Trend Bull',
-        style: { color: bullColor, lineWidth: 4 },
+        style: { color: bullColor, lineWidth: 4, lineStyle: 'dashed' },
       },
       {
         key: 'trendLineBear',
         type: 'line',
         title: 'Gaussian Trend Bear',
-        style: { color: bearColor, lineWidth: 4 },
+        style: { color: bearColor, lineWidth: 4, lineStyle: 'dashed' },
       },
     ],
 
