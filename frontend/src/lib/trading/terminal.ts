@@ -114,6 +114,7 @@ import {
   storedComparisonMode,
 } from './comparisonScale'
 import { ExpressionFeed, isChartExpression, resolveLeg } from './expressionFeed'
+import { gaussianStyleUpgrade } from './gaussianStyle'
 import {
   type IndicatorTemplateMode,
   planIndicatorTemplate,
@@ -5067,9 +5068,16 @@ export class TradingTerminal {
   async indicatorDefaultsFor(instanceId: string): Promise<Record<string, unknown> | null> {
     const inst = this.chart?.indicators().find((i) => i.id === instanceId)
     if (!inst) return null
-    const { registeredIndicators, indicatorDefaults } = await import('openalgo-charts')
+    const { registeredIndicators, indicatorDefaults, indicatorStyleInputs } = await import(
+      'openalgo-charts'
+    )
     const d = registeredIndicators().find((x) => x.id === inst.indicatorId)
-    return d ? { ...indicatorDefaults(d) } : null
+    return d
+      ? {
+          ...indicatorDefaults(d),
+          ...Object.fromEntries(indicatorStyleInputs(d).map((field) => [field.key, field.default])),
+        }
+      : null
   }
 
   /**
@@ -5413,6 +5421,19 @@ export class TradingTerminal {
    */
   private syncIndicators(): void {
     if (!this.chart || this.applyingIndicators || this.restoringIndicatorsOn === this.chart) return
+    // Layouts, templates and workspaces retain explicit plot styles. Updating a
+    // descriptor alone cannot replace their old blue/maroon Gaussian lines.
+    // Guard objects:change emitted by setSettings, then persist the upgraded
+    // settings through the same path as an ordinary indicator edit.
+    this.applyingIndicators = true
+    try {
+      for (const study of this.chart.indicators()) {
+        const patch = gaussianStyleUpgrade(study.indicatorId, study.settings())
+        if (patch) study.setSettings(patch)
+      }
+    } finally {
+      this.applyingIndicators = false
+    }
     const next = this.chart.indicators().map((i) => ({
       instanceId: i.id,
       indicatorId: i.indicatorId,
