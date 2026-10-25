@@ -10,6 +10,7 @@ function harness() {
     renderPosition: vi.fn(), makeOrderLine: vi.fn(() => ({ setPrice: vi.fn() })),
     orderLines: new Map(), bookRequest: 0, destroyed: false,
     toast: vi.fn(), fmt: String, pollBook: vi.fn(),
+    tradeMode: () => 'live',
   }
 }
 type Harness = ReturnType<typeof harness>
@@ -19,7 +20,7 @@ const methods = TradingTerminal.prototype as unknown as {
 }
 const event = (exchange = 'NSE', status = 'open') => ({
   orderId: 'ORDER-1', symbol: 'RELIANCE', exchange, status, action: 'BUY',
-  pricetype: 'LIMIT', quantity: 1, price: 100, averagePrice: 100,
+  pricetype: 'LIMIT', quantity: 1, price: 100, averagePrice: 100, mode: 'live',
 })
 
 it('requires the same symbol and exchange, including a missing exchange', () => {
@@ -44,6 +45,22 @@ it('shows the matching exchange and removes the order on a fill', () => {
   expect(pane.orderLines.size).toBe(0)
   expect(pane.chart.removePrimitive).toHaveBeenCalledTimes(1)
   expect(pane.pollBook).toHaveBeenCalledTimes(1)
+})
+
+it('does not mix sandbox order events into a live pane', () => {
+  const pane = harness()
+  methods.handleOrderUpdate.call(pane, { ...event(), mode: 'analyze' })
+  expect(pane.orderLines.size).toBe(0)
+  expect(pane.toast).not.toHaveBeenCalled()
+})
+
+it('does not mix real broker order events into an analyzer pane', () => {
+  const pane = harness()
+  pane.tradeMode = () => 'analyzer'
+  methods.handleOrderUpdate.call(pane, event())
+  expect(pane.orderLines.size).toBe(0)
+  methods.handleOrderUpdate.call(pane, { ...event(), mode: 'analyze' })
+  expect(pane.orderLines.size).toBe(1)
 })
 
 it('filters polled orders by exchange as well as symbol', async () => {
