@@ -2451,6 +2451,8 @@ export class TradingTerminal {
 
   private handleOrderUpdate(e: OrderUpdateEvent) {
     if (!this.sym || !sameOrderInstrument(e, this.sym) || !this.chart) return
+    const eventMode = e.mode === 'analyze' ? 'analyzer' : e.mode
+    if (eventMode && eventMode !== this.tradeMode()) return
     // A broker event is newer than any book snapshot already in flight.
     this.bookRequest++
     const working = e.status === 'open' || e.status === 'trigger pending' || e.status === 'pending'
