@@ -78,6 +78,7 @@ vi.mock('@/lib/trading/terminal', () => ({
     requestRemoveAllDrawings = vi.fn()
     setDrawLatch = vi.fn()
     setInterval = vi.fn((iv: string) => iv)
+    addCustomInterval = vi.fn((iv: string) => this.setInterval(iv))
     // The pane changes interval through the undo-recording path, which sets it.
     chooseInterval = vi.fn((iv: string) => this.setInterval(iv))
     replayPickingBar = () => false
