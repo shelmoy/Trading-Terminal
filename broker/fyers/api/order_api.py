@@ -519,7 +519,9 @@ def cancel_all_orders_api(data, auth):
     if order_book_response.get("s") != "ok":
         error_msg = order_book_response.get("message", "Failed to retrieve order book")
         logger.error(f"Could not fetch order book to cancel all orders: {error_msg}")
-        return [], []
+        raise RuntimeError(error_msg)
+    if not isinstance(order_book_response.get("orderBook"), list):
+        raise RuntimeError("Invalid FYERS order book")
 
     orders_to_cancel = [
         order
@@ -539,11 +541,10 @@ def cancel_all_orders_api(data, auth):
     for order in orders_to_cancel:
         orderid = order.get("id")
         if not orderid:
-            logger.warning(f"Skipping order with no ID: {order}")
-            continue
+            raise RuntimeError("FYERS working order has no ID; cancellation unconfirmed")
 
         cancel_response, status_code = cancel_order(orderid, AUTH_TOKEN)
-        if status_code == 200:
+        if status_code == 200 and cancel_response.get("status") == "success":
             logger.debug(f"Successfully canceled order {orderid}.")
             canceled_orders.append(orderid)
         else:

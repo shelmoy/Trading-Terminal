@@ -59,6 +59,7 @@ import { Switch } from '@/components/ui/switch'
 import { useChartWorkspaceCatalog } from '@/hooks/useChartWorkspaceCatalog'
 import { type PriceableItem, useLivePrice } from '@/hooks/useLivePrice'
 import { useScalperPnlPrices } from '@/hooks/useScalperPnlPrices'
+import { useScalperExitAll } from '@/hooks/useScalperExitAll'
 import { useMarketStatus } from '@/hooks/useMarketStatus'
 import { useMarketData } from '@/hooks/useMarketData'
 import { useOrderEventRefresh } from '@/hooks/useOrderEventRefresh'
@@ -667,6 +668,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
   const [positionSnapshot, setPositionSnapshot] = useState<Position[]>([])
   const [positionSnapshotAt, setPositionSnapshotAt] = useState(0)
   const [orderBusy, setOrderBusy] = useState<Record<string, boolean>>({})
+  const quickOrdersPending = useRef(0)
   const [lastOrderMs, setLastOrderMs] = useState<number | null>(null)
 
   /* ── Shared Drawing Rail state (identical to Trading.tsx) ────────────── */
@@ -2320,6 +2322,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
     delay: 250,
     events: ['order_event', 'analyzer_update', 'close_position_event'],
   })
+  const { exiting, exitAll: handleExitAll, isExiting } = useScalperExitAll(refreshFundsAndPnl)
 
   /* ── Ultra-Fast Order Placement (CE / PE) ────────────────────────────── */
   const executeQuickOrder = useCallback(
@@ -2330,6 +2333,10 @@ function ScalperWorkspace({ account }: { account: string | null }) {
       lots: number,
       customQty: number | null
     ) => {
+      if (isExiting()) {
+        showToast.error('Wait for Exit all to finish before placing another order')
+        return
+      }
       if (!apiKey) {
         showToast.error('API key not ready')
         return
@@ -2363,6 +2370,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
         return
       }
       const busyKey = `${leg}-${action}`
+      quickOrdersPending.current++
       setOrderBusy((prev) => ({ ...prev, [busyKey]: true }))
       const t0 = performance.now()
       try {
@@ -2392,25 +2400,12 @@ function ScalperWorkspace({ account }: { account: string | null }) {
           failure?.response?.data?.message || failure?.message || 'Order execution failed'
         )
       } finally {
+        quickOrdersPending.current--
         setOrderBusy((prev) => ({ ...prev, [busyKey]: false }))
       }
     },
-    [apiKey, product, appMode, refreshFundsAndPnl]
+    [apiKey, product, appMode, refreshFundsAndPnl, isExiting]
   )
-
-  const handleExitAll = useCallback(async () => {
-    if (!apiKey) return
-    setOrderBusy((prev) => ({ ...prev, exitAll: true }))
-    try {
-      await Promise.allSettled([tradingApi.closeAllPositions(), tradingApi.cancelAllOrders()])
-      showToast.success('EXIT ALL executed — all positions & open orders flattened')
-      void refreshFundsAndPnl()
-    } catch (err) {
-      showToast.error(err instanceof Error ? err.message : 'Exit All failed')
-    } finally {
-      setOrderBusy((prev) => ({ ...prev, exitAll: false }))
-    }
-  }, [apiKey, refreshFundsAndPnl])
 
   /* ── Dynamic Grid Layout Calculation ─────────────────────────────────── */
   const activePreset = useMemo((): LayoutPreset => {
@@ -2692,7 +2687,8 @@ function ScalperWorkspace({ account }: { account: string | null }) {
             ? `${broker.toUpperCase()} position ledger with current broker quotes. Open-position totals include partial exits. Before charges.`
             : pnlPrices.note}
           pnlDate={day}
-          exiting={Boolean(orderBusy.exitAll)}
+          exiting={exiting}
+          exitDisabled={isTogglingMode || Object.values(orderBusy).some(Boolean)}
           onNavigationToggle={() => setShowMainNavbar((v) => !v)}
           onUnderlyingSelect={(id) => {
             const choice = UNDERLYINGS.find((u) => u.id === id)
@@ -2709,13 +2705,19 @@ function ScalperWorkspace({ account }: { account: string | null }) {
             setShowDockBar((v) => (dock === view ? !v : true))
           }}
           onOptionChainToggle={() => setPanel((p) => (p === 'options' ? null : 'options'))}
-          onModeToggle={() => void toggleAppMode()}
+          onModeToggle={() => { if (!isExiting()) void toggleAppMode() }}
           onPaneToggle={togglePaneVisibility}
           onLayoutSelect={(layout) => {
             setMaximizedPane(null)
             setLayoutMode(layout)
           }}
-          onExitAll={() => void handleExitAll()}
+          onExitAll={() => {
+            if (quickOrdersPending.current) {
+              showToast.error('Wait for the pending Scalper order response before Exit all')
+              return
+            }
+            void handleExitAll()
+          }}
         />
 
         {/* ═══ MAIN WORKSPACE CONTAINER ═════════════════════════════════════ */}
@@ -3533,7 +3535,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
                 side="CE" action="BUY" apiKey={apiKey}
                 scope={`${account}:${broker}:${appMode}`} sandbox={appMode === 'analyzer'}
                 contract={ceActiveSym} quantity={ceOrderQty} product={product}
-                disabled={orderBusy['CE-BUY']}
+                disabled={exiting || orderBusy['CE-BUY']}
                 onClick={() =>
                   void executeQuickOrder('CE', 'BUY', ceActiveSym, ceLots, ceCustomQty)
                 }
@@ -3670,7 +3672,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
                 side="CE" action="SELL" apiKey={apiKey}
                 scope={`${account}:${broker}:${appMode}`} sandbox={appMode === 'analyzer'}
                 contract={ceActiveSym} quantity={ceOrderQty} product={product}
-                disabled={orderBusy['CE-SELL']}
+                disabled={exiting || orderBusy['CE-SELL']}
                 onClick={() =>
                   void executeQuickOrder('CE', 'SELL', ceActiveSym, ceLots, ceCustomQty)
                 }
@@ -3748,7 +3750,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
                 side="PE" action="BUY" apiKey={apiKey}
                 scope={`${account}:${broker}:${appMode}`} sandbox={appMode === 'analyzer'}
                 contract={peActiveSym} quantity={peOrderQty} product={product}
-                disabled={orderBusy['PE-BUY']}
+                disabled={exiting || orderBusy['PE-BUY']}
                 onClick={() =>
                   void executeQuickOrder('PE', 'BUY', peActiveSym, peLots, peCustomQty)
                 }
@@ -3885,7 +3887,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
                 side="PE" action="SELL" apiKey={apiKey}
                 scope={`${account}:${broker}:${appMode}`} sandbox={appMode === 'analyzer'}
                 contract={peActiveSym} quantity={peOrderQty} product={product}
-                disabled={orderBusy['PE-SELL']}
+                disabled={exiting || orderBusy['PE-SELL']}
                 onClick={() =>
                   void executeQuickOrder('PE', 'SELL', peActiveSym, peLots, peCustomQty)
                 }

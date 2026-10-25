@@ -177,13 +177,25 @@ def close_position_with_auth(
         ))
         return False, error_response, 500
 
-    if status_code == 200:
-        response_data = {"status": "success", "message": "All Open Positions Squared Off"}
+    # HTTP 200 alone is not a broker acknowledgement (FYERS can reject inside
+    # a 200 envelope). Preserve partial results instead of overwriting them.
+    rejected = not isinstance(response_code, dict) or any(
+        str(response_code.get(field, "")).lower().replace("_", "").replace(" ", "")
+        in {"error", "failed", "failure", "rejected", "notok", "false"}
+        for field in ("status", "stat", "s")
+    )
+    failed = isinstance(response_code, dict) and (
+        response_code.get("failed_positions") or response_code.get("failed_count")
+        or response_code.get("failed_closures")
+    )
+    if status_code == 200 and not rejected and not failed:
+        response_data = {**response_code, "status": "success",
+                         "message": "Position exit request accepted. Check the position book for fills."}
         bus.publish(PositionClosedEvent(
             mode="live", api_type=API_TYPE,
             symbol=position_data.get("symbol", ""), exchange=position_data.get("exchange", ""),
             product=position_data.get("product_type", "") or position_data.get("product", ""),
-            orderid="", message="All Open Positions Squared Off",
+            orderid="", message=response_data["message"],
             request_data=position_request_data, response_data=response_data,
             api_key=original_data.get("apikey", ""),
         ))
@@ -194,7 +206,12 @@ def close_position_with_auth(
             if isinstance(response_code, dict)
             else "Failed to close positions"
         )
-        error_response = {"status": "error", "message": message}
+        error_response = {
+            **(response_code if isinstance(response_code, dict) else {}),
+            "status": "error", "message": message,
+        }
+        if not isinstance(status_code, int) or not 400 <= status_code <= 599:
+            status_code = 400 if rejected or failed else 502
         bus.publish(PositionClosedEvent(
             mode="live", api_type=API_TYPE,
             symbol=position_data.get("symbol", ""), exchange=position_data.get("exchange", ""),

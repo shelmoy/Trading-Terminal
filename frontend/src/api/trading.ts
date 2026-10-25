@@ -11,6 +11,7 @@ import type {
   Trade,
 } from '@/types/trading'
 import { apiClient, webClient } from './client'
+import type { ExitResponse } from '@/lib/trading/exitAll'
 
 export interface QuotesData {
   ask: number
@@ -175,10 +176,10 @@ export const tradingApi = {
   /**
    * Get positions
    */
-  getPositions: async (apiKey: string): Promise<ApiResponse<Position[]>> => {
+  getPositions: async (apiKey: string, signal?: AbortSignal): Promise<ApiResponse<Position[]>> => {
     const response = await apiClient.post<ApiResponse<Position[]>>('/positionbook', {
       apikey: apiKey,
-    })
+    }, signal ? { signal, timeout: 8000 } : undefined)
     return response.data
   },
 
@@ -186,13 +187,15 @@ export const tradingApi = {
    * Get order book
    */
   getOrders: async (
-    apiKey: string
+    apiKey: string,
+    signal?: AbortSignal
   ): Promise<ApiResponse<{ orders: Order[]; statistics: OrderStats }>> => {
     const response = await apiClient.post<ApiResponse<{ orders: Order[]; statistics: OrderStats }>>(
       '/orderbook',
       {
         apikey: apiKey,
-      }
+      },
+      signal ? { signal, timeout: 8000 } : undefined
     )
     return response.data
   },
@@ -300,16 +303,16 @@ export const tradingApi = {
   /**
    * Close all positions (uses session auth with CSRF)
    */
-  closeAllPositions: async (): Promise<ApiResponse<void>> => {
-    const response = await webClient.post<ApiResponse<void>>('/close_all_positions', {})
+  closeAllPositions: async (): Promise<ExitResponse> => {
+    const response = await webClient.post<ExitResponse>('/close_all_positions', {}, { timeout: 30000 })
     return response.data
   },
 
   /**
    * Cancel all orders (uses session auth with CSRF)
    */
-  cancelAllOrders: async (): Promise<ApiResponse<void>> => {
-    const response = await webClient.post<ApiResponse<void>>('/cancel_all_orders', {})
+  cancelAllOrders: async (): Promise<ExitResponse> => {
+    const response = await webClient.post<ExitResponse>('/cancel_all_orders', {}, { timeout: 30000 })
     return response.data
   },
 
