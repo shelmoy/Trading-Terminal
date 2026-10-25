@@ -50,6 +50,7 @@ import {
   indicatorDefaults,
   isKnownInterval,
   type LtpEvent,
+  type OrderUpdateEvent,
   type MarketDepth,
   OpenAlgoDataFeed,
   OpenAlgoTradeFeed,
@@ -1158,6 +1159,14 @@ export const STRATEGY = 'chart-trading'
  * repaints under it, must be one order and not two.
  */
 export const ORDER_COOLDOWN_MS = 120
+
+/** A symbol name alone is not an instrument: NSE and BSE can share it. */
+export function sameOrderInstrument(
+  order: { symbol: string; exchange?: string },
+  instrument: { symbol: string; exchange: string }
+): boolean {
+  return order.symbol === instrument.symbol && order.exchange === instrument.exchange
+}
 
 /**
  * The quantity an order carries, in units. The toolbar box means lots on a
@@ -2438,13 +2447,54 @@ export class TradingTerminal {
     )
   }
 
+  private bookRequest = 0
+
+  private handleOrderUpdate(e: OrderUpdateEvent) {
+    if (!this.sym || !sameOrderInstrument(e, this.sym) || !this.chart) return
+    // A broker event is newer than any book snapshot already in flight.
+    this.bookRequest++
+    const working = e.status === 'open' || e.status === 'trigger pending' || e.status === 'pending'
+    const rec = this.orderLines.get(e.orderId)
+    const order: LineOrder = {
+      id: e.orderId,
+      side: e.action,
+      type: e.pricetype as OrderType,
+      qty: e.quantity,
+      price: e.price,
+      triggerPrice: e.triggerPrice,
+      status: working ? 'working' : e.status,
+    }
+    if (working) {
+      if (rec) {
+        rec.order = order
+        rec.line.setPrice(e.triggerPrice ?? e.price)
+      } else this.orderLines.set(e.orderId, { line: this.makeOrderLine(order), order })
+    } else if (rec) {
+      this.chart.removePrimitive(rec.line)
+      this.orderLines.delete(e.orderId)
+    }
+    if (e.status === 'rejected') this.toast(`rejected: ${e.rejectionReason || 'see order book'}`, 'err')
+    if (e.status === 'complete') {
+      this.toast(`filled: ${e.action} ${e.quantity} @ ${this.fmt(e.averagePrice || e.price)}`, 'ok')
+    }
+    if (!working) void this.pollBook()
+  }
+
   private async pollBook() {
     if (!this.trade || !this.sym || !this.chart) return
+    const request = ++this.bookRequest
+    const symbol = this.sym.symbol
+    const exchange = this.sym.exchange
+    const chart = this.chart
+    const trade = this.trade
+    const current = () => !this.destroyed && request === this.bookRequest &&
+      this.chart === chart && this.trade === trade && this.sym?.symbol === symbol && this.sym.exchange === exchange
     try {
       const orders = await this.trade.getOrders() // caches modify context
+      if (!current()) return
       const seen = new Set<string>()
       for (const o of orders) {
-        if (o.status !== 'working' || o.symbol !== this.sym.symbol) continue
+        if (o.status !== 'working' || !sameOrderInstrument(o, this.sym)) continue
         seen.add(o.id)
         const px = o.triggerPrice ?? o.price
         const rec = this.orderLines.get(o.id)
@@ -2468,6 +2518,7 @@ export class TradingTerminal {
     }
     try {
       const j = await this.api<{ data?: Record<string, unknown>[] }>('positionbook')
+      if (!current()) return
       this.renderPosition(
         (j.data || []).find(
           (p) =>
@@ -2619,7 +2670,7 @@ export class TradingTerminal {
     try {
       // Square off with a plain market placeorder (opposite side, position qty) —
       // never placesmartorder.
-      await this.trade.place({
+      const result = await this.trade.place({
         symbol: this.sym.symbol,
         exchange: this.sym.exchange,
         side,
@@ -2628,7 +2679,7 @@ export class TradingTerminal {
         product: (this.position.product || this.product) as 'CNC' | 'NRML' | 'MIS',
         mode: this.tradeMode(),
       })
-      this.toast('position closed', 'ok')
+      this.toast(`exit order accepted (id ${result.orderId})`, 'ok')
       this.pollBook()
     } catch (e) {
       this.toast(this.cleanError(e), 'err')
@@ -8672,38 +8723,7 @@ export class TradingTerminal {
     this.offWsControl = this.ws.onControl((m) => {
       if (m.type === 'auth' && m.status !== 'success') this.cb.onWsState('auth failed')
     })
-    this.offOrderUpdate = this.ws.onOrderUpdate((e) => {
-      if (!this.sym || e.symbol !== this.sym.symbol || !this.chart) return
-      const working =
-        e.status === 'open' || e.status === 'trigger pending' || e.status === 'pending'
-      const rec = this.orderLines.get(e.orderId)
-      const o: LineOrder = {
-        id: e.orderId,
-        side: e.action,
-        type: e.pricetype as OrderType,
-        qty: e.quantity,
-        price: e.price,
-        triggerPrice: e.triggerPrice,
-        status: working ? 'working' : e.status,
-      }
-      if (working) {
-        if (rec) {
-          rec.order = o
-          rec.line.setPrice(e.triggerPrice ?? e.price)
-        } else this.orderLines.set(e.orderId, { line: this.makeOrderLine(o), order: o })
-      } else if (rec) {
-        this.chart.removePrimitive(rec.line)
-        this.orderLines.delete(e.orderId)
-      }
-      if (e.status === 'rejected')
-        this.toast(`rejected: ${e.rejectionReason || 'see order book'}`, 'err')
-      if (e.status === 'complete')
-        this.toast(
-          `filled: ${e.action} ${e.quantity} @ ${this.fmt(e.averagePrice || e.price)}`,
-          'ok'
-        )
-      if (!working) this.pollBook() // fills/cancels move the position book too
-    })
+    this.offOrderUpdate = this.ws.onOrderUpdate((e) => this.handleOrderUpdate(e))
     this.ws.connect()
     this.ws.subscribeOrders()
 

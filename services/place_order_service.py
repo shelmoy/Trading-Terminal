@@ -117,6 +117,30 @@ def validate_order_data(data: dict[str, Any]) -> tuple[bool, dict[str, Any] | No
         return False, None, str(err)
 
 
+def _order_acknowledgement(response, payload, order_id):
+    """HTTP delivery alone is not a broker's acceptance of an order."""
+    status = getattr(response, "status", None) or getattr(response, "status_code", None)
+    body = payload if isinstance(payload, dict) else {}
+    rejected = any(
+        str(body.get(key, "")).lower().replace("_", "").replace(" ", "")
+        in {"error", "failed", "failure", "rejected", "notok", "false"}
+        for key in ("status", "stat", "s")
+    )
+    valid_id = (
+        isinstance(order_id, (str, int))
+        and not isinstance(order_id, bool)
+        and str(order_id).strip().lower() not in {"", "0", "none", "null"}
+    )
+    if status == 200 and valid_id and not rejected:
+        return True, 200, ""
+    message = next(
+        (str(body[key]) for key in ("message", "emsg", "errMsg", "error", "Error Message") if body.get(key)),
+        "Broker did not confirm an order ID. Check the broker order book before retrying.",
+    )
+    code = status if isinstance(status, int) and 400 <= status <= 599 else (400 if rejected else 502)
+    return False, code, message
+
+
 def place_order_with_auth(
     order_data: dict[str, Any],
     auth_token: str,
@@ -258,7 +282,8 @@ def place_order_with_auth(
         )
         return False, error_response, 500
 
-    if res.status == 200:
+    accepted, response_code, message = _order_acknowledgement(res, response_data, order_id)
+    if accepted:
         order_response_data = {"status": "success", "orderid": order_id}
 
         if emit_event:
@@ -282,11 +307,6 @@ def place_order_with_auth(
 
         return True, order_response_data, 200
     else:
-        message = (
-            response_data.get("message", "Failed to place order")
-            if isinstance(response_data, dict)
-            else "Failed to place order"
-        )
         error_response = {"status": "error", "message": message}
         bus.publish(
             OrderFailedEvent(
@@ -300,7 +320,7 @@ def place_order_with_auth(
                 error_message=message,
             )
         )
-        return False, error_response, res.status if res.status != 200 else 500
+        return False, error_response, response_code
 
 
 def place_order(
