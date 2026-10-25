@@ -88,7 +88,7 @@ it('expires a WS quote without requiring a new feed message', async () => {
   expect(result.current.isLive).toBe(false)
 })
 
-it('blocks a prior-account WS map until the new subscription supplies a map', () => {
+it('blocks a prior-account WS map until the new subscription supplies a map', async () => {
   feed.set('NSE:TEST', { data: { ltp: 300 }, lastUpdate: Date.now() })
   const { result, rerender } = renderHook(() => useLiveQuote('TEST', 'NSE', { ...options, useQuotesFallback: false }))
   expect(result.current.data.ltp).toBe(300)
@@ -98,6 +98,7 @@ it('blocks a prior-account WS map until the new subscription supplies a map', ()
   feed = new Map([['NSE:TEST', { data: { ltp: 500 }, lastUpdate: Date.now() }]])
   rerender()
   expect(result.current.data.ltp).toBe(500)
+  await act(async () => {})
 })
 
 it('falls back immediately when the connection drops', async () => {
