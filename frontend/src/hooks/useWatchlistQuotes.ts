@@ -3,6 +3,7 @@ import type { QuotesData } from '@/api/trading'
 import type { PriceableItem } from '@/hooks/useLivePrice'
 import { useMarketStatus } from '@/hooks/useMarketStatus'
 import { previousClose } from '@/lib/trading/previousClose'
+import { quoteSessionScope } from '@/lib/quoteSnapshots'
 
 const SESSION_DATE = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' })
 
@@ -14,6 +15,9 @@ export interface WatchlistQuote {
   high?: number
   low?: number
   open?: number
+  source?: string
+  receivedAt?: number
+  streamLimited?: boolean
 }
 
 /** Broker previous close is authoritative, including a genuinely flat session. */
@@ -30,7 +34,7 @@ export function useWatchlistQuotes(
 ): Record<string, WatchlistQuote> {
   const { isMarketOpen } = useMarketStatus()
   const day = SESSION_DATE.format(new Date())
-  const session = `${scope}:${day}`
+  const session = `${scope}:${quoteSessionScope()}:${day}`
   const [resolved, setResolved] = useState<Record<string, number>>({})
   const resolvedRef = useRef(resolved)
   resolvedRef.current = resolved
@@ -40,7 +44,7 @@ export function useWatchlistQuotes(
   const missing = JSON.stringify(
     prices
       .filter((row) => {
-        const snapshot = snapshots.get(`${row.exchange}:${row.symbol}`)
+        const snapshot = row._quote ?? snapshots.get(`${row.exchange}:${row.symbol}`)
         const ltp = row.ltp ?? snapshot?.ltp
         return (
           typeof ltp === 'number' &&
@@ -70,7 +74,6 @@ export function useWatchlistQuotes(
         if (!alive) break
         // Cache a failure too, so unsupported contracts cannot flood history.
         setResolved((current) => ({ ...current, [key]: value ?? 0 }))
-        await new Promise((resume) => window.setTimeout(resume, 500))
       }
     }, 300)
     return () => {
@@ -83,7 +86,7 @@ export function useWatchlistQuotes(
     const quotes: Record<string, WatchlistQuote> = {}
     for (const row of prices) {
       const key = `${row.exchange}:${row.symbol}`
-      const snapshot = snapshots.get(key)
+      const snapshot = row._quote ?? snapshots.get(key)
       const ltp = row.ltp ?? snapshot?.ltp
       if (typeof ltp !== 'number' || !Number.isFinite(ltp) || ltp === 0) continue
       const close = validClose(snapshot?.prev_close)
@@ -98,6 +101,9 @@ export function useWatchlistQuotes(
         high: snapshot?.high,
         low: snapshot?.low,
         open: snapshot?.open,
+        source: row._dataSource,
+        receivedAt: row._priceReceivedAt,
+        streamLimited: row._streamLimited,
       }
     }
     return quotes

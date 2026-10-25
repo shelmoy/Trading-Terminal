@@ -1717,33 +1717,10 @@ export class TradingTerminal {
     }
   }
 
-  private alertsArmed(): boolean {
-    try {
-      return this.alerts?.list().some((alert) => alert.state === 'armed') ?? false
-    } catch {
-      // A destroyed controller is not an armed alert.
-      return false
-    }
-  }
-
-  /**
-   * A hidden tab stops fetching, unless an alert is waiting on the answer.
-   *
-   * Hiding used to stop the poll and the bar-close repair unconditionally. The
-   * stream keeps running either way, so an alert still evaluated on the ticks
-   * that arrived, but the two refreshes that correct a bar were gone: a closed
-   * bar was never re-fetched, and the default alert policy is exactly the one
-   * that waits for a bar to close. An alert set and then left in a background
-   * tab is the ordinary way to use an alert, and it was the case that worked
-   * least well.
-   *
-   * So the saving is kept for a chart with nothing armed on it, and a chart
-   * with an armed alert stays awake. Comparisons follow the tab either way:
-   * they are drawn, not watched, and nothing fires from them.
-   */
+  /** Keep both broker tabs current. Hidden canvases retain native rAF scheduling. */
   private readonly onVisibilityChange = () => {
     const visible = document.visibilityState !== 'hidden'
-    this.data?.setVisible(visible || this.alertsArmed())
+    this.data?.setVisible(true) // Keep both broker tabs current; the canvas owns frame scheduling.
     this.comparisons?.setVisibleHost(visible)
     if (visible) this.redrawOnFocus()
     else this.flushRenkoV4()

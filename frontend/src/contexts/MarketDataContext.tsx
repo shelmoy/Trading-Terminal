@@ -9,6 +9,8 @@
 
 import { createContext, type ReactNode, useContext, useEffect, useRef, useState } from 'react'
 import { usePageVisibility } from '@/hooks/usePageVisibility'
+import { useAuthStore } from '@/stores/authStore'
+import { MarketDataDiagnostics } from '@/components/trading/MarketDataDiagnostics'
 import {
   type ConnectionState,
   type DataCallback,
@@ -49,7 +51,7 @@ export interface MarketDataProviderProps {
 
 export function MarketDataProvider({
   children,
-  pauseWhenHidden = true,
+  pauseWhenHidden = false,
   pauseDelay = 5000,
 }: MarketDataProviderProps) {
   const managerRef = useRef<MarketDataManager>(MarketDataManager.getInstance())
@@ -69,6 +71,16 @@ export function MarketDataProvider({
 
   const pauseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const wasConnectedRef = useRef(false)
+  useEffect(() => {
+    let previous = useAuthStore.getState()
+    return useAuthStore.subscribe((next) => {
+      if (previous.apiKey !== next.apiKey || previous.user?.broker !== next.user?.broker ||
+          previous.user?.username !== next.user?.username || previous.user?.loginTime !== next.user?.loginTime) {
+        managerRef.current.disconnect(true)
+      }
+      previous = next
+    })
+  }, [])
 
   // Subscribe to state changes from the manager
   useEffect(() => {
@@ -135,7 +147,7 @@ export function MarketDataProvider({
     disconnect: () => managerRef.current.disconnect(),
   }
 
-  return <MarketDataContext.Provider value={value}>{children}</MarketDataContext.Provider>
+  return <MarketDataContext.Provider value={value}>{children}<MarketDataDiagnostics /></MarketDataContext.Provider>
 }
 
 /**

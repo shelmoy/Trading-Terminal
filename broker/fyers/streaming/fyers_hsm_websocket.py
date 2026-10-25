@@ -1231,6 +1231,36 @@ class FyersHSMWebSocket:
             # self.logger.info(f"  {i}. {symbol} => {mapped_symbol}")
         self.logger.debug(f"Total active subscriptions in HSM: {len(self._pending_hsm_symbols)}")
 
+    def unsubscribe_symbols(self, hsm_symbols: list[str]):
+        """Release HSM tokens without reconnecting the other instruments.
+
+        FYERS' official fyers-apiv3 3.2.0 data_ws.__unsubscription_msg uses
+        request type 5 with the same symbols/channel fields as subscription.
+        """
+        if not hsm_symbols:
+            return
+        if self.connected and self.authenticated and self.ws:
+            # FYERS' unsubscribe frame uses the same fields as subscribe but
+            # includes the authenticated HSM key/source in its declared
+            # payload length (the official fyers-apiv3 encoder does this).
+            frame = self._create_subscription_message(hsm_symbols, channel=11)
+            frame[2] = 5
+            frame[0:2] = struct.pack(
+                ">H", 18 + (len(frame) - 6) + len(self.hsm_key or "") + len(self.source)
+            )
+            self.ws.send(frame, opcode=websocket.ABNF.OPCODE_BINARY)
+        removed = set(hsm_symbols)
+        with self.lock:
+            self._pending_hsm_symbols = [s for s in self._pending_hsm_symbols if s not in removed]
+            for token in removed:
+                self.symbol_mappings.pop(token, None)
+            for topic_id, token in list(self.subscriptions.items()):
+                if token in removed:
+                    self.subscriptions.pop(topic_id, None)
+                    self.scrips_data.pop(topic_id, None)
+                    self.index_data.pop(topic_id, None)
+                    self.depth_data.pop(topic_id, None)
+
     def is_connected(self) -> bool:
         """Check if connected and authenticated"""
         return self.connected and self.authenticated
