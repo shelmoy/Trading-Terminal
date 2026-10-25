@@ -1,7 +1,7 @@
 const STYLE_VERSION_KEY = '__oaGaussianStyleVersion'
-const STYLE_VERSION = 2
+const STYLE_VERSION = 3
 
-/** Upgrade each saved Gaussian copy once; subsequent user style edits stay saved. */
+/** Restore only Gaussian colours once; preserve every other saved style/input. */
 export function gaussianStyleUpgrade(
   indicatorId: string,
   settings: Record<string, unknown>
@@ -15,15 +15,7 @@ export function gaussianStyleUpgrade(
 
   return {
     [STYLE_VERSION_KEY]: STYLE_VERSION,
-    'trendLineBull:color': '#22c55e',
-    'trendLineBear:color': '#facc15',
-    'trendLineBull:width': 4,
-    'trendLineBear:width': 4,
-    'trendLineBull:lineStyle': 'dashed',
-    'trendLineBear:lineStyle': 'dashed',
-    'trendLineBull:opacity': 100,
-    'trendLineBear:opacity': 100,
-    'trendLineBull:type': 'line',
-    'trendLineBear:type': 'line',
+    'trendLineBull:color': '#448aff',
+    'trendLineBear:color': '#c94f70',
   }
 }
