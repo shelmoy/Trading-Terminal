@@ -44,7 +44,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { type PriceableItem, useLivePrice } from '@/hooks/useLivePrice'
 import { useWatchlistQuotes } from '@/hooks/useWatchlistQuotes'
-import { prefetchSymbolData, type SearchRow } from '@/lib/trading/terminal'
+import type { SearchRow } from '@/lib/trading/terminal'
 import { cn } from '@/lib/utils'
 import { showToast } from '@/utils/toast'
 import { PANEL_HEADER, PanelShell } from './panelShell'
@@ -388,15 +388,8 @@ export function WatchlistPanel({ apiKey, onPick, search, activeSymbol }: Props) 
     [symbolKey]
   )
 
-  // Warm chart history for the first few instruments in the selected saved list.
-  useEffect(() => {
-    if (!apiKey || !priceable.length) return
-    const top = priceable.slice(0, 10)
-    for (const it of top) {
-      void prefetchSymbolData(apiKey, it.symbol, it.exchange, '5m')
-      void prefetchSymbolData(apiKey, it.symbol, it.exchange, '1m')
-    }
-  }, [apiKey, priceable])
+  // History loads on selection. Eagerly warming twenty windows starved FYERS'
+  // shared data budget before the first quote or chart could arrive.
 
   const {
     data: priced,
@@ -410,10 +403,16 @@ export function WatchlistPanel({ apiKey, onPick, search, activeSymbol }: Props) 
     includeOpenInterest: false,
     useMultiQuotesFallback: true,
     multiQuotesRefreshInterval: SNAPSHOT_REFRESH_MS,
-    pauseWhenHidden: true,
+    pauseWhenHidden: false,
+    subscriptionMode: 'Quote',
+    priority: 'watchlist',
   })
 
   const quotes = useWatchlistQuotes(apiKey, priced, multiQuotes)
+  const pricedByKey = useMemo(
+    () => new Map(priced.map(row => [`${row.exchange}:${row.symbol}`, row] as const)),
+    [priced]
+  )
 
   /**
    * When the snapshot last actually arrived.
@@ -822,6 +821,7 @@ export function WatchlistPanel({ apiKey, onPick, search, activeSymbol }: Props) 
           items.map((item, index) => {
             const key = `${item.exchange}:${item.symbol}`
             const quote = quotes[key]
+            const priceState = pricedByKey.get(key)
             // Three states, not two: no previous close means no direction.
             const direction =
               quote?.changePercent == null ? 'flat' : quote.changePercent >= 0 ? 'up' : 'down'
@@ -892,8 +892,6 @@ export function WatchlistPanel({ apiKey, onPick, search, activeSymbol }: Props) 
                     plain button is not itself draggable. */}
                 <button
                   type="button"
-                  onMouseEnter={() => void prefetchSymbolData(apiKey, item.symbol, item.exchange)}
-                  onPointerDown={() => void prefetchSymbolData(apiKey, item.symbol, item.exchange)}
                   onClick={() => onPick({ symbol: item.symbol, exchange: item.exchange })}
                   onKeyDown={(e) => {
                     // Removing from the row itself is what lets the trash stay
@@ -935,6 +933,10 @@ export function WatchlistPanel({ apiKey, onPick, search, activeSymbol }: Props) 
                       {item.exchange}
                     </span>
                   )}
+                  {priceState?._dataSource !== 'websocket' && <span
+                    className="shrink-0 text-[9px] text-muted-foreground"
+                    title={priceState?._priceReceivedAt ? `Received ${new Date(priceState._priceReceivedAt).toLocaleTimeString()}` : 'Waiting for a quote'}
+                  >{priceState?._streamLimited ? 'Limit · snapshot' : 'Snapshot'}</span>}
                 </span>
 
                 {/* Always visible. Hiding the number the user hovered in order

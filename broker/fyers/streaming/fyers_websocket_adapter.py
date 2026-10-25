@@ -431,7 +431,17 @@ class FyersWebSocketAdapter(BaseBrokerWebSocketAdapter):
 
                 if key in self.subscriptions:
                     # Remove from our subscription tracking
-                    subscription_info = self.subscriptions.pop(key)
+                    subscription_info = self.subscriptions[key]
+                    remaining = [sub for name, sub in self.subscriptions.items()
+                        if name != key and name.startswith(f"{exchange}:{symbol}:")]
+                    same_feed = any((sub.get("mode") == 3) == (mode == 3) for sub in remaining)
+                    if self.fyers_adapter and not same_feed:
+                        self.fyers_adapter.unsubscribe_symbols(
+                            [{"symbol": symbol, "exchange": exchange}],
+                            "DepthUpdate" if mode == 3 else "SymbolUpdate",
+                            keep_index=bool(remaining),
+                        )
+                    self.subscriptions.pop(key)
 
                     self.logger.info(f"Unsubscribe for {exchange}:{symbol} (mode: {mode})")
                     # self.logger.warning("Note: Fyers HSM doesn't support selective unsubscription - data will stop publishing but HSM will continue receiving in background")

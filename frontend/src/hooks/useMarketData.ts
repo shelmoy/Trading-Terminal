@@ -10,6 +10,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useMarketDataContextOptional } from '@/contexts/MarketDataContext'
 import { MarketDataManager, type SubscriptionMode, type SymbolData } from '@/lib/MarketDataManager'
+import { marketSample } from '@/lib/marketDataPerformance'
+import { useAuthStore } from '@/stores/authStore'
 
 // Re-export types for backward compatibility
 export type { DepthLevel, MarketData, SymbolData } from '@/lib/MarketDataManager'
@@ -19,6 +21,7 @@ interface UseMarketDataOptions {
   mode?: SubscriptionMode
   enabled?: boolean
   autoReconnect?: boolean
+  priority?: 'watchlist'
 }
 
 interface UseMarketDataReturn {
@@ -39,6 +42,7 @@ export function useMarketData({
   mode = 'LTP',
   enabled = true,
   autoReconnect = true,
+  priority,
 }: UseMarketDataOptions): UseMarketDataReturn {
   // Try to get context (may be null if used outside provider, e.g., WebSocketTest page)
   const context = useMarketDataContextOptional()
@@ -58,6 +62,7 @@ export function useMarketData({
 
   // Track if we're in the process of connecting
   const [isConnecting, setIsConnecting] = useState(false)
+  const identity = useAuthStore((state) => `${state.user?.broker}:${state.user?.username}:${state.user?.loginTime}:${state.apiKey}`)
 
   // Stable symbol key for dependency tracking
   const symbolsKey = useMemo(
@@ -107,7 +112,9 @@ export function useMarketData({
     const manager = managerRef.current
 
     // Auto-connect if not connected (manager handles deduplication)
-    if (!connectionState.isConnected && !connectionState.isPaused) {
+    setMarketData(new Map())
+    const state = manager.getState()
+    if (!state.isConnected && !state.isPaused) {
       manager.connect()
     }
 
@@ -130,6 +137,9 @@ export function useMarketData({
         return next
       })
       rafId = null
+      for (const value of batch.values()) {
+        if (value.receivedAt !== undefined) marketSample('receiptToFrameCommit', performance.now() - value.receivedAt)
+      }
     }
 
     // Subscribe to each symbol
@@ -142,7 +152,7 @@ export function useMarketData({
         if (rafId === null) {
           rafId = requestAnimationFrame(flushUpdates)
         }
-      })
+      }, priority)
       unsubscribes.push(unsubscribe)
 
       // Initialize with cached data if available
@@ -165,7 +175,7 @@ export function useMarketData({
       }
       pendingUpdates.clear()
     }
-  }, [enabled, symbolsKey, mode])
+  }, [enabled, symbolsKey, mode, priority, identity])
 
   // Connect function (for manual connection)
   const connect = useCallback(async () => {

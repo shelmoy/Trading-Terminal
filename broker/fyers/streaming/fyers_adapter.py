@@ -4,6 +4,7 @@ Handles WebSocket streaming for all exchanges: NSE, NFO, BSE, BFO, MCX
 Uses HSM binary protocol for real-time data
 """
 
+import json
 import threading
 import time
 from collections import defaultdict
@@ -323,14 +324,27 @@ class FyersAdapter:
         """Subscribe to Depth data"""
         return self.subscribe_symbols(symbols, "DepthUpdate", callback)
 
-    def unsubscribe_symbols(self, symbols: list[dict[str, str]]):
-        """
-        Unsubscribe from symbols
-        Note: HSM protocol doesn't support individual unsubscription easily
-        This would require reconnection for full unsubscribe
-        """
-        self.logger.warning("HSM protocol doesn't support selective unsubscription")
-        self.logger.info("To unsubscribe, disconnect and reconnect with new symbol list")
+    def unsubscribe_symbols(self, symbols, data_type=None, keep_index=False):
+        """Release the requested feed, preserving a sibling quote/depth owner."""
+        for row in symbols:
+            full_symbol = f"{row['exchange']}:{row['symbol']}"
+            tokens = [token for token, name in self.hsm_to_symbol.items()
+                if name == full_symbol and (
+                    (token.startswith("if|") and not keep_index) or
+                    (token.startswith("dp|") and data_type in (None, "DepthUpdate")) or
+                    (token.startswith("sf|") and data_type in (None, "SymbolUpdate"))
+                )]
+            if self.ws_client:
+                self.ws_client.unsubscribe_symbols(tokens)
+            for token in tokens:
+                self.hsm_to_symbol.pop(token, None)
+            if self.symbol_to_hsm.get(full_symbol) in tokens:
+                self.symbol_to_hsm.pop(full_symbol, None)
+            if not keep_index:
+                self.active_subscriptions.pop(full_symbol, None)
+            for key in list(self.last_data):
+                if isinstance(key, tuple) and key[0] == full_symbol:
+                    self.last_data.pop(key, None)
 
     def _on_open(self):
         """Handle WebSocket connection open"""
@@ -531,24 +545,31 @@ class FyersAdapter:
             if not dispatches:
                 return
 
-            # Deduplicate ONCE at the symbol level so we don't drop the second
-            # fan-out leg just because the first leg already updated last_data.
-            symbol_key = full_symbol
+            # Compare complete normalized packets independently for quote/index
+            # and depth feeds. LTP alone cannot identify a duplicate: volume or
+            # the book can change repeatedly at the same price within a second.
+            # One comparison before dispatch also preserves both index fan-out legs.
+            symbol_key = (full_symbol, fyers_type)
             now = int(time.time())
-            current_ltp = mapped_data.get("ltp", 0)
-            if symbol_key in self.last_data:
-                last_ltp = self.last_data[symbol_key].get("ltp", 0)
-                last_time = self.last_data[symbol_key].get("timestamp", 0)
-                if current_ltp == last_ltp and abs(now - last_time) < 0.1:
-                    return
-            self.last_data[symbol_key] = {"ltp": current_ltp, "timestamp": now}
+            comparison = self.data_mapper.map_fyers_data(fyers_data, "Depth") if fyers_type == "dp" else mapped_data
+            fingerprint = json.dumps(
+                {key: value for key, value in (comparison or {}).items() if key != "timestamp"},
+                sort_keys=True, separators=(",", ":"),
+            )
+            if self.last_data.get(symbol_key) == fingerprint:
+                return
+            self.last_data[symbol_key] = fingerprint
+            # Bound stale subscription fingerprints even after repeated expiry
+            # switches; the broker's live subscription registry remains authoritative.
+            if len(self.last_data) > 10000:
+                self.last_data.pop(next(iter(self.last_data)))
 
             for cb, openalgo_data_type in dispatches:
                 # Re-map per side. The Quote map already happened above; only
                 # rebuild for Depth to keep the cost of equity/futures (the
                 # common case, single dispatch) unchanged.
                 if openalgo_data_type == "Depth":
-                    side_data = self.data_mapper.map_fyers_data(fyers_data, "Depth")
+                    side_data = comparison if fyers_type == "dp" else self.data_mapper.map_fyers_data(fyers_data, "Depth")
                     if not side_data:
                         continue
                 else:
