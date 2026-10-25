@@ -677,16 +677,9 @@ def close_all_positions():
             position_data={}, api_key=api_key, auth_token=auth_token, broker=broker_name
         )
 
-        # Format the response for UI
-        if success and status_code == 200:
-            return jsonify(
-                {
-                    "status": "success",
-                    "message": response_data.get("message", "All Open Positions Squared Off"),
-                }
-            ), 200
-        else:
-            return jsonify(response_data), status_code
+        # Retain broker rejection/partial-result details, including sandbox
+        # failed_closures. Acceptance is not a confirmed fill.
+        return jsonify(response_data), status_code
 
     except Exception as e:
         logger.exception(f"Error in close_all_positions endpoint: {str(e)}")
@@ -727,20 +720,28 @@ def cancel_all_orders_ui():
             canceled_count = len(response_data.get("canceled_orders", []))
             failed_count = len(response_data.get("failed_cancellations", []))
 
-            if canceled_count > 0 or failed_count == 0:
+            if failed_count:
+                return jsonify({
+                    **response_data,
+                    "status": "error",
+                    "message": f"Canceled {canceled_count} orders; failed to cancel {failed_count}. Check the order book.",
+                }), 400
+            if canceled_count > 0:
                 message = f"Successfully canceled {canceled_count} orders"
-                if failed_count > 0:
-                    message += f" (Failed to cancel {failed_count} orders)"
                 return jsonify(
                     {
                         "status": "success",
                         "message": message,
                         "canceled_orders": response_data.get("canceled_orders", []),
                         "failed_cancellations": response_data.get("failed_cancellations", []),
+                        "mode": response_data.get("mode", "live"),
                     }
                 ), 200
             else:
-                return jsonify({"status": "info", "message": "No open orders to cancel"}), 200
+                return jsonify({
+                    "status": "info", "message": "No open orders to cancel",
+                    "mode": response_data.get("mode", "live"),
+                }), 200
         else:
             return jsonify(response_data), status_code
 

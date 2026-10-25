@@ -392,12 +392,16 @@ def _place_smartorder_locked_kotak(data, auth_token, symbol, exchange, product):
 
 def close_all_positions(current_api_key, auth_token):
     # Fetch the current open positions
-    positions_response = get_positions(auth_token)
+    positions_response = read_position_book(
+        "kotak", lambda: get_positions(auth_token), _position_book_ok
+    )
     # logger.debug(f"{positions_response}")
     # Check if the positions data is null or empty
-    if positions_response["data"] is None or not positions_response["data"]:
+    if positions_response.get("data") is None or not positions_response["data"]:
         return {"message": "No Open Positions Found"}, 200
 
+    accepted_orders = []
+    failed_positions = []
     if positions_response["data"]:
         # Loop through each position to close
         for position in positions_response["data"]:
@@ -415,7 +419,6 @@ def close_all_positions(current_api_key, auth_token):
             # get openalgo symbol to send to placeorder function
             symboltoken = position["tok"]
             exchange = map_exchange(position["exSeg"])
-            position["exSeg"] = exchange
 
             # Use the get_symbol function to fetch the symbol from the database
             symbol = get_symbol(symboltoken, exchange)
@@ -428,7 +431,7 @@ def close_all_positions(current_api_key, auth_token):
                 "strategy": "Squareoff",
                 "symbol": symbol,
                 "action": action,
-                "exchange": position["exSeg"],
+                "exchange": exchange,
                 "pricetype": "MARKET",
                 "product": reverse_map_product_type(position["prod"]),
                 "quantity": str(quantity),
@@ -437,15 +440,41 @@ def close_all_positions(current_api_key, auth_token):
             logger.debug(f"{place_order_payload}")
 
             # Place the order to close the position
-            res, response, orderid = place_order_api(place_order_payload, auth_token)
+            try:
+                res, response, orderid = place_order_api(place_order_payload, auth_token)
+                http_status = getattr(res, "status", getattr(res, "status_code", None))
+                acknowledged = (
+                    http_status == 200 and isinstance(response, dict)
+                    and str(response.get("stat", "")).lower() == "ok"
+                    and isinstance(orderid, (str, int)) and not isinstance(orderid, bool)
+                    and str(orderid).strip().lower() not in {"", "0", "none", "null"}
+                )
+                if acknowledged:
+                    accepted_orders.append(str(orderid))
+                else:
+                    message = response.get("emsg", response.get("message", response.get("error", "Exit not acknowledged"))) if isinstance(response, dict) else "Exit not acknowledged"
+                    failed_positions.append({"symbol": symbol, "exchange": exchange,
+                                             "message": str(message)})
+            except Exception as error:
+                # Never retry: the broker may have received this exit.
+                failed_positions.append({"symbol": symbol, "exchange": exchange,
+                                         "message": str(error)})
+            finally:
+                _invalidate_position_cache(auth_token)
 
             # logger.debug(f"{res}")
-            logger.debug(f"{response}")
             # logger.debug(f"{orderid}")
 
             # Note: Ensure place_order_api handles any errors and logs accordingly
 
-    return {"status": "success", "message": "All Open Positions SquaredOff"}, 200
+    if failed_positions:
+        return {
+            "status": "error",
+            "message": f"{len(accepted_orders)} exit order(s) accepted; {len(failed_positions)} unconfirmed or rejected. Check broker books before retrying.",
+            "accepted_orders": accepted_orders, "failed_positions": failed_positions,
+        }, 400
+    return {"status": "success", "message": "Position exit orders accepted",
+            "accepted_orders": accepted_orders}, 200
 
 
 def cancel_order(orderid, auth_token):
@@ -549,8 +578,16 @@ def cancel_all_orders_api(data, auth_token):
     # Get the order book
     order_book_response = get_order_book(auth_token)
 
-    if order_book_response["data"] is None:
-        return [], []  # Return empty lists indicating failure to retrieve the order book
+    if str(order_book_response.get("stat", "")).lower() != "ok":
+        # Kotak uses 5203 / No Data for an empty book. A session/read error
+        # cannot be treated as zero orders.
+        if str(order_book_response.get("stCode")) == "5203" and str(
+            order_book_response.get("errMsg", "")
+        ).strip().lower() == "no data":
+            return [], []
+        raise RuntimeError(order_book_response.get("emsg", order_book_response.get("errMsg", "Order book unavailable")))
+    if not isinstance(order_book_response.get("data"), list):
+        raise RuntimeError("Invalid Kotak order book")
 
     # Filter orders that are in 'open' or 'trigger_pending' state
     orders_to_cancel = [
@@ -566,7 +603,7 @@ def cancel_all_orders_api(data, auth_token):
     for order in orders_to_cancel:
         orderid = order["nOrdNo"]
         cancel_response, status_code = cancel_order(orderid, auth_token)
-        if status_code == 200:
+        if status_code == 200 and cancel_response.get("status") == "success":
             canceled_orders.append(orderid)
         else:
             failed_cancellations.append(orderid)

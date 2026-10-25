@@ -60,6 +60,7 @@ interface Props {
   pnlDate: string
   pnlValuationNote: string
   exiting: boolean
+  exitDisabled?: boolean
   onNavigationToggle(): void
   onUnderlyingSelect(id: string): void
   onExpirySelect(expiry: string): void
@@ -405,7 +406,7 @@ export function ScalperHeader(props: Props) {
           type="button"
           className="scalper-execution-mode"
           data-sandbox={sandbox ? 'true' : undefined}
-          disabled={switchingMode}
+          disabled={switchingMode || exiting}
           onClick={props.onModeToggle}
           title="Switch between Sandbox (Analyze) and live broker execution"
           aria-label={`Execution mode: ${sandbox ? 'Sandbox' : 'Live'}. Click to switch.`}
@@ -466,9 +467,9 @@ export function ScalperHeader(props: Props) {
         <button
           type="button"
           className="scalper-header-exit"
-          disabled={exiting}
+          disabled={exiting || props.exitDisabled}
           onClick={props.onExitAll}
-          title="Close all open positions and cancel all open orders immediately"
+          title="Cancel regular working orders, then exit all positions in this broker account. Does not cancel GTTs or sell holdings."
         >
           <LogOut size={12} strokeWidth={1.8} />
           {exiting ? 'Exiting…' : 'Exit all'}
