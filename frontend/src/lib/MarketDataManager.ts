@@ -14,6 +14,9 @@
  * - Automatically switches back to WebSocket when connection is restored
  */
 
+import { marketCount, marketGauge, marketSample } from './marketDataPerformance'
+import { cachedQuoteSnapshots, rememberQuoteSnapshot } from './quoteSnapshots'
+
 export interface DepthLevel {
   price: number
   quantity: number
@@ -49,6 +52,9 @@ export interface SymbolData {
   updateSource?: 'websocket' | 'rest'
   /** Authentication epoch that produced the WebSocket update. */
   connectionEpoch?: number
+  /** Browser monotonic receipt time, never an exchange timestamp. */
+  receivedAt?: number
+  streamLimited?: boolean
 }
 
 export type SubscriptionMode = 'LTP' | 'Quote' | 'Depth'
@@ -79,6 +85,9 @@ interface SubscriptionEntry {
   mode: SubscriptionMode
   callbacks: Set<DataCallback>
   refCount: number
+  priority?: 'watchlist'
+  requestedAt?: number
+  firstPrice?: boolean
 }
 
 // Fetch CSRF token for authenticated requests
@@ -118,6 +127,7 @@ export class MarketDataManager {
 
   private socket: WebSocket | null = null
   private subscriptions: Map<string, SubscriptionEntry> = new Map() // key: "EXCHANGE:SYMBOL:MODE"
+  private byInstrument = new Map<string, Set<SubscriptionEntry>>()
   private dataCache: Map<string, SymbolData> = new Map() // key: "EXCHANGE:SYMBOL"
   private stateListeners: Set<StateListener> = new Set()
 
@@ -140,6 +150,9 @@ export class MarketDataManager {
   private maxConsecutiveFailures: number = 3 // Switch to fallback after 3 consecutive connection failures
   /** Invalidates REST responses that belong to an earlier fallback session. */
   private fallbackGeneration: number = 0
+  private fallbackRequest: Promise<void> | null = null
+  private subscribeFlush: ReturnType<typeof setTimeout> | null = null
+  private pendingSubscriptions = new Set<string>()
 
   private constructor() {
     // Private constructor for singleton pattern
@@ -155,7 +168,7 @@ export class MarketDataManager {
   // For testing purposes only
   static resetInstance(): void {
     if (MarketDataManager.instance) {
-      MarketDataManager.instance.disconnect()
+      MarketDataManager.instance.disconnect(true)
       MarketDataManager.instance = null
     }
   }
@@ -168,7 +181,8 @@ export class MarketDataManager {
     rawSymbol: string,
     rawExchange: string,
     mode: SubscriptionMode,
-    callback: DataCallback
+    callback: DataCallback,
+    priority?: 'watchlist'
   ): () => void {
     // Normalize to uppercase for consistent cache keys across WebSocket and REST
     const symbol = rawSymbol.toUpperCase()
@@ -196,8 +210,14 @@ export class MarketDataManager {
         mode,
         callbacks: new Set([callback]),
         refCount: 1,
+        priority,
+        requestedAt: performance.now(),
       }
       this.subscriptions.set(key, entry)
+      const entries = this.byInstrument.get(dataKey) ?? new Set<SubscriptionEntry>()
+      entries.add(entry)
+      this.byInstrument.set(dataKey, entries)
+      marketGauge('activeInstruments', this.byInstrument.size)
 
       // Initialize cache entry
       if (!this.dataCache.has(dataKey)) {
@@ -206,7 +226,21 @@ export class MarketDataManager {
 
       // Send subscribe message if connected and authenticated
       if (this.connectionState === 'authenticated') {
-        this.sendSubscribe([{ symbol, exchange }], mode)
+        this.pendingSubscriptions.add(key)
+        if (!this.subscribeFlush) this.subscribeFlush = setTimeout(() => {
+          this.subscribeFlush = null
+          const batches = new Map<string, SubscriptionEntry[]>()
+          for (const pending of this.pendingSubscriptions) {
+            const record = this.subscriptions.get(pending)
+            if (!record) continue
+            const group = `${record.mode}:${record.priority ?? ''}`
+            batches.set(group, [...(batches.get(group) ?? []), record])
+          }
+          this.pendingSubscriptions.clear()
+          for (const batch of batches.values()) {
+            this.sendSubscribe(batch, batch[0].mode, batch[0].priority)
+          }
+        }, 0)
       } else if (this.fallbackMode && this.apiKey) {
         // In fallback mode - start polling if not already running
         if (!this.fallbackPollingInterval) {
@@ -219,9 +253,8 @@ export class MarketDataManager {
     }
 
     // Return unsubscribe function
-    return () => {
-      this.unsubscribe(symbol, exchange, mode, callback)
-    }
+    let active = true
+    return () => { if (active) { active = false; this.unsubscribe(symbol, exchange, mode, callback) } }
   }
 
   private unsubscribe(
@@ -237,12 +270,16 @@ export class MarketDataManager {
 
     if (!entry) return
 
-    entry.callbacks.delete(callback)
+    if (!entry.callbacks.delete(callback)) return
     entry.refCount--
 
     // Only send unsubscribe when last consumer leaves
     if (entry.refCount <= 0) {
       this.subscriptions.delete(key)
+      this.pendingSubscriptions.delete(key)
+      this.byInstrument.get(`${exchange}:${symbol}`)?.delete(entry)
+      if (!this.byInstrument.get(`${exchange}:${symbol}`)?.size) this.byInstrument.delete(`${exchange}:${symbol}`)
+      marketGauge('activeInstruments', this.byInstrument.size)
 
       // Check if any other mode still needs this symbol
       const symbolStillNeeded = Array.from(this.subscriptions.values()).some(
@@ -389,6 +426,7 @@ export class MarketDataManager {
       const socket = new WebSocket(wsUrl)
 
       socket.onopen = async () => {
+        if (this.socket !== socket) return
         // Check if disconnect was called before socket opened
         if (this.userDisconnected) {
           socket.close(1000, 'User disconnect during connection')
@@ -432,6 +470,7 @@ export class MarketDataManager {
       }
 
       socket.onclose = (event) => {
+        if (this.socket !== socket) return
         this.socket = null
 
         if (this.connectionState !== 'paused') {
@@ -463,11 +502,12 @@ export class MarketDataManager {
       }
 
       socket.onerror = () => {
+        if (this.socket !== socket) return
         this.consecutiveFailures++
         this.setError('WebSocket connection error')
       }
 
-      socket.onmessage = (event) => this.handleMessage(event)
+      socket.onmessage = (event) => { if (this.socket === socket) this.handleMessage(event) }
 
       this.socket = socket
     } catch (err) {
@@ -485,7 +525,7 @@ export class MarketDataManager {
   /**
    * Disconnect from WebSocket server
    */
-  disconnect(): void {
+  disconnect(clearSubscriptions = false): void {
     // Mark as user-initiated disconnect to prevent zombie connections
     this.userDisconnected = true
 
@@ -511,6 +551,15 @@ export class MarketDataManager {
     this.fallbackMode = false
     this.consecutiveFailures = 0
     this.apiKey = null
+    if (clearSubscriptions) {
+      this.dataCache.clear()
+      this.subscriptions.clear()
+      this.byInstrument.clear()
+      marketGauge('activeInstruments', 0)
+    }
+    this.pendingSubscriptions.clear()
+    if (this.subscribeFlush) clearTimeout(this.subscribeFlush)
+    this.subscribeFlush = null
 
     this.setConnectionState('disconnected')
   }
@@ -558,6 +607,7 @@ export class MarketDataManager {
         case 'auth':
           if (data.status === 'success') {
             this.connectionEpoch += 1
+            marketCount('socketAuthentications')
             this.setConnectionState('authenticated')
             this.error = null
             this.consecutiveFailures = 0 // Reset failure count on successful auth
@@ -571,6 +621,7 @@ export class MarketDataManager {
           break
 
         case 'market_data': {
+          const receivedAt = performance.now()
           const symbol = (data.symbol as string).toUpperCase()
           const exchange = (data.exchange as string).toUpperCase()
           const marketDataPayload = (data.data || {}) as MarketData
@@ -603,22 +654,49 @@ export class MarketDataManager {
             lastUpdate: Date.now(),
             updateSource: 'websocket',
             connectionEpoch: this.connectionEpoch,
+            receivedAt,
+            streamLimited: false,
           }
           this.dataCache.set(dataKey, updatedSymbolData)
+          if (newData.ltp && newData.ltp > 0) {
+            const prior = cachedQuoteSnapshots([{ symbol, exchange }]).get(dataKey)?.data
+            rememberQuoteSnapshot({ symbol, exchange }, { requestedAt: updatedSymbolData.lastUpdate!,
+              receivedAt: updatedSymbolData.lastUpdate!, data: {
+                ltp: newData.ltp, prev_close: newData.close || prior?.prev_close || 0,
+                open: newData.open || prior?.open || 0, high: newData.high || prior?.high || 0,
+                low: newData.low || prior?.low || 0, volume: newData.volume ?? prior?.volume ?? 0,
+                bid: newData.bid_price ?? prior?.bid ?? 0, ask: newData.ask_price ?? prior?.ask ?? 0,
+                oi: prior?.oi ?? 0,
+              } })
+          }
 
           // Fan out to all callbacks for this symbol (across all modes)
-          this.subscriptions.forEach((entry) => {
-            if (entry.symbol === symbol && entry.exchange === exchange) {
-              entry.callbacks.forEach((callback) => {
-                callback(updatedSymbolData)
-              })
+          for (const entry of this.byInstrument.get(dataKey) ?? []) {
+            if (!entry.firstPrice && (updatedSymbolData.data.ltp ?? 0) > 0) {
+              entry.firstPrice = true
+              marketSample('subscriptionToFirstTick', performance.now() - (entry.requestedAt ?? performance.now()))
             }
-          })
+          }
+          this.deliver(dataKey, updatedSymbolData)
+          marketSample('browserDispatch', performance.now() - receivedAt)
+          marketCount('ticks')
           break
         }
 
+        case 'subscription_limited':
         case 'subscribe':
-          // Subscription confirmed - no action needed
+          for (const row of data.subscriptions ?? [data]) {
+            const key = `${String(row.exchange).toUpperCase()}:${String(row.symbol).toUpperCase()}`
+            const cached = this.dataCache.get(key)
+            if (cached && row.status === 'error') {
+              const next = { ...cached, streamLimited: row.code === 'STREAM_LIMIT' || type === 'subscription_limited' }
+              this.dataCache.set(key, next)
+              this.deliver(key, next)
+            }
+          }
+          break
+        case 'capacity_available':
+          this.resubscribeAll()
           break
 
         case 'error':
@@ -632,15 +710,17 @@ export class MarketDataManager {
 
   private sendSubscribe(
     symbols: Array<{ symbol: string; exchange: string }>,
-    mode: SubscriptionMode
+    mode: SubscriptionMode,
+    priority?: 'watchlist'
   ): void {
     if (!this.socket || this.socket.readyState !== WebSocket.OPEN) return
 
     this.socket.send(
       JSON.stringify({
         action: 'subscribe',
-        symbols,
+        symbols: symbols.map(({ symbol, exchange }) => ({ symbol, exchange })),
         mode,
+        ...(priority ? { priority } : {}),
       })
     )
   }
@@ -658,20 +738,29 @@ export class MarketDataManager {
 
   private resubscribeAll(): void {
     // Group subscriptions by mode for efficient batching
-    const byMode = new Map<SubscriptionMode, Array<{ symbol: string; exchange: string }>>()
+    const byMode = new Map<string, SubscriptionEntry[]>()
 
     this.subscriptions.forEach((entry) => {
-      const symbols = byMode.get(entry.mode) || []
-      symbols.push({ symbol: entry.symbol, exchange: entry.exchange })
-      byMode.set(entry.mode, symbols)
+      const key = `${entry.mode}:${entry.priority ?? ''}`
+      const symbols = byMode.get(key) || []
+      symbols.push(entry)
+      byMode.set(key, symbols)
     })
 
     // Send subscribe for each mode
-    byMode.forEach((symbols, mode) => {
+    byMode.forEach((symbols) => {
       if (symbols.length > 0) {
-        this.sendSubscribe(symbols, mode)
+        this.sendSubscribe(symbols, symbols[0].mode, symbols[0].priority)
       }
     })
+  }
+
+  private deliver(key: string, value: SymbolData): void {
+    for (const entry of this.byInstrument.get(key) ?? []) {
+      for (const callback of entry.callbacks) {
+        try { callback(value) } catch { marketCount('subscriberErrors') }
+      }
+    }
   }
 
   private setConnectionState(state: ConnectionState): void {
@@ -777,8 +866,16 @@ export class MarketDataManager {
    * Fetch market data via REST API (multiquotes endpoint)
    */
   private async fetchMarketDataViaRest(): Promise<void> {
+    if (this.fallbackRequest) return this.fallbackRequest
+    const request = this.fetchFallbackBatch()
+    this.fallbackRequest = request
+    try { await request } finally { if (this.fallbackRequest === request) this.fallbackRequest = null }
+  }
+
+  private async fetchFallbackBatch(): Promise<void> {
     if (!this.fallbackMode || !this.apiKey || this.subscriptions.size === 0) return
     const generation = this.fallbackGeneration
+    const requestedAt = Date.now()
 
     try {
       // Collect unique symbols from subscriptions
@@ -814,12 +911,14 @@ export class MarketDataManager {
       if (data.status === 'success' && data.results) {
         // Process each result and update cache + notify subscribers
         for (const result of data.results) {
+          if (!result.data) continue
           const symbol = result.symbol.toUpperCase()
           const exchange = result.exchange.toUpperCase()
           const dataKey = `${exchange}:${symbol}`
 
           // Update cache
           const existing = this.dataCache.get(dataKey) || { symbol, exchange, data: {} }
+          if (!this.byInstrument.has(dataKey) || (existing.lastUpdate ?? 0) > requestedAt) continue
           const newData = { ...existing.data }
 
           Object.assign(newData, {
@@ -843,13 +942,7 @@ export class MarketDataManager {
           this.dataCache.set(dataKey, updatedSymbolData)
 
           // Fan out to all callbacks for this symbol (keys are already normalized to uppercase)
-          this.subscriptions.forEach((entry) => {
-            if (entry.symbol === symbol && entry.exchange === exchange) {
-              entry.callbacks.forEach((callback) => {
-                callback(updatedSymbolData)
-              })
-            }
-          })
+          this.deliver(dataKey, updatedSymbolData)
         }
       }
     } catch (_err) {}

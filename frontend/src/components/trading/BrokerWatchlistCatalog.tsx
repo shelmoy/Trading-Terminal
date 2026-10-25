@@ -9,7 +9,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { type PriceableItem, useLivePrice } from '@/hooks/useLivePrice'
 import { useWatchlistQuotes } from '@/hooks/useWatchlistQuotes'
-import { prefetchSymbolData, type SearchRow } from '@/lib/trading/terminal'
+import type { SearchRow } from '@/lib/trading/terminal'
 import { watchlistCategory } from '@/lib/trading/watchlistCategories'
 import { cn } from '@/lib/utils'
 
@@ -168,7 +168,9 @@ export function BrokerWatchlistCatalog({
     retainLastTick: true,
     includeOpenInterest: false,
     multiQuotesRefreshInterval: 60_000,
-    pauseWhenHidden: true,
+    pauseWhenHidden: false,
+    subscriptionMode: 'Quote',
+    priority: 'watchlist',
   })
   const quotes = useWatchlistQuotes(apiKey, prices, multiQuotes, catalog?.broker)
   const sections = useMemo(() => {
@@ -315,14 +317,10 @@ export function BrokerWatchlistCatalog({
                       <button
                         type="button"
                         onClick={() => pick(contract)}
-                        onMouseEnter={() => {
-                          if (apiKey)
-                            void prefetchSymbolData(apiKey, contract.symbol, contract.exchange)
-                        }}
                         className="flex w-full items-center justify-between gap-2 rounded-sm text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                         aria-label={`Chart ${contract.symbol} on ${contract.exchange}`}
                         aria-current={activeSymbol === key ? true : undefined}
-                        title={contract.symbol}
+                        title={`${contract.symbol} · ${quote?.source === 'websocket' ? 'Live stream' : 'Snapshot'}${quote?.receivedAt ? ` · received ${new Date(quote.receivedAt).toLocaleTimeString()}` : ''}`}
                       >
                         <span className="min-w-0 truncate text-xs font-semibold">{group.name}</span>
                         <span
@@ -339,6 +337,9 @@ export function BrokerWatchlistCatalog({
                           <span className="text-[9px] font-medium text-muted-foreground">
                             {contract.exchange}
                           </span>
+                          {quote?.source !== 'websocket' && <span className="text-[9px] text-muted-foreground">
+                            {quote?.streamLimited ? 'Stream limit · snapshot' : 'Snapshot'}
+                          </span>}
                           {group.contracts.length > 1 || contract.expiry ? (
                             <select
                               aria-label={`${group.name} contract expiry`}

@@ -4,6 +4,8 @@ import { useMarketData } from '@/hooks/useMarketData'
 import { useMarketStatus } from '@/hooks/useMarketStatus'
 import { usePageVisibility } from '@/hooks/usePageVisibility'
 import { useAuthStore } from '@/stores/authStore'
+import type { SubscriptionMode } from '@/lib/MarketDataManager'
+import { cachedQuoteSnapshots, fetchQuoteSnapshots } from '@/lib/quoteSnapshots'
 
 /**
  * Base interface for items that can have live price data
@@ -20,12 +22,17 @@ export interface PriceableItem {
   lot_size?: number // Contract multiplier (e.g. 0.01 for Delta Exchange ETHUSD.P)
   _dataSource?: 'websocket' | 'quote' | 'none'
   _hasValidData?: boolean
+  _quote?: Partial<QuotesData>
+  _priceReceivedAt?: number
+  _streamLimited?: boolean
 }
 
 /**
  * Configuration options for useLivePrice hook
  */
 export interface UseLivePriceOptions {
+  subscriptionMode?: SubscriptionMode
+  priority?: 'watchlist'
   /** Whether the hook is enabled (default: true) */
   enabled?: boolean
   /** Time in ms after which WebSocket data is considered stale (default: 5000) */
@@ -96,6 +103,8 @@ export function useLivePrice<T extends PriceableItem>(
     useMultiQuotesFallback = true,
     multiQuotesRefreshInterval = 30000,
     pauseWhenHidden = true,
+    subscriptionMode = 'LTP',
+    priority,
   } = options
 
   const { apiKey } = useAuthStore()
@@ -109,6 +118,10 @@ export function useLivePrice<T extends PriceableItem>(
 
   // Track last fetch time for visibility-aware refresh
   const lastFetchRef = useRef<number>(Date.now())
+  const requestGeneration = useRef(0)
+  const quoteAsOf = useRef(new Map<string, number>())
+  const quoteReceivedAt = useRef(new Map<string, number>())
+  const identity = useAuthStore((state) => `${state.user?.broker}:${state.user?.username}:${state.user?.loginTime}:${state.apiKey}`)
 
   // Extract symbols for WebSocket subscription
   const symbols = useMemo(
@@ -126,9 +139,11 @@ export function useLivePrice<T extends PriceableItem>(
     isConnected: wsConnected,
     isPaused: wsPaused,
     isFallbackMode,
+    connectionEpoch,
   } = useMarketData({
     symbols,
-    mode: 'LTP',
+    mode: subscriptionMode,
+    priority,
     enabled: enabled && items.length > 0 && (!pauseWhenHidden || isVisible),
   })
 
@@ -140,6 +155,16 @@ export function useLivePrice<T extends PriceableItem>(
   // Effective live status (active during both regular market hours and pre-open session)
   const isLive = wsConnected && (anyMarketOpen || anyPreMarket) && !wsPaused
 
+  const symbolsKey = JSON.stringify(symbols)
+  useEffect(() => {
+    requestGeneration.current++
+    const cached = !includeOpenInterest ? cachedQuoteSnapshots(symbols) : new Map()
+    quoteAsOf.current = new Map([...cached].map(([key, value]) => [key, value.requestedAt]))
+    quoteReceivedAt.current = new Map([...cached].map(([key, value]) => [key, value.receivedAt]))
+    setMultiQuotes(new Map([...cached].map(([key, value]) => [key, value.data])))
+    setMultiQuotesFetchedAt(0) // persisted values are snapshots, never proof of a live feed
+  }, [identity, symbolsKey, includeOpenInterest])
+
   /**
    * Fetch MultiQuotes data from API
    */
@@ -147,13 +172,24 @@ export function useLivePrice<T extends PriceableItem>(
     if (!apiKey || items.length === 0 || !useMultiQuotesFallback) return
 
     try {
+      const generation = requestGeneration.current
       const fetchedAt = Date.now()
       const symbolsList = items.map((item) => ({
         symbol: item.symbol,
         exchange: item.exchange,
       }))
 
-      const response = await tradingApi.getMultiQuotes(apiKey, symbolsList, includeOpenInterest)
+      if (!includeOpenInterest) {
+        const snapshots = await fetchQuoteSnapshots(apiKey, symbolsList)
+        if (generation !== requestGeneration.current) return
+        quoteAsOf.current = new Map([...snapshots].map(([key, value]) => [key, value.requestedAt]))
+        quoteReceivedAt.current = new Map([...snapshots].map(([key, value]) => [key, value.receivedAt]))
+        setMultiQuotes(new Map([...snapshots].map(([key, value]) => [key, value.data])))
+        setMultiQuotesFetchedAt(fetchedAt)
+        return
+      }
+      const response = await tradingApi.getMultiQuotes(apiKey, symbolsList, true)
+      if (generation !== requestGeneration.current) return
 
       if (response.status === 'success' && response.results) {
         const quotesMap = new Map<string, QuotesData>()
@@ -240,13 +276,13 @@ export function useLivePrice<T extends PriceableItem>(
       const exchangeMarketActive =
         isMarketOpen(item.exchange) || status === 'pre-market' || wsConnected
 
-      // Check if WebSocket LTP is fresh (accepts pre-market & live session ticks in 0-1ms)
+      // Receipt freshness is local; it does not claim broker-to-screen latency.
       const hasWsData =
         (retainLastTick || exchangeMarketActive) &&
-        wsData?.data?.ltp &&
+        !wsData?.streamLimited && wsData?.data?.ltp &&
         wsData.lastUpdate &&
         (retainLastTick
-          ? !mqData?.ltp || wsData.lastUpdate >= multiQuotesFetchedAt
+          ? !mqData?.ltp || wsData.lastUpdate >= (quoteAsOf.current.get(key) ?? multiQuotesFetchedAt)
           : Date.now() - wsData.lastUpdate < staleThreshold)
 
       // Check if we have MultiQuotes data (fallback when WebSocket not available)
@@ -258,7 +294,8 @@ export function useLivePrice<T extends PriceableItem>(
 
       if (hasWsData && wsData?.data?.ltp) {
         currentLtp = wsData.data.ltp
-        dataSource = 'websocket'
+        dataSource = wsData.updateSource !== 'rest' && wsConnected && wsData.connectionEpoch === connectionEpoch
+          ? 'websocket' : 'multiquotes'
       } else if (hasMqData && mqData?.ltp) {
         currentLtp = mqData.ltp
         dataSource = 'multiquotes'
@@ -321,6 +358,17 @@ export function useLivePrice<T extends PriceableItem>(
         pnl: calculatedPnl,
         pnlpercent: calculatedPnlPercent,
         _dataSource: dataSource,
+        _streamLimited: wsData?.streamLimited === true,
+        _priceReceivedAt: hasWsData ? wsData?.lastUpdate : quoteReceivedAt.current.get(key) ?? multiQuotesFetchedAt,
+        _quote: hasWsData ? {
+          ...mqData,
+          ltp: currentLtp,
+          prev_close: wsData?.data.close && wsData.data.close > 0 ? wsData.data.close : mqData?.prev_close,
+          open: wsData?.data.open || mqData?.open,
+          high: wsData?.data.high || mqData?.high,
+          low: wsData?.data.low || mqData?.low,
+          volume: wsData?.data.volume ?? mqData?.volume,
+        } : mqData,
       } as T & { _dataSource: string }
     })
   }, [
@@ -331,6 +379,7 @@ export function useLivePrice<T extends PriceableItem>(
     isMarketOpen,
     getMarketStatus,
     wsConnected,
+    connectionEpoch,
     staleThreshold,
     retainLastTick,
   ])

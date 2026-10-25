@@ -1206,6 +1206,49 @@ class WebSocketProxy:
         logger.debug(f"Sending pong to client {client_id}: {response}")
         await self.send_message(client_id, response)
 
+    def _stream_owners(self, user_id):
+        """Current account-owned instruments, independent of socket/mode count."""
+        groups = defaultdict(list)
+        for owner, rows in self.subscriptions.items():
+            if self.user_mapping.get(owner) != user_id:
+                continue
+            for stored in rows:
+                sub = json.loads(stored)
+                groups[(sub["symbol"], sub["exchange"])].append((owner, sub, stored))
+        return groups
+
+    def _reserve_stream_slot(self, client_id, symbol, exchange, priority):
+        """FYERS account budget; chart requests can displace watchlist-only rows.
+
+        Runs without an await so admission and the caller's ownership write are
+        serialized on the proxy loop. Reuses acknowledged unsubscribe handling.
+        """
+        user_id = self.user_mapping[client_id]
+        if self.user_broker_mapping.get(user_id) != "fyers":
+            return True, []
+        limit = 5000 if os.getenv("FYERS_API_PLAN", "standard").lower() == "prime" else 100
+        groups = self._stream_owners(user_id)
+        if (symbol, exchange) in groups or len(groups) < limit:
+            return True, []
+        if priority == "watchlist":
+            return False, []
+        notices = []
+        adapter = self.broker_adapters[user_id]
+        for (old_symbol, old_exchange), owners in reversed(list(groups.items())):
+            if not all(sub.get("priority") == "watchlist" for _, sub, _ in owners):
+                continue
+            for owner, sub, _ in owners:
+                ok, _ = self._unsubscribe_owned_subscription(
+                    owner, adapter, old_symbol, old_exchange, sub["mode"]
+                )
+                if ok:
+                    notices.append((owner, {"type": "subscription_limited", "status": "error",
+                        "symbol": old_symbol, "exchange": old_exchange,
+                        "message": "Snapshot: streaming capacity reserved for a chart."}))
+            if len(self._stream_owners(user_id)) < limit:
+                return True, notices
+        return False, notices
+
     async def subscribe_client(self, client_id, data):
         """
         Subscribe a client to market data using their configured broker
@@ -1274,6 +1317,8 @@ class WebSocketProxy:
         # Process each symbol in the subscription request
         subscription_responses = []
         subscription_success = True
+        priority = "watchlist" if data.get("priority") == "watchlist" else "chart"
+        capacity_notices = []
 
         for symbol_info in symbols:
             symbol = symbol_info.get("symbol")
@@ -1281,6 +1326,15 @@ class WebSocketProxy:
 
             if not symbol or not exchange:
                 continue  # Skip invalid symbols
+
+            admitted, notices = self._reserve_stream_slot(client_id, symbol, exchange, priority)
+            capacity_notices.extend(notices)
+            if not admitted:
+                subscription_success = False
+                subscription_responses.append({"symbol": symbol, "exchange": exchange,
+                    "status": "error", "code": "STREAM_LIMIT", "broker": broker_name,
+                    "message": "Streaming symbol limit reached; use snapshot prices for this row."})
+                continue
 
             # Subscribe to market data
             response = adapter.subscribe(symbol, exchange, mode, depth_level)
@@ -1293,6 +1347,7 @@ class WebSocketProxy:
                     "mode": mode,
                     "depth_level": depth_level,
                     "broker": broker_name,
+                    "priority": priority,
                 }
 
                 if client_id in self.subscriptions:
@@ -1338,6 +1393,8 @@ class WebSocketProxy:
         }
         if request_id is not None:
             response["request_id"] = request_id
+        for owner, notice in capacity_notices:
+            await self.send_message(owner, notice)
         await self.send_message(client_id, response)
 
     def _matching_client_subscriptions(self, client_id, sub_key):
@@ -1663,6 +1720,10 @@ class WebSocketProxy:
         if request_id is not None:
             unsub_response["request_id"] = request_id
         await self.send_message(client_id, unsub_response)
+        if broker_name == "fyers" and successful_unsubscriptions and not data.get("capacity_rebalance"):
+            for owner in list(self.clients):
+                if self.user_mapping.get(owner) == user_id:
+                    await self.send_message(owner, {"type": "capacity_available"})
 
     async def subscribe_orders_client(self, client_id, data):
         """

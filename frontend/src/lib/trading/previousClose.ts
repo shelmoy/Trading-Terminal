@@ -21,6 +21,7 @@
  */
 
 import { apiClient } from '@/api/client'
+import { quoteSessionScope } from '@/lib/quoteSnapshots'
 
 interface DailyBar {
   close: number
@@ -49,19 +50,22 @@ const inflight = new Map<string, Promise<number | null>>()
 
 /** The day the cache belongs to, as a local date string. */
 let cachedDay = ''
+let queue: Promise<unknown> = Promise.resolve()
+let nextRequestAt = 0
+const SESSION_DATE = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' })
 
 /** Enough calendar days to clear a long weekend plus a holiday cluster. */
 const LOOKBACK_DAYS = 20
 
 function today(): string {
-  return new Date().toDateString()
+  return SESSION_DATE.format(new Date())
 }
 
 /** Load the day's cache from the previous page load, if it is still today's. */
 function hydrate(day: string): void {
   try {
     const saved = JSON.parse(localStorage.getItem(STORE_KEY) || '{}')
-    if (saved?.day !== day || typeof saved.values !== 'object') return
+    if (saved?.day !== day || saved?.scope !== quoteSessionScope() || typeof saved.values !== 'object') return
     for (const [key, value] of Object.entries(saved.values as Record<string, unknown>)) {
       // > 0 also rejects the UNAVAILABLE marker, so a failure is retried once
       // per page load rather than being persisted as a permanent verdict.
@@ -77,7 +81,7 @@ function hydrate(day: string): void {
 /** Write the cache through, stamped with the day it belongs to. */
 function save(day: string): void {
   try {
-    localStorage.setItem(STORE_KEY, JSON.stringify({ day, values: Object.fromEntries(cache) }))
+    localStorage.setItem(STORE_KEY, JSON.stringify({ day, scope: quoteSessionScope(), values: Object.fromEntries(cache) }))
   } catch {
     // Private mode, or a full quota. The in-memory cache still works.
   }
@@ -89,14 +93,13 @@ function isoDaysAgo(days: number): string {
 
 /** `YYYY-MM-DD` in the viewer's own timezone, matching how `today()` works. */
 function localIso(d: Date): string {
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+  return SESSION_DATE.format(d)
 }
 
 /** Whether a daily bar's epoch-second stamp falls on today, locally. */
 function isToday(timestamp: number | undefined): boolean {
   if (typeof timestamp !== 'number' || !Number.isFinite(timestamp)) return false
-  return new Date(timestamp * 1000).toDateString() === today()
+  return SESSION_DATE.format(new Date(timestamp * 1000)) === today()
 }
 
 /**
@@ -155,10 +158,11 @@ export async function previousClose(
   marketOpen = false
 ): Promise<number | null> {
   const day = today()
-  if (cachedDay !== day) {
+  const scope = `${quoteSessionScope()}:${day}`
+  if (cachedDay !== scope) {
     cache.clear()
     inflight.clear()
-    cachedDay = day
+    cachedDay = scope
     // A close from yesterday would silently produce a wrong change all day,
     // so the store is only read when it carries today's stamp.
     hydrate(day)
@@ -170,9 +174,14 @@ export async function previousClose(
 
   const pending = inflight.get(key)
   if (pending) return pending
+  if (inflight.size >= 256) return null
 
-  const request = (async (): Promise<number | null> => {
+  const request = queue.then(async (): Promise<number | null> => {
     try {
+      const wait = Math.max(0, nextRequestAt - Date.now())
+      if (wait) await new Promise(resolve => setTimeout(resolve, wait))
+      if (cachedDay !== scope) return null
+      nextRequestAt = Date.now() + 2000
       const res = await apiClient.post<{ status: string; data?: DailyBar[] }>('/history', {
         apikey: apiKey,
         symbol,
@@ -180,7 +189,8 @@ export async function previousClose(
         interval: 'D',
         start_date: isoDaysAgo(LOOKBACK_DAYS),
         end_date: localIso(new Date()),
-      })
+      }, { timeout: 10_000 })
+      if (cachedDay !== scope) return null
 
       const bars = res.data?.status === 'success' ? (res.data?.data ?? []) : []
       if (bars.length === 0) return fail(key)
@@ -196,11 +206,12 @@ export async function previousClose(
       save(day)
       return value
     } catch {
-      return fail(key)
+      return cachedDay === scope ? fail(key) : null
     } finally {
-      inflight.delete(key)
+      if (inflight.get(key) === request) inflight.delete(key)
     }
-  })()
+  })
+  queue = request.catch(() => null)
 
   inflight.set(key, request)
   return request
