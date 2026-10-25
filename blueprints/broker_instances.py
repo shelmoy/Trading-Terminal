@@ -31,7 +31,7 @@ def instance_login():
         try:
             if not import_primary_login():
                 authority = login_authority()
-                return redirect(f"{authority[2]}/broker")
+                return redirect(f"{authority[2]}/login?{urlencode({'broker': broker})}")
         except (ValueError, OSError, sqlite3.Error):
             return jsonify(status="error", message="The original OpenAlgo login could not be linked. Check the local instance configuration."), 503
     if not session.get("user"):
@@ -60,7 +60,7 @@ def fyers_start():
         try:
             if not import_primary_login():
                 authority = login_authority()
-                return redirect(f"{authority[2]}/broker")
+                return redirect(f"{authority[2]}/login?broker=fyers")
         except (ValueError, OSError, sqlite3.Error):
             return jsonify(status="error", message="The original OpenAlgo login could not be linked."), 503
     session.pop("logged_in", None)

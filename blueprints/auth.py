@@ -122,6 +122,7 @@ def get_broker_config():
     broker_api_key and redirect_url are only returned when authenticated.
     """
     REDIRECT_URL = os.getenv("REDIRECT_URL")
+    from utils.broker_instances import configured_instances
 
     # Extract broker name from redirect URL
     match = re.search(r"/([^/]+)/callback$", REDIRECT_URL)
@@ -132,8 +133,6 @@ def get_broker_config():
 
     # Return full config only for authenticated users
     if "user" in session:
-        from utils.broker_instances import configured_instances
-
         BROKER_API_KEY = os.getenv("BROKER_API_KEY")
         return jsonify(
             {
@@ -145,13 +144,15 @@ def get_broker_config():
             }
         )
 
-    # Unauthenticated: return broker name only so the login button is visible
+    # Loopback destinations are routing metadata, not credentials. Keep them
+    # available before app login so a linked broker isn't reported missing.
     return jsonify(
         {
             "status": "success",
             "broker_name": broker_name,
             "broker_api_key": None,
             "redirect_url": REDIRECT_URL,
+            "broker_instances": configured_instances(),
         }
     )
 
