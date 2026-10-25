@@ -91,6 +91,12 @@ export interface UseLiveQuoteResult {
   refresh: () => Promise<void>
 }
 
+interface QuoteSnapshot<T> {
+  scope: string
+  data: T
+  requestedAt: number
+}
+
 /**
  * Centralized hook for real-time quote and depth data with automatic REST fallback.
  *
@@ -126,16 +132,22 @@ export function useLiveQuote(
     refreshInterval = 30000,
   } = options
 
-  const { apiKey } = useAuthStore()
+  const { apiKey, user } = useAuthStore()
   const { isMarketOpen } = useMarketStatus()
 
-  // REST fallback state
-  const [restQuotes, setRestQuotes] = useState<QuotesData | null>(null)
-  const [restDepth, setRestDepth] = useState<DepthData | null>(null)
+  // Never render an old instrument/account's quote, even before effects run.
+  // This scope stays in memory; credentials are never persisted or logged here.
+  const scope = JSON.stringify([user?.broker, user?.username, user?.loginTime, apiKey, symbol, exchange])
+  const currentScope = useRef(scope)
+  currentScope.current = scope
+  const epoch = useRef(0)
+  const inFlight = useRef<{ scope: string; work: Promise<void>; controller: AbortController } | null>(null)
+  const [quoteSnapshot, setQuoteSnapshot] = useState<QuoteSnapshot<QuotesData> | null>(null)
+  const [depthSnapshot, setDepthSnapshot] = useState<QuoteSnapshot<DepthData> | null>(null)
+  const restQuotes = quoteSnapshot?.scope === scope ? quoteSnapshot.data : null
+  const restDepth = depthSnapshot?.scope === scope ? depthSnapshot.data : null
   const [isLoadingRest, setIsLoadingRest] = useState(false)
-
-  // Track last fetch time
-  const lastFetchRef = useRef<number>(0)
+  const [, checkFreshness] = useState(0)
 
   // Check if we have valid symbol/exchange
   const hasSymbol = !!symbol && !!exchange
@@ -157,105 +169,107 @@ export function useLiveQuote(
     enabled: enabled && hasSymbol,
   })
 
-  const wsData = marketData.get(`${exchange}:${symbol}`)?.data
-  const wsLastUpdate = marketData.get(`${exchange}:${symbol}`)?.lastUpdate
+  // useMarketData clears its map in an effect on a session change. Block its
+  // previous render's map immediately so same-symbol account switches are safe.
+  const subscription = useRef<{ scope: string; blocked?: typeof marketData }>({ scope })
+  if (subscription.current.scope !== scope) subscription.current = { scope, blocked: marketData }
+  if (subscription.current.blocked && subscription.current.blocked !== marketData) subscription.current.blocked = undefined
+  const wsRecord = subscription.current.blocked === marketData ? undefined : marketData.get(`${exchange}:${symbol}`)
+  const wsLastUpdate = wsRecord?.lastUpdate
 
   // Check if market is open for this exchange
   const marketOpen = isMarketOpen(exchange)
 
   // Check if WebSocket data is fresh
   const hasWsData = !!(
+    enabled &&
     wsConnected &&
-    wsData &&
+    !wsPaused &&
+    !isFallbackMode &&
+    wsRecord?.data &&
     wsLastUpdate &&
     Date.now() - wsLastUpdate < staleThreshold
   )
+  const restAsOf = Math.max(
+    quoteSnapshot?.scope === scope && firstPrice(quoteSnapshot.data.ltp) ? quoteSnapshot.requestedAt : 0,
+    depthSnapshot?.scope === scope && firstPrice(depthSnapshot.data.ltp) ? depthSnapshot.requestedAt : 0
+  )
+  const useWs = hasWsData && (wsLastUpdate ?? 0) >= restAsOf
+  const wsData = useWs ? wsRecord?.data : undefined
+
+  // Re-evaluate freshness when ticks stop, without waiting for another tick.
+  useEffect(() => {
+    if (!enabled || !wsLastUpdate) return
+    const remaining = wsLastUpdate + staleThreshold - Date.now()
+    if (remaining <= 0) return
+    const timer = setTimeout(() => checkFreshness(value => value + 1), remaining + 1)
+    return () => clearTimeout(timer)
+  }, [enabled, wsLastUpdate, staleThreshold, scope])
 
   // Effective live status (WebSocket connected, data fresh, market open)
-  const isLive = hasWsData && marketOpen && !wsPaused
+  const isLive = useWs && marketOpen
 
   /**
    * Fetch REST data (quotes and/or depth)
    */
-  const fetchRestData = useCallback(async () => {
-    if (!apiKey || !hasSymbol) return
-
+  const fetchRestData = useCallback((): Promise<void> => {
+    if (!enabled || !apiKey || !hasSymbol) return Promise.resolve()
+    if (inFlight.current?.scope === scope) return inFlight.current.work
+    const generation = epoch.current
+    const requestedAt = Date.now()
+    const controller = new AbortController()
+    const isCurrent = () => currentScope.current === scope && epoch.current === generation && !controller.signal.aborted
     setIsLoadingRest(true)
-    try {
-      // Fetch quotes and depth in parallel
-      const promises: Promise<void>[] = []
-
-      if (useQuotesFallback) {
-        promises.push(
-          tradingApi
-            .getQuotes(apiKey, symbol, exchange)
-            .then((response) => {
-              if (response.status === 'success' && response.data) {
-                setRestQuotes(response.data)
-              }
-            })
-            .catch(() => {})
-        )
+    const work = (async () => {
+      try {
+        // Fetch quotes and depth together, sharing cancellation and identity.
+        const promises: Promise<void>[] = []
+        if (useQuotesFallback) {
+          promises.push(
+            tradingApi.getQuotes(apiKey, symbol, exchange, controller.signal)
+              .then(response => {
+                if (isCurrent() && response.status === 'success' && response.data) {
+                  setQuoteSnapshot({ scope, data: response.data, requestedAt })
+                }
+              })
+              .catch(() => {})
+          )
+        }
+        if (useDepthFallback && mode === 'Depth') {
+          promises.push(
+            tradingApi.getDepth(apiKey, symbol, exchange, controller.signal)
+              .then(response => {
+                if (isCurrent() && response.status === 'success' && response.data) {
+                  setDepthSnapshot({ scope, data: response.data, requestedAt })
+                }
+              })
+              .catch(() => {})
+          )
+        }
+        await Promise.all(promises)
+      } finally {
+        if (isCurrent()) setIsLoadingRest(false)
+        if (inFlight.current?.controller === controller) inFlight.current = null
       }
+    })()
+    inFlight.current = { scope, work, controller }
+    return work
+  }, [enabled, apiKey, symbol, exchange, hasSymbol, scope, useQuotesFallback, useDepthFallback, mode])
 
-      if (useDepthFallback && mode === 'Depth') {
-        promises.push(
-          tradingApi
-            .getDepth(apiKey, symbol, exchange)
-            .then((response) => {
-              if (response.status === 'success' && response.data) {
-                setRestDepth(response.data)
-              }
-            })
-            .catch(() => {})
-        )
-      }
-
-      await Promise.all(promises)
-      lastFetchRef.current = Date.now()
-    } finally {
-      setIsLoadingRest(false)
+  useEffect(() => {
+    epoch.current++
+    setQuoteSnapshot(null)
+    setDepthSnapshot(null)
+    setIsLoadingRest(false)
+    void fetchRestData()
+    const interval = enabled && hasSymbol ? setInterval(() => void fetchRestData(), refreshInterval) : undefined
+    return () => {
+      epoch.current++
+      if (interval) clearInterval(interval)
+      inFlight.current?.controller.abort()
+      inFlight.current = null
     }
-  }, [apiKey, symbol, exchange, hasSymbol, useQuotesFallback, useDepthFallback, mode])
-
-  // Fetch on mount and when symbol changes
-  // Use refs to track current state and avoid stale closures in intervals
-  const enabledRef = useRef(enabled)
-  const hasSymbolRef = useRef(hasSymbol)
-  const fetchRestDataRef = useRef(fetchRestData)
-
-  // Keep refs in sync with latest values
-  useEffect(() => {
-    enabledRef.current = enabled
-    hasSymbolRef.current = hasSymbol
-    fetchRestDataRef.current = fetchRestData
-  }, [enabled, hasSymbol, fetchRestData])
-
-  // biome-ignore lint/correctness/useExhaustiveDependencies: symbol/exchange intentionally restart the interval + initial fetch when the watched instrument changes, even though the body reads them only via the stable fetchRestDataRef
-  useEffect(() => {
-    if (!enabled || !hasSymbol) return
-
-    // Initial fetch - use ref to ensure we have the latest function
-    fetchRestDataRef.current()
-
-    // Set up periodic refresh
-    const interval = setInterval(() => {
-      // Check current enabled state before fetching
-      if (enabledRef.current && hasSymbolRef.current) {
-        fetchRestDataRef.current()
-      }
-    }, refreshInterval)
-
-    return () => clearInterval(interval)
-    // Only depend on stable values that should trigger new interval setup
-  }, [enabled, hasSymbol, symbol, exchange, refreshInterval])
-
-  // Reset state when symbol changes
-  // biome-ignore lint/correctness/useExhaustiveDependencies: symbol/exchange are the intended trigger to clear stale REST data when the watched instrument changes
-  useEffect(() => {
-    setRestQuotes(null)
-    setRestDepth(null)
-  }, [symbol, exchange])
+  }, [fetchRestData, enabled, hasSymbol, refreshInterval])
 
   // Convert REST depth format to normalized format
   const restDepthNormalized: NormalizedDepth | undefined = useMemo(() => {
@@ -272,16 +286,18 @@ export function useLiveQuote(
     const depth = wsData?.depth ?? restDepthNormalized
 
     // Determine best bid/ask from depth or quotes
-    const bidPrice =
-      wsData?.depth?.buy?.[0]?.price ??
-      restDepthNormalized?.buy?.[0]?.price ??
-      wsData?.bid_price ??
+    const bidPrice = firstPrice(
+      wsData?.depth?.buy?.[0]?.price,
+      restDepthNormalized?.buy?.[0]?.price,
+      wsData?.bid_price,
       restQuotes?.bid
-    const askPrice =
-      wsData?.depth?.sell?.[0]?.price ??
-      restDepthNormalized?.sell?.[0]?.price ??
-      wsData?.ask_price ??
+    )
+    const askPrice = firstPrice(
+      wsData?.depth?.sell?.[0]?.price,
+      restDepthNormalized?.sell?.[0]?.price,
+      wsData?.ask_price,
       restQuotes?.ask
+    )
     const bidSize =
       wsData?.depth?.buy?.[0]?.quantity ??
       restDepthNormalized?.buy?.[0]?.quantity ??
@@ -334,10 +350,10 @@ export function useLiveQuote(
 
   // Determine data source
   const dataSource: 'websocket' | 'rest' | 'none' = useMemo(() => {
-    if (hasWsData) return 'websocket'
+    if (useWs) return 'websocket'
     if (restQuotes || restDepth) return 'rest'
     return 'none'
-  }, [hasWsData, restQuotes, restDepth])
+  }, [useWs, restQuotes, restDepth])
 
   return {
     data: dataWithChange,

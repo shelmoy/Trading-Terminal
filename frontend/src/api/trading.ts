@@ -101,13 +101,14 @@ export const tradingApi = {
   getQuotes: async (
     apiKey: string,
     symbol: string,
-    exchange: string
+    exchange: string,
+    signal?: AbortSignal
   ): Promise<ApiResponse<QuotesData>> => {
     const response = await apiClient.post<ApiResponse<QuotesData>>('/quotes', {
       apikey: apiKey,
       symbol,
       exchange,
-    })
+    }, { signal })
     return response.data
   },
 
@@ -133,13 +134,14 @@ export const tradingApi = {
   getDepth: async (
     apiKey: string,
     symbol: string,
-    exchange: string
+    exchange: string,
+    signal?: AbortSignal
   ): Promise<ApiResponse<DepthData>> => {
     const response = await apiClient.post<ApiResponse<DepthData>>('/depth', {
       apikey: apiKey,
       symbol,
       exchange,
-    })
+    }, { signal })
     return response.data
   },
 

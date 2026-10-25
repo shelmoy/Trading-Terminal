@@ -362,6 +362,7 @@ describe('chart object lifecycle', () => {
     const terminal = Object.assign(Object.create(TradingTerminal.prototype), {
       destroyed: false,
       onVisibilityChange: () => {},
+      flushRenkoV4: () => {},
       offData: null,
       data: null,
       objects: { destroy: () => order.push('objects') },
@@ -415,6 +416,7 @@ describe('chart object lifecycle', () => {
       cleanError: () => 'chunk failed',
       toast: vi.fn(),
       lsSet: persisted,
+      cb: {},
     })
 
     await methods.applyIndicators.call(terminal)
@@ -823,10 +825,10 @@ describe('the chart is built without overriding its navigation defaults', () => 
  *
  * Asserted against the source rather than a live terminal: building one needs a
  * broker session, a socket and a canvas. What can be pinned here is that the
- * decision is made from the armed alerts and not from the tab alone, and that
- * the saving is still taken when there is nothing armed.
+ * both broker feeds stay current for prices and alerts. Comparison rendering
+ * may still follow tab visibility without tearing down the main feed.
  */
-describe('a chart with an armed alert stays awake when the tab is hidden', () => {
+describe('both broker charts stay current when a tab is hidden', () => {
   const source = readFileSync(join(process.cwd(), 'src/lib/trading/terminal.ts'), 'utf8')
 
   it('does not decide visibility from the tab alone', () => {
@@ -836,14 +838,14 @@ describe('a chart with an armed alert stays awake when the tab is hidden', () =>
     )
   })
 
-  it('keeps the feed live while an alert is armed', () => {
-    expect(source).toContain('this.data?.setVisible(visible || this.alertsArmed())')
+  it('keeps the feed live regardless of the tab or alert state', () => {
+    expect(source).toContain('this.data?.setVisible(true)')
   })
 
-  it('reads armed from the controller rather than counting alerts', () => {
-    // A disabled, expired or already-triggered alert is not waiting for
-    // anything, and keeping a feed awake for one is a cost with no answer.
-    expect(source).toMatch(/alertsArmed\(\)[\s\S]{0,400}state === 'armed'/)
+  it('does not tear down subscriptions when visibility changes', () => {
+    const start = source.indexOf('private readonly onVisibilityChange =')
+    const handler = source.slice(start, source.indexOf('\n  }', start))
+    expect(handler).not.toMatch(/\.disconnect\(|\.unsubscribe\(|\.close\(/)
   })
 
   it('re-decides when the set of alerts changes', () => {
