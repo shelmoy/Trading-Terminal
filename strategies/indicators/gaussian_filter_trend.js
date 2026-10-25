@@ -6,7 +6,7 @@
  * - Adaptive ATR Deadband dynamically scaled by Kaufman's Efficiency Ratio (Kaufman ER + EMA smoothing)
  * - Trailing stepping trendline that filters chop and locks onto directional swings
  * - Presets: Default, Fast Response, Smooth Trend
- * - Green bullish / golden-yellow bearish lines, distinct from HalfTrend's blue/red palette
+ * - Electric-blue bullish / luminous-maroon bearish lines and trend-flip triangles
  * - Medium triangles outside candles and a thicker dashed trend line
  * - Fast Response defaults, with balanced and smooth presets available
  * - Alert triggers without decorative overlays or dashboard tables
@@ -19,8 +19,8 @@ export default function ({
   registerIndicator,
   sourceValues,
 }) {
-  const bullColor = '#22c55e'
-  const bearColor = '#facc15'
+  const bullColor = '#448aff'
+  const bearColor = '#c94f70'
 
   // True Range calculation on bars
   function calcTR(bars) {
