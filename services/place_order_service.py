@@ -137,7 +137,12 @@ def _order_acknowledgement(response, payload, order_id):
         (str(body[key]) for key in ("message", "emsg", "errMsg", "error", "Error Message") if body.get(key)),
         "Broker did not confirm an order ID. Check the broker order book before retrying.",
     )
-    code = status if isinstance(status, int) and 400 <= status <= 599 else (400 if rejected else 502)
+    code = status if isinstance(status, int) and 400 <= status <= 599 else (400 if status == 200 and rejected else 502)
+    if status is None or (isinstance(status, int) and status >= 500):
+        # A transport failure may happen after delivery. Do not imply that
+        # resubmitting is safe, and never retry placement automatically.
+        if "order book before retrying" not in message:
+            message += ". Check the broker order book before retrying."
     return False, code, message
 
 

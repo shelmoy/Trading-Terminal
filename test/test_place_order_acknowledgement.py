@@ -44,6 +44,7 @@ def boundary():
 def test_http_200_rejection_is_never_success(boundary, payload, order_id):
     (ok, body, status), events = boundary(SimpleNamespace(status=200), payload, order_id)
     assert not ok and body['status'] == 'error' and status == 400
+    assert body['message'] in {'Insufficient funds', 'Invalid price', 'Rejected'}
     assert 'orderid' not in body
     assert len(events) == 1 and 'orderid' not in events[0]
 
@@ -59,7 +60,15 @@ def test_missing_id_is_an_unconfirmed_outcome(boundary, order_id):
 @pytest.mark.parametrize('response', [None, SimpleNamespace(status_code=503)])
 def test_transport_failure_does_not_raise_or_publish_success(boundary, response):
     (ok, body, status), events = boundary(response, {'error': 'Broker connection failed'}, None)
-    assert not ok and status >= 500 and body['message'] == 'Broker connection failed'
+    assert not ok and status >= 500 and body['message'].startswith('Broker connection failed')
+    assert 'order book before retrying' in body['message']
+    assert all('orderid' not in event for event in events)
+
+
+def test_kotak_transport_error_is_not_mistaken_for_a_definitive_rejection(boundary):
+    (ok, body, status), events = boundary(None, {'stat': 'NotOk', 'error': 'Read timed out'}, None)
+    assert not ok and status == 502
+    assert 'Read timed out' in body['message'] and 'order book before retrying' in body['message']
     assert all('orderid' not in event for event in events)
 
 
