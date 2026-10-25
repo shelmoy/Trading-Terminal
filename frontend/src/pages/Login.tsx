@@ -31,7 +31,25 @@ export default function Login() {
   const [isCheckingSetup, setIsCheckingSetup] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  const followLoginRedirect = (redirect: unknown) => {
+  const followLoginRedirect = async (redirect: unknown) => {
+    const requestedBroker = new URLSearchParams(window.location.search).get('broker')
+    if (requestedBroker && /^[a-z][a-z0-9_]*$/.test(requestedBroker)) {
+      try {
+        const response = await fetch('/auth/broker-config', { credentials: 'include' })
+        const config = await response.json()
+        const destination = config.broker_instances?.[requestedBroker]
+        if (response.ok && config.status === 'success' && config.broker_api_key && destination) {
+          const url = new URL(destination)
+          if (url.hostname === '127.0.0.1' && url.port && !url.username && !url.password &&
+            url.pathname === '/' && !url.search && !url.hash && ['http:', 'https:'].includes(url.protocol)) {
+            window.location.replace(`${url.origin}/auth/instance-login`)
+            return
+          }
+        }
+      } catch {
+        // Normal app navigation remains available if linked routing is unavailable.
+      }
+    }
     const target = typeof redirect === 'string' ? redirect : '/broker'
     // A linked broker's server owns cross-instance redirects. Never pass an
     // absolute URL to React Router (which would append it to /login), or trust
@@ -82,7 +100,7 @@ export default function Login() {
 
           if (sessionData.status === 'success' && sessionData.logged_in && sessionData.broker) {
             // Already fully logged in with broker, go to dashboard
-            navigate('/dashboard', { replace: true })
+            void followLoginRedirect('/dashboard')
             return
           } else if (
             sessionData.status === 'success' &&
@@ -90,7 +108,7 @@ export default function Login() {
             !sessionData.logged_in
           ) {
             // Logged in but no broker, go to broker selection
-            navigate('/broker', { replace: true })
+            void followLoginRedirect('/broker')
             return
           }
         }

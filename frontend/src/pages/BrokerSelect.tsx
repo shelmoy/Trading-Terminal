@@ -66,9 +66,14 @@ function instanceLoginUrl(config: BrokerConfig, broker: string): string | null {
   if (broker === config.broker_name) return null
   const configured = config.broker_instances?.[broker]
   if (!configured) return null
-  const url = new URL(configured)
-  if (url.hostname !== '127.0.0.1' || !['http:', 'https:'].includes(url.protocol)) return null
-  return `${url.origin}/auth/instance-login`
+  try {
+    const url = new URL(configured)
+    if (url.hostname !== '127.0.0.1' || !url.port || url.username || url.password ||
+      url.pathname !== '/' || url.search || url.hash || !['http:', 'https:'].includes(url.protocol)) return null
+    return `${url.origin}/auth/instance-login`
+  } catch {
+    return null
+  }
 }
 
 // Helper function to get Flattrade API key
@@ -145,6 +150,11 @@ export default function BrokerSelect() {
 
     if (selectedBroker !== brokerConfig.broker_name) {
       setError('This broker is not configured. Add its credentials in a separate linked broker instance before connecting.')
+      return
+    }
+
+    if (!brokerConfig.broker_api_key) {
+      window.location.assign('/login')
       return
     }
 
