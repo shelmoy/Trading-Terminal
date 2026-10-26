@@ -54,3 +54,23 @@ No migrations, dependency installations, credential/mode changes or broad
 pending upstream security activation are part of this update.
 
 Refresh the FYERS Trading tab to load the repaired history-cache format.
+
+## Live index feed follow-up
+
+A read-only proxy sample also reproduced a separate live-feed defect: both
+subscriptions were accepted, but only SENSEX delivered ticks. FYERS' official
+fyers-apiv3 3.2.0 decoder reads an index snapshot trailer (reserved bytes,
+multiplier, precision and three length-prefixed strings). The local decoder
+stopped before this trailer, mistaking its first zero byte for the next record
+type. Only the first index in a batched snapshot became registered; reversing
+the frame order reproduced the missing opposite index.
+
+The decoder now consumes the whole index record and rejects truncated frames
+without publishing partial index state. Five isolated binary tests reproduce
+the old failure in both snapshot orders, exercise subsequent NIFTY/SENSEX
+updates and check three truncated packets. All five pass after the repair;
+eight history cache tests also remain passing. A direct read-only eight-second
+feed sample using the repaired decoder received 34 NIFTY and 15 SENSEX updates.
+The fix does not alter broker subscription limits or order APIs. No new
+frontend build is needed for this backend follow-up; the successful production
+build and canonical assets in the preceding commit still match the frontend.
