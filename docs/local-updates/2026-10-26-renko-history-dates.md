@@ -90,3 +90,34 @@ change price/volume normally. Both instances returned HTTP200 for /faq,
 /trading, /scalper and /assets/index-CSIRCftZ.js. The deployed FYERS isolated
 history/decoder tests passed13/13. Manual Chrome visual verification remains
 unavailable as documented above; actual trade execution was not tested.
+
+## Kotak activation completed — 26 October, 10:04 IST
+
+At the user's request, the pending Kotak backend history-cache fix is now
+active. The guarded controller stopped only Kotak at10:03:51 and reported it
+Ready at10:04:24 IST. FYERS was not restarted; subsequent checks returned200
+on both instances for /faq, /trading, /scalper and the production JS entry.
+The installed source/build was unchanged and already committed, tested and
+published, so this activation needed no dependency install, migration or
+frontend rebuild. Both deployed isolated history/decoder test files passed
+13/13 before activation. Recovery branches and unknown files remain intact.
+
+The direct broker-credential diagnostic was blocked by automatic approval
+review with only 'blocked by policy' supplied. That diagnostic was not rerun
+through another credential-extraction mechanism. Safer checks used the
+signed-in Chrome app and read-only local strategy state: Kotak remained in
+Sandbox/Analyze, no active strategies/workflows/jobs or script configs were
+found. Existing sandbox books were retained; no real or sandbox trading
+actions or execution-mode changes were made. Live broker books were not
+independently verified during this activation.
+
+Chrome UI checks now succeeded: the original Scalper page reloaded with its
+three charts loaded and NIFTY/SENSEX/BANKNIFTY watchlist rows marked Live stream.
+A separate verification tab loaded Kotak Trading's existing native Renko
+settings. NIFTY displayed October dates and the26October session (406bricks),
+then SENSEX showed the26October session and506bricks; both reported WebSocket
+live and changing prices. The July label/old-price splice was absent in these
+views. NIFTY was selected again after checking SENSEX. This verifies these
+specific charts, not all SDK features or broker execution. The earlier broad
+terminalHistory baseline failures and separate security/performance work
+remain unresolved; no universal no-bug or zero-delay guarantee is claimed.
