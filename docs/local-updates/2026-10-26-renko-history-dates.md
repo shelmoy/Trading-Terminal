@@ -74,3 +74,19 @@ feed sample using the repaired decoder received 34 NIFTY and 15 SENSEX updates.
 The fix does not alter broker subscription limits or order APIs. No new
 frontend build is needed for this backend follow-up; the successful production
 build and canonical assets in the preceding commit still match the frontend.
+
+## Activation results
+
+FYERS was safely stopped and restarted through the guarded controller, ready
+at 09:52:39 IST. Fresh pre-stop direct broker books were successful with zero
+working orders and zero nonzero positions; Analyze remained enabled and there
+were no active strategies/workflows/scheduled jobs. Kotak stayed Ready without
+restart. After activation, eight-second proxy samples received NIFTY/SENSEX
+counts 25/14 in Quote mode and 32/14 in LTP mode. Diagnostic subscriptions were
+unsubscribed and sockets closed. Local and direct FYERS recent history both
+returned 414 bars: 375 on 23 October and 39 on 26 October, with matching first
+and last timestamps and no July data. Separately requested forming candles can
+change price/volume normally. Both instances returned HTTP200 for /faq,
+/trading, /scalper and /assets/index-CSIRCftZ.js. The deployed FYERS isolated
+history/decoder tests passed13/13. Manual Chrome visual verification remains
+unavailable as documented above; actual trade execution was not tested.
