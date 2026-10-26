@@ -148,3 +148,6 @@ docs/audit/qa_audit/**/qa_sandbox_*.csv
 docs/audit/qa_audit/**/qa_live_*.csv
 # Excel writes a ~$-prefixed lock file next to any workbook left open.
 docs/audit/qa_audit/**/~$*
+
+# Regenerated history cache; old v1 files are retained for recovery.
+db/fast_history_cache_v2.pkl

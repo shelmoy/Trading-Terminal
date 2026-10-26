@@ -72,7 +72,7 @@ import {
   withBarCache,
 } from 'openalgo-charts'
 import { formatTradingExchange, formatTradingSymbol } from '@/lib/trading/displaySymbol'
-import { validHistoryBars } from './historyValidation'
+import { historyBarsInRange, validHistoryBars } from './historyValidation'
 import type {
   DrawingController,
   DrawingPatch,
@@ -196,7 +196,9 @@ export const globalBarMemoryCache = new Map<string, { bars: readonly Bar[]; time
 // Share cold requests across panes without extending the freshness of cached bars.
 const initialBarRequests = new Map<string, Promise<Bar[]>>()
 
-const FAST_CACHE_STORAGE_KEY = 'openalgo.scalper.fastCache.v1'
+// v1 could contain July candles labelled as a recently refreshed October
+// window. Ignore that history preview, preserving chart settings/drawings.
+const FAST_CACHE_STORAGE_KEY = 'openalgo.scalper.fastCache.v2'
 // Saved candles are a preview, never an excuse to skip authoritative refresh.
 const BAR_PREVIEW_RETENTION_MS = 7 * 86400_000
 let fastCachePersistTimer: ReturnType<typeof setTimeout> | null = null
@@ -8559,7 +8561,7 @@ export class TradingTerminal {
       },
     })
     const rawGetBars = this.rest.getBars.bind(this.rest)
-    this.rest.getBars = async (request) => validHistoryBars(await rawGetBars(request))
+    this.rest.getBars = async (request) => historyBarsInRange(await rawGetBars(request), request)
     const baseCachedBars = withBarCache(this.rest, { ttlMs: 10 * 60_000 })
     const origCachedBars = baseCachedBars.getCachedBars.bind(baseCachedBars)
     baseCachedBars.getCachedBars = async (request): Promise<Bar[] | undefined> => {
@@ -8568,11 +8570,12 @@ export class TradingTerminal {
         const key = `${request.symbol.toUpperCase()}:${(request.exchange || '').toUpperCase()}:${request.interval}`
         const hit = globalBarMemoryCache.get(key)
         if (hit?.bars.length && Date.now() - hit.time < BAR_PREVIEW_RETENTION_MS) {
-          const bars = hit.bars.filter((bar) => bar.time <= (request.to ?? Infinity))
+          const bars = historyBarsInRange(hit.bars, request)
           if (bars.length) return bars.map((bar) => ({ ...bar }))
         }
       }
-      return origCachedBars(request)
+      const cached = await origCachedBars(request)
+      return cached ? historyBarsInRange(cached, request) : undefined
     }
     const origGetBars = baseCachedBars.getBars.bind(baseCachedBars)
     baseCachedBars.getBars = async (request): Promise<Bar[]> => {
@@ -8598,7 +8601,8 @@ export class TradingTerminal {
       if (isInitialWindow) {
         const hit = globalBarMemoryCache.get(memKey)
         if (hit?.bars?.length && Date.now() - hit.time < 6 * 3600_000) {
-          return [...hit.bars]
+          const bars = historyBarsInRange(hit.bars, request)
+          if (bars.length) return bars
         }
       }
       const requestKey = JSON.stringify([this.apiKey, request.symbol, request.exchange, request.interval, reqFrom, reqTo, Boolean(request.noCache)])
@@ -8613,7 +8617,7 @@ export class TradingTerminal {
           }).catch(() => {})
         }
       }
-      const fetched = await pending
+      const fetched = historyBarsInRange(await pending, request)
       if (fetched?.length && isInitialWindow) {
         globalBarMemoryCache.set(memKey, { bars: fetched, time: Date.now() })
         persistFastCache()

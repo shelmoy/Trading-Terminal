@@ -11,3 +11,13 @@ export function validHistoryBars(bars: readonly Bar[]): Bar[] {
       (bar.volume === undefined || (Number.isFinite(bar.volume) && bar.volume >= 0))
   )
 }
+
+/** A cached response is never allowed to expand the requested date window. */
+export function historyBarsInRange(
+  bars: readonly Bar[],
+  request: { from?: number; to?: number }
+): Bar[] {
+  const from = request.from ?? -Infinity
+  const to = request.to ?? Infinity
+  return validHistoryBars(bars).filter((bar) => bar.time >= from && bar.time <= to)
+}
