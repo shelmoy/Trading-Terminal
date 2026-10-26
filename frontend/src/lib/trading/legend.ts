@@ -15,6 +15,8 @@
  */
 
 /** Candle direction colours, shared by the OHLC legend and the last-price line. */
+import { formatTradingExchange } from './displaySymbol'
+
 export const UP = '#26a69a'
 export const DN = '#ef5350'
 /** Last-price colour before any bar exists to take a direction from. */
@@ -98,7 +100,7 @@ export interface LegendInput {
 export function buildChartLegend(input: LegendInput): LegendRun[] {
   const runs: LegendRun[] = [{ text: input.symbol, tone: 'symbol' }]
   const lot = input.lotsize ? ` · lot ${input.lotsize}` : ''
-  runs.push({ text: `· ${input.interval} · ${input.exchange}${lot}`, tone: 'meta' })
+  runs.push({ text: `· ${input.interval} · ${formatTradingExchange(input.exchange)}${lot}`, tone: 'meta' })
 
   const bar = input.bar
   if (bar) {

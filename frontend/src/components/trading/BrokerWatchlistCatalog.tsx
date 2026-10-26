@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button'
 import { type PriceableItem, useLivePrice } from '@/hooks/useLivePrice'
 import { useWatchlistQuotes } from '@/hooks/useWatchlistQuotes'
 import type { SearchRow } from '@/lib/trading/terminal'
+import { formatTradingExchange } from '@/lib/trading/displaySymbol'
 import { watchlistCategory } from '@/lib/trading/watchlistCategories'
 import { cn } from '@/lib/utils'
 
@@ -318,9 +319,9 @@ export function BrokerWatchlistCatalog({
                         type="button"
                         onClick={() => pick(contract)}
                         className="flex w-full items-center justify-between gap-2 rounded-sm text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                        aria-label={`Chart ${contract.symbol} on ${contract.exchange}`}
+                        aria-label={`Chart ${contract.symbol} on ${formatTradingExchange(contract.exchange)}`}
                         aria-current={activeSymbol === key ? true : undefined}
-                        title={`${contract.symbol} · ${quote?.source === 'websocket' ? 'Live stream' : 'Snapshot'}${quote?.receivedAt ? ` · received ${new Date(quote.receivedAt).toLocaleTimeString()}` : ''}`}
+                        title={`${contract.symbol} · ${formatTradingExchange(contract.exchange)} · ${quote?.source === 'websocket' ? 'Live stream' : quote?.streamLimited ? 'Stream limit · snapshot quote' : 'Snapshot quote'}${quote?.receivedAt ? ` · received ${new Date(quote.receivedAt).toLocaleTimeString()}` : ' · waiting for a fresh quote'}`}
                       >
                         <span className="min-w-0 truncate text-xs font-semibold">{group.name}</span>
                         <span
@@ -335,11 +336,8 @@ export function BrokerWatchlistCatalog({
                       <div className="mt-1 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
                         <div className="flex min-w-0 items-center gap-1">
                           <span className="text-[9px] font-medium text-muted-foreground">
-                            {contract.exchange}
+                            {formatTradingExchange(contract.exchange)}
                           </span>
-                          {quote?.source !== 'websocket' && <span className="text-[9px] text-muted-foreground">
-                            {quote?.streamLimited ? 'Stream limit · snapshot' : 'Snapshot'}
-                          </span>}
                           {group.contracts.length > 1 || contract.expiry ? (
                             <select
                               aria-label={`${group.name} contract expiry`}

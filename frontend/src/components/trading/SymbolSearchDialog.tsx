@@ -5,6 +5,7 @@ import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { useSupportedExchanges } from '@/hooks/useSupportedExchanges'
 import { SEARCH_INPUT_ATTR } from '@/lib/trading/quickEntry'
 import type { SearchRow } from '@/lib/trading/terminal'
+import { formatTradingExchange } from '@/lib/trading/displaySymbol'
 import { cn } from '@/lib/utils'
 
 /**
@@ -630,7 +631,7 @@ export function SymbolSearchDialog({
                   <span className="text-[10px] font-medium uppercase text-muted-foreground">
                     {typeBadge(r)}
                   </span>
-                  <span className="font-medium text-foreground">{String(r.exchange)}</span>
+                  <span className="font-medium text-foreground">{formatTradingExchange(String(r.exchange))}</span>
                 </span>
               </button>
             ))

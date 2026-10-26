@@ -45,6 +45,7 @@ import { Input } from '@/components/ui/input'
 import { type PriceableItem, useLivePrice } from '@/hooks/useLivePrice'
 import { useWatchlistQuotes } from '@/hooks/useWatchlistQuotes'
 import type { SearchRow } from '@/lib/trading/terminal'
+import { formatTradingExchange } from '@/lib/trading/displaySymbol'
 import { cn } from '@/lib/utils'
 import { showToast } from '@/utils/toast'
 import { PANEL_HEADER, PanelShell } from './panelShell'
@@ -853,6 +854,11 @@ export function WatchlistPanel({ apiKey, onPick, search, activeSymbol }: Props) 
                   setOverId(null)
                 }}
                 style={{ gridTemplateColumns: gridTemplate }}
+                title={`${item.symbol} · ${formatTradingExchange(item.exchange)} · ${priceState?._dataSource === 'websocket'
+                  ? 'Live stream'
+                  : priceState?._streamLimited ? 'Stream limit · snapshot quote' : 'Snapshot quote'}${priceState?._priceReceivedAt
+                  ? ` · received ${new Date(priceState._priceReceivedAt).toLocaleTimeString()}`
+                  : ' · waiting for a fresh quote'}`}
                 className={cn(
                   'grid gap-x-1.5',
                   'group relative items-center px-2 py-1 text-[12px] transition-colors hover:bg-accent/50',
@@ -903,7 +909,7 @@ export function WatchlistPanel({ apiKey, onPick, search, activeSymbol }: Props) 
                     }
                   }}
                   className="absolute inset-0 cursor-pointer rounded-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
-                  aria-label={`Chart ${item.symbol} on ${item.exchange}`}
+                  aria-label={`Chart ${item.symbol} on ${formatTradingExchange(item.exchange)}`}
                   // The charted row said so only in colour. This states it, so
                   // a screen reader hears which instrument is on the chart and a
                   // test can assert the fact rather than a Tailwind class that
@@ -930,13 +936,9 @@ export function WatchlistPanel({ apiKey, onPick, search, activeSymbol }: Props) 
                   </span>
                   {display.exchange && (
                     <span className="shrink-0 text-[10px] text-muted-foreground">
-                      {item.exchange}
+                      {formatTradingExchange(item.exchange)}
                     </span>
                   )}
-                  {priceState?._dataSource !== 'websocket' && <span
-                    className="shrink-0 text-[9px] text-muted-foreground"
-                    title={priceState?._priceReceivedAt ? `Received ${new Date(priceState._priceReceivedAt).toLocaleTimeString()}` : 'Waiting for a quote'}
-                  >{priceState?._streamLimited ? 'Limit · snapshot' : 'Snapshot'}</span>}
                 </span>
 
                 {/* Always visible. Hiding the number the user hovered in order

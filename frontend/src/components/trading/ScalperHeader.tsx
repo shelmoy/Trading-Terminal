@@ -22,6 +22,7 @@ import {
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu'
 import type { DayPnlSummary } from '@/lib/trading/dayPnl'
+import { formatTradingExchange } from '@/lib/trading/displaySymbol'
 
 interface IndexChoice {
   id: string
@@ -215,8 +216,8 @@ export function ScalperHeader(props: Props) {
               <button
                 type="button"
                 className="scalper-index-select"
-                aria-label={`Change underlying index, ${underlying.label}, ${exchange}`}
-                title={`${underlying.label} · ${exchange}`}
+                aria-label={`Change underlying index, ${underlying.label}, ${formatTradingExchange(exchange)}`}
+                title={`${underlying.label} · ${formatTradingExchange(exchange)}`}
               >
                 <strong>{underlying.label}</strong>
                 <ChevronDown size={11} />

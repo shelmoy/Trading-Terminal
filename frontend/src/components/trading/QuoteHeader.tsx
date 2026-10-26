@@ -2,6 +2,7 @@
 // Real-time quote header display for PlaceOrderDialog
 
 import { Badge } from '@/components/ui/badge'
+import { formatTradingExchange } from '@/lib/trading/displaySymbol'
 import { cn } from '@/lib/utils'
 
 export interface QuoteHeaderProps {
@@ -72,7 +73,7 @@ export function QuoteHeader({
       {/* Exchange Badge and LTP Row */}
       <div className="flex items-center justify-between">
         <Badge className={cn('text-[10px] px-1.5 py-0', getExchangeBadgeClass(exchange))}>
-          {exchange}
+          {formatTradingExchange(exchange)}
         </Badge>
         <div className="flex items-center gap-2">
           <span className="text-xl font-bold">{ltp !== undefined ? ltp.toFixed(2) : '-'}</span>
