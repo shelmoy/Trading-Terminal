@@ -607,6 +607,10 @@ class FyersHSMWebSocket:
 
             index_data = {"type": "if"}
 
+            # An incomplete frame must not register/publish a partial snapshot.
+            if offset + field_count * 4 > len(data):
+                return len(data)
+
             # Parse field values
             for index in range(field_count):
                 if offset + 4 > len(data):
@@ -617,6 +621,28 @@ class FyersHSMWebSocket:
 
                 if value != -2147483648 and index < len(self.INDEX_FIELDS):
                     index_data[self.INDEX_FIELDS[index]] = value
+
+            # Indices have the same snapshot trailer as scrips in the official
+            # fyers-apiv3 decoder: reserved u16, multiplier u16, precision u8,
+            # then three length-prefixed strings. Leaving this unread makes
+            # its first zero byte look like the next record's data type and
+            # silently drops every later snapshot in a multi-index frame.
+            if offset + 5 > len(data):
+                return len(data)
+            offset += 2
+            index_data["multiplier"] = struct.unpack(">H", data[offset:offset + 2])[0]
+            offset += 2
+            index_data["precision"] = data[offset]
+            offset += 1
+            for field in ("exchange", "exchange_token", "symbol"):
+                if offset >= len(data):
+                    return len(data)
+                string_len = data[offset]
+                offset += 1
+                if offset + string_len > len(data):
+                    return len(data)
+                index_data[field] = data[offset:offset + string_len].decode("utf-8", errors="replace")
+                offset += string_len
 
             # Add original symbol mapping and HSM token
             if topic_name in self.symbol_mappings:
