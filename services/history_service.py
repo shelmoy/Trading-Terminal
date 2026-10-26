@@ -24,7 +24,7 @@ logger = get_logger(__name__)
 
 # Server-side 0-1ms history response cache:
 # Keeps recently requested candle histories in memory (3000 items, 15 min TTL)
-# and persists them to db/fast_history_cache.pkl so server restarts and index switches
+# and persists them to a versioned cache so server restarts and index switches
 # resolve instantaneously in 0-1ms without hitting broker rate limits.
 _history_cache = LockedTTLCache(maxsize=3000, ttl=900)
 # Fast lookup by (SYMBOL, EXCHANGE, INTERVAL) -> (start_date_str, end_date_str, timestamp, result_tuple)
@@ -35,7 +35,9 @@ _history_latest_lock = real_threading.Lock()
 _inflight_locks: dict[tuple[str, str, str, str, str], real_threading.Event] = {}
 _inflight_guard = real_threading.Lock()
 
-_DISK_CACHE_PATH = Path("db/fast_history_cache.pkl")
+# v1 entries can advertise a refreshed range while carrying a stale older
+# window. Leave the old file recoverable; never hydrate those entries again.
+_DISK_CACHE_PATH = Path("db/fast_history_cache_v2.pkl")
 _disk_persist_lock = real_threading.Lock()
 _last_disk_persist = 0.0
 
@@ -81,6 +83,27 @@ def _sanitize_history_result(result, context):
         {**result[1], "data": valid, "data_quality": {"dropped_candles": dropped}},
         result[2],
     )
+
+
+def _history_result_in_range(result, start_date, end_date):
+    """Return only the requested inclusive IST dates; never invent bars."""
+    if not result[0] or not isinstance(result[1], dict):
+        return result
+    rows = result[1].get("data")
+    if not isinstance(rows, list):
+        return result
+    zone = pytz.timezone("Asia/Kolkata")
+    start = zone.localize(datetime.strptime(str(start_date), "%Y-%m-%d")).timestamp()
+    stop = zone.localize(datetime.strptime(str(end_date), "%Y-%m-%d") + timedelta(days=1)).timestamp()
+    kept = []
+    for row in rows:
+        try:
+            stamp = float(row["timestamp"])
+            if math.isfinite(stamp) and start <= stamp < stop:
+                kept.append(row)
+        except (TypeError, ValueError, KeyError):
+            continue
+    return result[0], {**result[1], "data": kept}, result[2]
 
 
 def _load_disk_history_cache() -> None:
@@ -424,7 +447,9 @@ def get_history(
         is_single_day_tail = s_str == e_str
         cached_result = _history_cache.get(cache_key)
         if cached_result is not None and not is_single_day_tail:
-            return cached_result
+            sliced = _history_result_in_range(cached_result, s_str, e_str)
+            if sliced[1].get("data"):
+                return sliced
         with _history_latest_lock:
             latest_entry = _history_latest_by_sym_iv.get(sym_iv_key)
         if latest_entry is not None:
@@ -434,9 +459,13 @@ def get_history(
                 # During live market, 1m bar-close tail repairs (start_date == end_date)
                 # only reuse cache if < 12s old so new minute closes always get fresh broker bars
                 if age_sec < 12 and cached_result is not None:
-                    return cached_result
-            elif age_sec < 900 and e_str >= c_end and s_str >= c_start and c_start < c_end:
-                return c_res
+                    sliced = _history_result_in_range(cached_result, s_str, e_str)
+                    if sliced[1].get("data"):
+                        return sliced
+            elif age_sec < 900 and c_start <= s_str <= e_str <= c_end and c_start < c_end:
+                sliced = _history_result_in_range(c_res, s_str, e_str)
+                if sliced[1].get("data"):
+                    return sliced
 
     # Coalesce concurrent identical requests so simultaneous panes/tabs never double-hit the broker
     wait_event: real_threading.Event | None = None
@@ -453,7 +482,9 @@ def get_history(
         wait_event.wait(timeout=12.0)
         cached_after = _history_cache.get(cache_key)
         if cached_after is not None:
-            return cached_after
+            sliced = _history_result_in_range(cached_after, s_str, e_str)
+            if sliced[1].get("data"):
+                return sliced
 
     try:
         # Source: 'api' (default) - Fetch from broker API
@@ -543,6 +574,7 @@ def get_history(
                 400,
             )
 
+        res = _history_result_in_range(res, s_str, e_str)
         if res[0] and res[2] == 200:
             rows = (res[1] or {}).get("data") if isinstance(res[1], dict) else None
             if rows:
