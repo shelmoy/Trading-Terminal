@@ -24,6 +24,7 @@ import { useEffect, useRef, useState } from 'react'
 import { instrumentsOn, intervalsAvailable } from '@/api/openscriptRunner'
 import { useSupportedExchanges } from '@/hooks/useSupportedExchanges'
 import { DERIVATIVE_EXCHANGES } from '@/lib/flow/constants'
+import { formatTradingExchange } from '@/lib/trading/displaySymbol'
 import { cn } from '@/lib/utils'
 
 const FIELD = 'h-7 w-full rounded border border-border bg-background px-1.5 text-[11px]'
@@ -162,7 +163,7 @@ export function InstrumentPicker({ symbol, exchange, interval, product, onChange
                 <span className="font-medium">{row.symbol}</span>
                 <span className="truncate text-[10px] text-muted-foreground">{row.name}</span>
                 <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">
-                  {row.exchange}
+                  {formatTradingExchange(row.exchange)}
                 </span>
               </button>
             ))}

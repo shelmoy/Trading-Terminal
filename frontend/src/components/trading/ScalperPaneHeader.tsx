@@ -1,5 +1,6 @@
 import { Maximize2, Minimize2 } from 'lucide-react'
 import type { ChartStateView } from '@/lib/trading/chartState'
+import { formatTradingExchange } from '@/lib/trading/displaySymbol'
 
 interface Props {
   side: 'spot' | 'ce' | 'pe'
@@ -38,7 +39,7 @@ export function ScalperPaneHeader({
       >
         <span className="scalper-pane-kind">{label}</span>
         <span className="scalper-pane-symbol">{symbol}</span>
-        <span className="scalper-pane-exchange">{exchange}</span>
+        <span className="scalper-pane-exchange">{formatTradingExchange(exchange)}</span>
       </button>
       <span
         className="scalper-pane-status"
