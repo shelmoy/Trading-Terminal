@@ -113,7 +113,7 @@ import {
 } from '@/lib/trading/terminal'
 import type { WorkspaceReplaySnapshot } from '@/lib/trading/workspaceReplay'
 import { cn } from '@/lib/utils'
-import { formatTradingSymbol } from '@/lib/trading/displaySymbol'
+import { formatTradingExchange, formatTradingSymbol } from '@/lib/trading/displaySymbol'
 import { useAuthStore } from '@/stores/authStore'
 import { useThemeStore } from '@/stores/themeStore'
 import { showToast } from '@/utils/toast'
@@ -1231,7 +1231,7 @@ export function ChartPane({
               </span>
               {sym && (
                 <span className="rounded bg-foreground/[0.07] px-1 py-0.5 text-[10px] font-medium leading-none text-muted-foreground">
-                  {sym.exchange}
+                  {formatTradingExchange(sym.exchange)}
                 </span>
               )}
             </button>
@@ -1646,7 +1646,7 @@ export function ChartPane({
         {dataExport && (
           <Suspense fallback={null}>
             <ChartDataDialog
-              source={`${sym ? `${sym.exchange}:${sym.symbol}` : 'This chart'}, ${interval}`}
+              source={`${sym ? `${formatTradingExchange(sym.exchange)}:${sym.symbol}` : 'This chart'}, ${interval}`}
               studies={dataExport.studies}
               comparisons={dataExport.comparisons}
               onDownload={downloadCsv}

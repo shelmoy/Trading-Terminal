@@ -84,6 +84,8 @@ function renderPanel(props: Partial<React.ComponentProps<typeof WatchlistPanel>>
 describe('WatchlistPanel', () => {
   beforeEach(() => {
     localStorage.clear()
+    // These cases exercise saved lists; the native first-open tab is Commodities.
+    localStorage.setItem('oa-watchlist-tab', 'lists')
     for (const fn of Object.values(api)) fn.mockReset()
     api.list.mockResolvedValue([LIST])
     liveData = { items: [], quotes: new Map() }
@@ -191,7 +193,7 @@ describe('WatchlistPanel', () => {
     // aria-current, not a Tailwind class. jsdom has no cascade, so a class
     // assertion passes even when the marker is transparent or zero width,
     // which is exactly how an invalid colour shipped unnoticed once already.
-    expect(screen.getByLabelText('Chart BANKNIFTY on NSE_INDEX')).toHaveAttribute(
+    expect(screen.getByLabelText('Chart BANKNIFTY on NSE')).toHaveAttribute(
       'aria-current',
       'true'
     )
@@ -227,12 +229,11 @@ describe('WatchlistPanel', () => {
   })
 
   it('resolves the previous close from daily history when the quote cannot', async () => {
-    // Some brokers report the CURRENT session's close in prev_close, which
-    // equals the last traded price, so every row read +0.00%. The daily bar is
-    // the same one the chart legend uses.
+    // Missing previous close is resolved from daily history. A valid close,
+    // including one equal to LTP, remains authoritative.
     liveData = {
       items: [{ symbol: 'RELIANCE', exchange: 'NSE', ltp: 1287 }],
-      quotes: new Map([['NSE:RELIANCE', { ltp: 1287, prev_close: 1287 }]]),
+      quotes: new Map([['NSE:RELIANCE', { ltp: 1287, prev_close: 0 }]]),
     }
     previousClose.mockResolvedValue(1282.2)
     renderPanel()

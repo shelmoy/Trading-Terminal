@@ -71,7 +71,7 @@ import {
   utcSecondsToZonedDateString,
   withBarCache,
 } from 'openalgo-charts'
-import { formatTradingSymbol } from '@/lib/trading/displaySymbol'
+import { formatTradingExchange, formatTradingSymbol } from '@/lib/trading/displaySymbol'
 import { validHistoryBars } from './historyValidation'
 import type {
   DrawingController,
@@ -2567,7 +2567,7 @@ export class TradingTerminal {
       return
     }
     if (this.sym.quoteOnly) {
-      this.toast(`${this.sym.exchange} is quote-only — trading is not supported`, 'err')
+      this.toast(`${formatTradingExchange(this.sym.exchange)} is quote-only — trading is not supported`, 'err')
       return
     }
     const qty = this.orderQty()
