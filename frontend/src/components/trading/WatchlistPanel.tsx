@@ -410,7 +410,7 @@ export function WatchlistPanel({ apiKey, onPick, search, activeSymbol }: Props) 
   })
 
   const quotes = useWatchlistQuotes(apiKey, priced, multiQuotes)
-  const pricedByKey = useMemo(
+  const pricedByKey = useMemo<Map<string, PriceableItem>>(
     () => new Map(priced.map(row => [`${row.exchange}:${row.symbol}`, row] as const)),
     [priced]
   )
