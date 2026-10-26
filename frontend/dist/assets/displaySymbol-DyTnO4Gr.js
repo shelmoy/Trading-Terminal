@@ -1,0 +1,1 @@
+function e(e){let t=String(e??``).trim();return/^NSE_INDEX$/i.test(t)?`NSE`:/^BSE_INDEX$/i.test(t)?`BSE`:t}function t(e){let t=String(e??``).trim();if(!t)return``;let n=/^([A-Z][A-Z0-9]*?)(\d{2})([A-Z]{3})(\d{2})(\d+)(CE|PE)$/i.exec(t);if(!n)return t;let[,r,i,a,o,s,c]=n;return`${r.toUpperCase()} ${i} ${a.toUpperCase()} ${o} ${Number(s)} ${c.toUpperCase()}`}export{t as n,e as t};
