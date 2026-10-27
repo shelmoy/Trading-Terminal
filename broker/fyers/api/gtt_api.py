@@ -369,12 +369,10 @@ def cancel_gtt_order(trigger_id, auth):
 
 
 def get_gtt_book(auth, include_history=False):
-    # include_history is accepted for interface parity; this mapper still
-    # returns active triggers only until its status vocabulary is mapped.
     """List the user's GTTs. Returns ``(response_dict, status_code)``.
 
     ``data`` is a list of OpenAlgo-normalised GTT objects (see
-    ``map_gtt_book``), filtered to pending/transit triggers only. Fyers returns
+    ``map_gtt_book``), filtered to pending/transit unless history is requested. Fyers returns
     one row per GTT with both legs inline, so an OCO is already a single item.
     """
     try:
@@ -389,7 +387,7 @@ def get_gtt_book(auth, include_history=False):
                 "message": raw.get("message", "Failed to fetch GTT book"),
             }, response.status_code
 
-        return {"status": "success", "data": map_gtt_book(raw)}, 200
+        return {"status": "success", "data": map_gtt_book(raw,include_history=include_history)}, 200
 
     except BrokerBusyError as busy:
         return {"status": "error", "message": str(busy)}, 429

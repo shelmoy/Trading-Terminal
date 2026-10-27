@@ -175,7 +175,7 @@ def _leg_from_book(action, product, price, quantity):
     }
 
 
-def map_gtt_book(gtt_data):
+def map_gtt_book(gtt_data, include_history=False):
     """Normalise Fyers ``GET /api/v3/gtt/orders`` into the OpenAlgo GTT shape.
 
     Fyers returns ``{"s": "ok", "code": 200, "orderBook": [...]}`` where each
@@ -185,8 +185,9 @@ def map_gtt_book(gtt_data):
     single row, not two rows to stitch together -- ``gtt_oco_ind`` (1 = GTT,
     2 = OCO) tells us whether leg2 is real.
 
-    Only pending/transit triggers are returned; cancelled, triggered and
-    rejected rows are dropped, matching zerodha's active-only filter.
+    By default only pending/transit triggers are returned. Explicit history
+    retains terminal/unknown states so callers cannot mistake a disappeared
+    active row for a confirmed cancellation.
     """
     if not isinstance(gtt_data, dict):
         return []
@@ -200,7 +201,7 @@ def map_gtt_book(gtt_data):
             continue
 
         ord_status = order.get("ord_status")
-        if ord_status not in ACTIVE_GTT_STATUSES:
+        if not include_history and ord_status not in ACTIVE_GTT_STATUSES:
             continue
 
         exchange = get_exchange(order.get("exchange"), order.get("segment"))
@@ -223,7 +224,9 @@ def map_gtt_book(gtt_data):
             trigger_prices.append(float(order.get("price2_trigger") or 0))
             # OpenAlgo presents trigger prices low -> high; Fyers stores leg1
             # (above LTP) first, so sort rather than assume the API's ordering.
-            trigger_prices.sort()
+            pairs=sorted(zip(trigger_prices,legs),key=lambda pair:pair[0])
+            trigger_prices=[pair[0] for pair in pairs]
+            legs=[pair[1] for pair in pairs]
 
         normalised.append(
             {

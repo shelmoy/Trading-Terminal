@@ -62,7 +62,7 @@ def calculate_margin_api(positions, auth):
     try:
         # Make the request using the v3 multiorder margin endpoint
         response = client.post(
-            "https://api-t1.fyers.in/api/v3/multiorder/margin", headers=headers, json=payload
+            "https://api-t1.fyers.in/api/v3/multiorder/margin", headers=headers, json=payload, timeout=5.0
         )
 
         # Add status attribute for compatibility with the existing codebase

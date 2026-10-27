@@ -2374,16 +2374,22 @@ function ScalperWorkspace({ account }: { account: string | null }) {
       setOrderBusy((prev) => ({ ...prev, [busyKey]: true }))
       const t0 = performance.now()
       try {
-        const res = await tradingApi.placeOrder({
+        const request = {
           apikey: apiKey,
           strategy: 'Scalper 915',
           symbol: target.symbol,
           exchange: target.exchange,
           action,
           quantity: qty,
-          pricetype: 'MARKET',
+          pricetype: 'MARKET' as const,
           product,
-        })
+        }
+        // The same scoped, durable command path as the chart controls. Keep
+        // the old path available while the staged feature is disabled.
+        const res = terminal.cleanChartTrading()
+          ? {status:'success',orderid:(await terminal.placeTicket({symbol:target.symbol,exchange:target.exchange,
+              action,quantity:qty,pricetype:'MARKET',product})).orderId,message:''}
+          : await tradingApi.placeOrder(request)
         const elapsed = Math.max(0.1, Number((performance.now() - t0).toFixed(1)))
         setLastOrderMs(elapsed)
         if (res.status === 'success') {

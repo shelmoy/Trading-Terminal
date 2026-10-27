@@ -166,6 +166,8 @@ def transform_order_data(orders):
             "timestamp": order.get("ordEntTm", ""),
             "order_tag": order.get("GuiOrdId", ""),
         }
+        if "fldQty" in order:
+            transformed_order["filled_quantity"]=order["fldQty"]
 
         transformed_orders.append(transformed_order)
 

@@ -27,6 +27,182 @@ API_RATE_LIMIT = os.getenv("API_RATE_LIMIT", "50 per second")
 orders_bp = Blueprint("orders_bp", __name__, url_prefix="/")
 
 
+def _chart_context():
+    """Session authority is server-owned; clients never select a broker/account."""
+    from utils.chart_commands import CommandRefused, execution_scopes
+    from utils.config import get_broker_api_key
+    if os.getenv("CHART_TRADING_V2", "false").lower() != "true":
+        raise CommandRefused("Chart trading upgrade is not activated")
+    from database.chart_commands_db import ledger
+    if not ledger().ready():
+        raise CommandRefused("Chart trading schema is not prepared; activation is disabled")
+    user, broker = session.get("user"), session.get("broker")
+    token = get_auth_token(user) if user else None
+    key = get_api_key_for_tradingview(user) if user else None
+    if not user or not broker or not token or not key:
+        raise CommandRefused("Broker session unavailable; reconnect before trading")
+    mode = "analyze" if get_analyze_mode() else "live"
+    account_scope,scope = execution_scopes(user,broker,get_broker_api_key(),token,mode)
+    return broker, key, mode, scope, account_scope
+
+
+@orders_bp.route("/chart-trading/capabilities", methods=["GET"])
+@check_session_validity
+def chart_trading_capabilities():
+    from utils.chart_commands import capabilities
+    enabled = os.getenv("CHART_TRADING_V2", "false").lower() == "true" and session.get("broker") in ("kotak","fyers")
+    if enabled:
+        from database.chart_commands_db import ledger
+        enabled = ledger().ready()
+    return jsonify({"status": "success", "data": {"enabled": enabled,
+        **capabilities(session.get("broker"), "analyze" if get_analyze_mode() else "live", request.args.get("exchange"), request.args.get("product"))}})
+
+
+@orders_bp.route("/chart-trading/state", methods=["GET"])
+@check_session_validity
+@limiter.limit(API_RATE_LIMIT)
+def chart_trading_state():
+    from utils.chart_commands import CommandRefused
+    from services.chart_command_service import read_books
+    from utils.chart_execution_context import chart_execution_mode
+    try:
+        broker, key, mode, scope, account_scope = _chart_context()
+        if request.args.get("mode") != mode:
+            raise CommandRefused("Execution mode changed; refresh before trading")
+        with chart_execution_mode(mode == "analyze"):
+            data = read_books(key,scope=account_scope)
+            from database.chart_commands_db import ledger
+            from services.chart_protection_service import read_triggers, states
+            ledger().recover_abandoned(account_scope)
+            bindings = ledger().bindings(account_scope)
+            pending = ledger().pending(account_scope)
+            needs_native = bool(bindings) or any(row.get("operation") in ("protect", "modifyProtection", "cancelProtection") for row in pending)
+            triggers = read_triggers(key) if broker == "fyers" and mode == "live" and needs_native else []
+            data["protections"] = states(ledger(), account_scope, data, triggers)
+            data["nativeExits"] = triggers
+        from database.chart_commands_db import ledger
+        data["pendingCommands"]=ledger().pending(account_scope)
+        return jsonify({"status": "success", "data": {**data, "scope": scope, "mode": mode}})
+    except CommandRefused as error:
+        return jsonify({"status": "error", "message": str(error)}), 409
+
+
+@orders_bp.route("/chart-trading/command", methods=["POST"])
+@check_session_validity
+@limiter.limit(API_RATE_LIMIT)
+def chart_trading_command():
+    from database.chart_commands_db import ledger
+    from services.chart_command_service import execute, dispatch
+    from utils.chart_commands import CommandRefused
+    from utils.chart_execution_context import chart_execution_mode
+    try:
+        broker, key, mode, scope, account_scope = _chart_context()
+        command = request.get_json(silent=True)
+        if not isinstance(command, dict) or command.get("scope") != scope:
+            raise CommandRefused("Broker account changed; refresh before trading")
+        def deliver(value):
+            # Recheck after admission; all downstream service mode
+            # reads then use this single request-local execution decision.
+            if ("analyze" if get_analyze_mode() else "live") != mode:
+                raise CommandRefused("Execution mode changed; action was not sent")
+            with chart_execution_mode(mode == "analyze"):
+                return dispatch(value, api_key=key, broker=broker, ledger=ledger(), scope=account_scope)
+        body, status = execute(command, scope=account_scope, mode=mode, ledger=ledger(), dispatch=deliver)
+        return jsonify(body), status
+    except CommandRefused as error:
+        return jsonify({"status": "error", "state": "rejected", "message": str(error)}), 409
+
+
+@orders_bp.route("/chart-trading/exit-preflight", methods=["GET"])
+@check_session_validity
+@limiter.limit(API_RATE_LIMIT)
+def chart_trading_exit_preflight():
+    from services.chart_protection_service import guard_exit
+    from utils.chart_commands import CommandRefused
+    try:
+        broker, key, mode, _, _ = _chart_context()
+        if request.args.get("mode") != mode:
+            raise CommandRefused("Trading mode changed; no exit request sent")
+        if mode == "live":
+            guard_exit(key, broker, check_orders=False)
+        return jsonify({"status": "success"})
+    except CommandRefused as error:
+        return jsonify({"status": "error", "message": str(error)}), 409
+
+
+@orders_bp.route("/chart-trading/commands/<command_id>", methods=["GET"])
+@check_session_validity
+@limiter.limit(API_RATE_LIMIT)
+def chart_trading_command_status(command_id):
+    from database.chart_commands_db import ledger
+    from services.chart_command_service import recorded
+    from utils.chart_commands import CommandRefused
+    try:
+        _, _, _, _, account_scope = _chart_context()
+        ledger().recover_abandoned(account_scope)
+        row = ledger().read(account_scope, command_id)
+        if not row:
+            return jsonify({"status": "error", "message": "Command not found"}), 404
+        body, status = recorded(row)
+        return jsonify(body), status
+    except CommandRefused as error:
+        return jsonify({"status": "error", "message": str(error)}), 409
+
+
+@orders_bp.route("/chart-trading/commands/<command_id>/resolve", methods=["POST"])
+@check_session_validity
+@limiter.limit(API_RATE_LIMIT)
+def chart_trading_resolve(command_id):
+    from database.chart_commands_db import ledger
+    from services.chart_command_service import read_books,resolve_delivery
+    from utils.chart_commands import CommandRefused
+    from utils.chart_execution_context import chart_execution_mode
+    try:
+        broker,key,mode,scope,account_scope=_chart_context()
+        data=request.get_json(silent=True) or {}
+        if not isinstance(data,dict) or data.get("scope")!=scope or data.get("mode")!=mode:
+            raise CommandRefused("Trading context changed; refresh before reconciling")
+        with chart_execution_mode(mode=="analyze"):
+            books=read_books(key)
+            old = ledger().read(account_scope, command_id)
+            import json
+            intent = json.loads(old["intent"]) if old else {}
+            if intent.get("operation") in ("protect", "modifyProtection", "cancelProtection"):
+                from services.chart_protection_service import read_triggers, resolve_protection_delivery
+                body = resolve_protection_delivery(ledger=ledger(), scope=account_scope, command_id=command_id,
+                    broker_id=data.get("orderId"), expected_version=data.get("expectedVersion"), books=books,
+                    triggers=read_triggers(key) if broker == "fyers" and mode == "live" else [])
+            else:
+                body=resolve_delivery(ledger=ledger(),scope=account_scope,command_id=command_id,
+                    broker_order_id=data.get("orderId"),expected_version=data.get("expectedVersion"),books=books)
+        return jsonify(body)
+    except CommandRefused as error:
+        return jsonify({"status":"error","message":str(error)}),409
+
+
+@orders_bp.route("/chart-trading/protections/<trigger_id>/child", methods=["POST"])
+@check_session_validity
+@limiter.limit(API_RATE_LIMIT)
+def chart_trading_resolve_child(trigger_id):
+    from database.chart_commands_db import ledger
+    from services.chart_command_service import read_books
+    from services.chart_protection_service import read_triggers, resolve_trigger_child
+    from utils.chart_commands import CommandRefused
+    from utils.chart_execution_context import chart_execution_mode
+    try:
+        broker, key, mode, scope, account_scope = _chart_context()
+        data = request.get_json(silent=True) or {}
+        if not isinstance(data, dict) or broker != "fyers" or mode != "live" or data.get("scope") != scope or data.get("mode") != mode:
+            raise CommandRefused("Trading context changed; child reconciliation requires the same live FYERS account")
+        with chart_execution_mode(False):
+            body = resolve_trigger_child(ledger=ledger(), scope=account_scope, trigger_id=trigger_id,
+                child_id=data.get("orderId"), trigger_version=data.get("triggerVersion"), child_version=data.get("expectedVersion"),
+                books=read_books(key), triggers=read_triggers(key))
+        return jsonify(body)
+    except CommandRefused as error:
+        return jsonify({"status": "error", "message": str(error)}), 409
+
+
 @orders_bp.errorhandler(429)
 def ratelimit_handler(e):
     """Handle rate limit exceeded errors"""
@@ -564,6 +740,15 @@ def close_position():
         # Live mode - continue with existing logic
         if not auth_token or not broker_name:
             return jsonify({"status": "error", "message": "Authentication error"}), 401
+
+        if os.getenv("CHART_TRADING_V2", "false").lower() == "true" and broker_name in ("kotak", "fyers"):
+            from services.chart_protection_service import guard_exit
+            from utils.chart_commands import CommandRefused
+            try:
+                guard_exit(get_api_key_for_tradingview(login_username), broker_name,
+                    {"symbol": symbol, "exchange": exchange, "product": product})
+            except CommandRefused as error:
+                return jsonify({"status": "error", "message": str(error)}), 409
 
         # Dynamically import broker-specific modules for API
         api_funcs = dynamic_import(

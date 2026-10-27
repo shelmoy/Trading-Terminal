@@ -108,7 +108,8 @@ def cancel_gtt_order_with_auth(
         ))
         return False, error_response, 500
 
-    if status_code == 200:
+    refused = isinstance(response_message, dict) and (response_message.get("status") == "error" or response_message.get("s") == "error")
+    if status_code == 200 and not refused:
         success_response = {
             "status": "success",
             "trigger_id": response_message.get("trigger_id", trigger_id)
@@ -134,7 +135,7 @@ def cancel_gtt_order_with_auth(
         trigger_id=trigger_id, error_message=message,
         request_data=order_request_data, response_data=error_response, api_key=api_key,
     ))
-    return False, error_response, status_code
+    return False, error_response, 400 if refused and status_code == 200 else status_code
 
 
 def cancel_gtt_order(
