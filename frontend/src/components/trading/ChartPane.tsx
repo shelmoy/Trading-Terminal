@@ -165,18 +165,12 @@ const IndicatorSettingsDialog = lazy(() =>
 const IndicatorPickerDialog = lazy(() =>
   import('./IndicatorPickerDialog').then((m) => ({ default: m.IndicatorPickerDialog }))
 )
-const ChartOrderComposer = lazy(() => import('./ChartOrderComposer').then(m => ({default:m.ChartOrderComposer})))
-const ChartProtectionComposer = lazy(() => import('./ChartProtectionComposer').then(m => ({default:m.ChartProtectionComposer})))
 const PlaceOrderDialog = lazy(() =>
   import('./PlaceOrderDialog').then((m) => ({ default: m.PlaceOrderDialog }))
 )
 const SymbolSearchDialog = lazy(() =>
   import('./SymbolSearchDialog').then((m) => ({ default: m.SymbolSearchDialog }))
 )
-
-function ChartTicket({clean, arm, ...props}: import('./PlaceOrderDialog').PlaceOrderDialogProps & {clean:boolean;arm(order:import('./PlaceOrderDialog').TicketOrder):void}) {
-  return clean ? <ChartOrderComposer {...props} arm={arm}/> : <PlaceOrderDialog {...props}/>
-}
 
 function ledClass(state: string): string {
   if (state === 'live' || state === 'open')
@@ -522,8 +516,6 @@ export function ChartPane({
    * places one until the trader says so.
    */
   const [ticket, setTicket] = useState<OrderTicketRequest | null>(null)
-  const [protectionPosition, setProtectionPosition] = useState<import('@/lib/trading/chartCommands').ChartPositionRow | null>(null)
-  useEffect(() => { setProtectionPosition(null) }, [sym?.symbol, sym?.exchange, appMode, apiKey])
   // Null whenever the chart is live. The transport bar renders only while
   // replay owns the data, so there is nothing to hide when it does not.
   const [replay, setReplay] = useState<ReplayState | null>(null)
@@ -649,7 +641,6 @@ export function ChartPane({
         if (style) setTextReq({ id: r.id, tool: r.tool, style })
       },
       onOrderTicket: (req) => current && setTicket(req),
-      onPositionProtection: (position) => current && setProtectionPosition(position),
       onTradeQtyClick: () => current && tradeQtyClickCbRef.current?.(paneId),
     }
 
@@ -961,27 +952,6 @@ export function ChartPane({
     const bridge = orderBridge?.current
     if (!bridge) return
     const { actions } = bridge
-    const clean = terminalRef.current?.chartTradingController()
-    if (clean) {
-      if (actions.refuse()) return
-      const initialScope = clean.coordinator.currentScope()
-      try {
-        if (action.kind === 'cancel') {
-          for (const order of action.orders) {
-            if (initialScope !== clean.coordinator.currentScope()) throw new Error('Broker account changed')
-            await clean.bookAction('cancel', order.product, undefined, String(order.orderid))
-          }
-        } else {
-          const result = await clean.bookAction(action.kind === 'close' || action.kind === 'reverse' ? 'close' : 'reduce', action.row.position.product, action.row.half, undefined, action.row.position)
-          if (action.kind === 'reverse' && sym) {
-            if (result.flat) setTicket(reverseTicket(action.row, sym.tick, action.lotSize))
-            else showToast.warning('Exit accepted. Wait for the broker to confirm a flat position before reversing.')
-          }
-        }
-      } catch (error) { showToast.error((error as Error).message) }
-      actions.refresh()
-      return
-    }
     if (action.kind === 'cancel') {
       if (actions.refuse()) return
       for (const order of action.orders) await cancelDockOrder(order, actions)
@@ -2410,13 +2380,7 @@ export function ChartPane({
           element, as the menus are, or it would open unseen behind it. */}
       {ticket !== null && (
         <Suspense fallback={null}>
-          <ChartTicket
-            clean={terminalRef.current?.cleanChartTrading() ?? false}
-            arm={(order) => {
-              const terminal=terminalRef.current
-              if(!terminal)throw new Error('Chart is not ready')
-              terminal.armChartOrder(order)
-            }}
+          <PlaceOrderDialog
             open={ticket !== null}
             onOpenChange={(next) => !next && setTicket(null)}
             container={menuHost}
@@ -2438,12 +2402,6 @@ export function ChartPane({
             strategy={ticket?.strategy}
             onSuccess={() => setTicket(null)}
           />
-        </Suspense>
-      )}
-      {protectionPosition && terminalRef.current?.chartTradingController() && (
-        <Suspense fallback={null}>
-          <ChartProtectionComposer position={protectionPosition} controller={terminalRef.current.chartTradingController()!}
-            container={menuHost} onClose={() => setProtectionPosition(null)} />
         </Suspense>
       )}
     </section>

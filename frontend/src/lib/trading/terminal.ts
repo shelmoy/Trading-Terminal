@@ -1,6 +1,3 @@
-import { CleanChartTrading } from './cleanChartTrading'
-import { CleanTradeButtons } from './chartTradingLayer'
-import { ChartCommandCoordinator, type ChartPositionRow } from './chartCommands'
 /**
  * Framework-agnostic controller for the charting terminal.
  *
@@ -729,7 +726,6 @@ export interface TerminalCallbacks {
    * nothing is placed until it confirms.
    */
   onOrderTicket?(req: OrderTicketRequest): void
-  onPositionProtection?(position: ChartPositionRow): void
   /** The middle quantity chip between SELL and BUY on the chart was clicked. */
   onTradeQtyClick?(): void
 }
@@ -1398,7 +1394,7 @@ export class TradingTerminal {
   /** The tier's tool registry, for a tool's own defaults; null until it loads. */
   private toolOf: ((id: string) => DrawingTool) | null = null
   private posLine: PriceLine | null = null
-  private tradeBtns: BuySellButtonsInstance | CleanTradeButtons | null = null
+  private tradeBtns: BuySellButtonsInstance | null = null
   /** The bar the OHLC readout is currently showing; replayed into the export. */
   private legendBar: Bar | null = null
   private legendTime: number | null = null
@@ -1536,13 +1532,6 @@ export class TradingTerminal {
   private lastLtp: number | null = null
   private sym: SymbolView | null = null
   private position: PositionState | null = null
-  private cleanTrading: CleanChartTrading | null = null
-  cleanChartTrading(): boolean { return this.cleanTrading !== null }
-  chartTradingController() { return this.cleanTrading }
-  armChartOrder(order: ConfirmedOrder): void {
-    if (!this.cleanTrading) throw new Error('Chart trading upgrade is not active')
-    this.cleanTrading.arm(order)
-  }
   private readonly orderLines = new Map<string, OrderLineRec>()
 
   private interval = '5m'
@@ -2463,11 +2452,6 @@ export class TradingTerminal {
   private bookRequest = 0
 
   private handleOrderUpdate(e: OrderUpdateEvent) {
-    if (this.cleanTrading) {
-      const mode = e.mode === 'analyzer' ? 'analyze' : e.mode
-      if (this.sym && sameOrderInstrument(e,this.sym) && (!mode || mode === (this.tradeMode() === 'live' ? 'live' : 'analyze'))) this.cleanTrading.notifyBrokerChange()
-      return
-    }
     if (!this.sym || !sameOrderInstrument(e, this.sym) || !this.chart) return
     const eventMode = e.mode === 'analyze' ? 'analyzer' : e.mode
     if (eventMode && eventMode !== this.tradeMode()) return
@@ -2501,10 +2485,6 @@ export class TradingTerminal {
   }
 
   private async pollBook() {
-    if (this.cleanTrading) {
-      try { await this.cleanTrading.refresh() } catch (error) { this.toast(this.cleanError(error),'err') }
-      return
-    }
     if (!this.trade || !this.sym || !this.chart) return
     const request = ++this.bookRequest
     const symbol = this.sym.symbol
@@ -2611,7 +2591,7 @@ export class TradingTerminal {
     // moved below this fork on purpose: a ticket pre-filled with a stop on the
     // wrong side of LTP, or a quantity over the freeze limit, would only be
     // refused later by the broker, in words that do not say why.
-    if (!this.armed || (this.cleanTrading && type !== 'MARKET')) {
+    if (!this.armed) {
       if (!this.cb.onOrderTicket) {
         this.toast('One-Click is off', 'err')
         return
@@ -2636,7 +2616,7 @@ export class TradingTerminal {
     const lotTxt = this.sym.lots ? `${qty / this.sym.lotsize}L (${qty})` : qty
     const summary = `${side} ${type} ${lotTxt} ${this.sym.symbol}${type === 'MARKET' ? '' : ` @ ${this.fmt(px)}`} · ${this.product}`
     try {
-      const r = this.cleanTrading ? await this.placeTicket({symbol:this.sym.symbol,exchange:this.sym.exchange,action:side,quantity:qty,product:this.product as 'CNC'|'NRML'|'MIS',pricetype:type,price:px,trigger_price:type==='SL'||type==='SL-M'?px:undefined}) : await this.trade.place({
+      const r = await this.trade.place({
         symbol: this.sym.symbol,
         exchange: this.sym.exchange,
         side,
@@ -2666,7 +2646,6 @@ export class TradingTerminal {
     // while it stood open. No toast here: the dialog shows the reason.
     if (this.tradingLocked()) throw new Error(this.tradingLockMessage())
     if (!this.trade) throw new Error('trading is not available')
-    if (this.cleanTrading) return this.cleanTrading.place(order)
     const stop = order.pricetype === 'SL' || order.pricetype === 'SL-M'
     try {
       const r = await this.trade.place({
@@ -2689,11 +2668,6 @@ export class TradingTerminal {
 
   async exitPosition() {
     if (this.refuseWhileReplaying()) return
-    if (this.cleanTrading) {
-      try { await this.cleanTrading.bookAction('close', this.position?.product || this.product) }
-      catch (error) { this.toast(this.cleanError(error), 'err') }
-      return
-    }
     if (!this.trade || !this.position || !this.sym) return
     const qty = Math.abs(this.position.net)
     const side: OrderSide = this.position.net > 0 ? 'SELL' : 'BUY'
@@ -2829,7 +2803,6 @@ export class TradingTerminal {
   }
 
   private buildChart() {
-    this.cleanTrading?.detach()
     // The timeline stops following the chart about to go; the new one is
     // followed once its studies and drawings are back (restoreChartContent).
     this.undoHistory.pause()
@@ -3070,7 +3043,7 @@ export class TradingTerminal {
 
     // inline SELL · qty · BUY panel, docked top-left below the OHLC legend.
     if (!this.sym!.quoteOnly) {
-      this.tradeBtns = this.cleanTrading ? new CleanTradeButtons(this.qtyChip(), n => this.fmt(n)) : new BuySellButtons({
+      this.tradeBtns = new BuySellButtons({
         id: 'trade',
         position: 'top-left',
         margin: { x: 16, y: 52 },
@@ -3114,8 +3087,6 @@ export class TradingTerminal {
       this.container.removeEventListener('pointerdown', pointerdown)
       this.container.removeEventListener('pointerup', pointerup)
     }
-
-    this.cleanTrading?.attach(this.chart)
 
     // drag-to-modify with a drag ghost; commit on release (tick-snapped)
     this.chart.subscribeDrag(
@@ -6837,10 +6808,9 @@ export class TradingTerminal {
    * pane dirty, so the chart repaints them away on the next frame.
    */
   private showTradeButtons(on: boolean): void {
-    if (!on) this.cleanTrading?.cancelGesture()
     if (!this.chart || !this.tradeBtns) return
     if (this.workspaceReplayLocked) on = false
-    if (on) this.chart.addPrimitive(this.tradeBtns, this.cleanTrading?this.chart.primaryPaneIndex():0)
+    if (on) this.chart.addPrimitive(this.tradeBtns, 0)
     else this.chart.removePrimitive(this.tradeBtns)
   }
 
@@ -6992,7 +6962,6 @@ export class TradingTerminal {
     this.cb.onLtp(e.ltp)
     // Recolour with the price: the line belongs to the forming candle, so it
     // follows that candle's direction rather than sitting amber forever.
-    this.cleanTrading?.mark(e.ltp)
     if (this.position && this.posLine) this.posLine.setLeftLabel(this.posLabel())
     if (this.tradeBtns && !this.depthActive) this.tradeBtns.setMark(e.ltp)
     const tickTimeSec = e.timeSec || nowSec()
@@ -7476,7 +7445,6 @@ export class TradingTerminal {
   }
 
   loadSymbol(pick: SearchRow, opts: { silent?: boolean; strict?: boolean } = {}): Promise<boolean> {
-    this.cleanTrading?.cancelGesture()
     const key = JSON.stringify([pick.symbol, pick.exchange, this.interval, Boolean(pick.expression), Boolean(opts.strict)])
     if (this.pendingSymbolKey === key) return this.loading
     const run = this.runLoadSymbol(pick, opts)
@@ -7920,7 +7888,6 @@ export class TradingTerminal {
     return v
   }
   setProduct(p: string) {
-    this.cleanTrading?.disarm()
     this.product = p
     if (this.sym) this.sym.product = p
     this.lsSet('product', p)
@@ -7949,7 +7916,6 @@ export class TradingTerminal {
    * same either way, as they do on the scalping terminal.
    */
   setArmed(on: boolean) {
-    this.cleanTrading?.disarm()
     if (this.armed === on) return
     this.armed = on
     this.applyTradeColors()
@@ -8425,7 +8391,7 @@ export class TradingTerminal {
   /** Build the context-menu items for a right-click at container-local y. */
   contextMenuAt(localY: number): { price: number; items: CtxItem[] } | null {
     if (!this.chart || !this.sym || this.sym.quoteOnly) return null
-    const p = this.chart.coordinateToPrice(localY, this.cleanTrading?this.chart.primaryPaneIndex():0)
+    const p = this.chart.coordinateToPrice(localY, 0)
     if (p == null) return null
     this.ctxPrice = this.snap(p)
     const m = this.marketPrice()
@@ -8660,22 +8626,6 @@ export class TradingTerminal {
     }
     this.cachedBars = baseCachedBars
     this.trade = new OpenAlgoTradeFeed({ baseUrl: '', apiKey: this.apiKey, strategy: STRATEGY })
-    try {
-      const capabilities = await new ChartCommandCoordinator(() => this.tradeMode() === 'live' ? 'live' : 'analyze').capabilities()
-      if (capabilities.enabled) this.cleanTrading = new CleanChartTrading({
-        instrument:()=>this.sym, locked:()=>this.tradingLocked(), mode:()=>this.tradeMode() === 'live' ? 'live' : 'analyze',
-        mark:()=>this.lastLtp, format:n=>this.fmt(n), toast:(message,error)=>this.toast(message,error?'err':'ok'), element:()=>this.container,
-        openProtection:position=>this.cb.onPositionProtection?.(position),
-        openPriceMenu:point=>{
-          if(this.tradingLocked())return
-          const menu=this.contextMenuAt(point.y)
-          if(!menu)return
-          const box=this.container.getBoundingClientRect()
-          this.cb.onContextMenu?.({x:box.left+point.x,y:box.top+point.y,items:menu.items,profile:null})
-        },
-      })
-    } catch { /* old backend leaves the existing chart path in service */ }
-
 
     // broker-supported intervals → the timeframe dropdown
     let groups: IntervalGroup[]
@@ -8872,7 +8822,6 @@ export class TradingTerminal {
   }
 
   destroy() {
-    this.cleanTrading?.detach()
     if (this.destroyed) return
     // Optional: a terminal built without its fields (a test double) has none.
     this.undoHistory?.destroy()

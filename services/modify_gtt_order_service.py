@@ -116,8 +116,7 @@ def modify_gtt_order_with_auth(
         ))
         return False, error_response, 500
 
-    refused = isinstance(response_message, dict) and (response_message.get("status") == "error" or response_message.get("s") == "error")
-    if status_code == 200 and not refused:
+    if status_code == 200:
         success_response = {
             "status": "success",
             "trigger_id": response_message.get("trigger_id", trigger_id)
@@ -144,7 +143,7 @@ def modify_gtt_order_with_auth(
         error_message=message,
         request_data=order_request_data, response_data=error_response, api_key=api_key,
     ))
-    return False, error_response, 400 if refused and status_code == 200 else status_code
+    return False, error_response, status_code
 
 
 def modify_gtt_order(

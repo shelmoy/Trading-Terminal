@@ -47,14 +47,8 @@ export function useScalperExitAll(refresh: () => Promise<void>) {
         current,
         checkMode: async () => {
           const { data } = await webClient.get('/auth/analyzer-mode', { signal: abort.signal, timeout: 8000 })
-          const mode = theme.appMode === 'analyzer' ? 'analyze' : 'live'
-          if (data.status !== 'success' || data.data?.mode !== mode) return false
-          const capabilities = await webClient.get('/chart-trading/capabilities', {signal:abort.signal, timeout:8000})
-          if (capabilities.data.data?.enabled) {
-            const check = await webClient.get('/chart-trading/exit-preflight', {params:{mode}, signal:abort.signal, timeout:15000})
-            if (check.data.status !== 'success') throw new Error(check.data.message || 'Broker exits need review')
-          }
-          return true
+          return data.status === 'success' &&
+            data.data?.mode === (theme.appMode === 'analyzer' ? 'analyze' : 'live')
         },
         cancel: () => tradingApi.cancelAllOrders(),
         close: () => tradingApi.closeAllPositions(),
