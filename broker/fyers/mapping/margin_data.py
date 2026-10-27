@@ -1,7 +1,6 @@
 # Mapping OpenAlgo API Request https://openalgo.in/docs
 # Mapping Fyers Margin API
 
-import math
 from broker.fyers.mapping.transform_data import map_action, map_order_type, map_product_type
 from database.token_db import get_br_symbol
 from utils.logging import get_logger
@@ -166,12 +165,6 @@ def parse_margin_response(response_data):
         margin_avail = data.get("margin_avail", 0)
         margin_total = data.get("margin_total", 0)
         margin_new_order = data.get("margin_new_order", 0)
-        def finite_margin(field):
-            try:
-                value=float(data[field])
-                return value if math.isfinite(value) and value>=0 else None
-            except (KeyError,ValueError,TypeError):
-                return None
 
         logger.info("=" * 80)
         logger.info("FYERS MARGIN API - DETAILED BREAKDOWN")
@@ -196,11 +189,6 @@ def parse_margin_response(response_data):
             "status": "success",
             "data": {
                 "total_margin_required": margin_new_order,
-                # Keep the legacy portfolio total unchanged. Chart preflight
-                # compares the order-only estimate with the same response's
-                # available estimate, never portfolio total versus free cash.
-                "order_margin_required":finite_margin("margin_total"),
-                "available_margin":finite_margin("margin_avail"),
                 "span_margin": 0,  # Fyers doesn't provide SPAN margin breakdown
                 "exposure_margin": 0,  # Fyers doesn't provide Exposure margin breakdown
             },

@@ -87,12 +87,6 @@ def init_db():
 
 def get_analyze_mode():
     """Get current analyze mode setting (cached for 1 hour)"""
-    # A chart command fixes its execution pipe only after checking the real
-    # server setting. ContextVar scope cannot leak to another request/thread.
-    from utils.chart_execution_context import chart_analyze_mode
-    bound = chart_analyze_mode()
-    if bound is not None:
-        return bound
     cache_key = "analyze_mode"
 
     # Check cache first. One get, never a membership test then a subscript:

@@ -1,6 +1,5 @@
 import copy
 import importlib
-import os
 from typing import Any, Dict, Optional, Tuple
 
 from database.auth_db import get_auth_token_broker
@@ -124,13 +123,6 @@ def close_position_with_auth(
 
         return success, response, status_code
 
-    if os.getenv("CHART_TRADING_V2", "false").lower() == "true" and broker in ("kotak", "fyers"):
-        from services.chart_protection_service import guard_exit
-        from utils.chart_commands import CommandRefused
-        try:
-            guard_exit(original_data.get("apikey") or position_data.get("apikey"), broker)
-        except CommandRefused as error:
-            return False, {"status": "error", "message": str(error)}, 409
     broker_module = import_broker_module(broker)
     if broker_module is None:
         error_response = {"status": "error", "message": "Broker-specific module not found"}

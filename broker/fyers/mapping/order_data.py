@@ -154,8 +154,6 @@ def transform_order_data(orders):
             "order_status": order_status,
             "timestamp": order.get("orderDateTime", ""),
         }
-        if "filledQty" in order:
-            transformed_order["filled_quantity"]=order["filledQty"]
         transformed_orders.append(transformed_order)
 
     return transformed_orders

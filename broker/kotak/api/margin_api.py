@@ -52,7 +52,7 @@ def calculate_single_margin(position_data, auth_token):
 
     try:
         # Make the request
-        response = client.post(url, headers=headers, content=payload, timeout=5.0)
+        response = client.post(url, headers=headers, content=payload)
 
         # Add status attribute for compatibility
         response.status = response.status_code

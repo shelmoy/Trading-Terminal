@@ -26,20 +26,6 @@ beforeEach(() => {
 })
 afterEach(() => vi.useRealTimers())
 
-it('refuses Exit All before cancellations when native broker triggers need review', async () => {
-  vi.mocked(webClient.get).mockImplementation(async url => {
-    if (url === '/auth/analyzer-mode') return {data:{status:'success',data:{mode:'live'}}}
-    if (url === '/chart-trading/capabilities') return {data:{data:{enabled:true}}}
-    if (url === '/chart-trading/exit-preflight') return {data:{status:'error',message:'Review native exits'}}
-    throw new Error('Unexpected URL')
-  })
-  const {result} = renderHook(() => useScalperExitAll(vi.fn()))
-  await act(async () => { await result.current.exitAll() })
-  expect(tradingApi.cancelAllOrders).not.toHaveBeenCalled()
-  expect(tradingApi.closeAllPositions).not.toHaveBeenCalled()
-  expect(showToast.error).toHaveBeenCalledWith(expect.stringContaining('Review native exits'))
-})
-
 it('coalesces rapid double clicks before the button rerenders', async () => {
   let finish!: () => void
   vi.mocked(tradingApi.cancelAllOrders).mockImplementation(() => new Promise((resolve) => {

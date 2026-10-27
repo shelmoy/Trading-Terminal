@@ -167,8 +167,7 @@ def place_gtt_order_with_auth(
         ))
         return False, error_response, 500
 
-    refused = isinstance(response_data, dict) and (response_data.get("status") == "error" or response_data.get("s") == "error")
-    if res.status in (200, 201) and trigger_id and not refused:
+    if res.status in (200, 201) and trigger_id:
         success_response = {"status": "success", "trigger_id": trigger_id}
         # Derive trigger_prices for the event from the flat fields.
         if (order_data.get("trigger_type") or "").upper() == "OCO":
@@ -202,7 +201,7 @@ def place_gtt_order_with_auth(
         error_message=message,
         request_data=order_request_data, response_data=error_response, api_key=api_key,
     ))
-    return False, error_response, 400 if refused and res.status in (200, 201) else res.status if res.status != 200 else 500
+    return False, error_response, res.status if res.status != 200 else 500
 
 
 def place_gtt_order(

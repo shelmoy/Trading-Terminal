@@ -93,18 +93,12 @@ def parse_margin_response(response_data):
         total_margin_required = float(raw_margin)
         if not math.isfinite(total_margin_required) or total_margin_required < 0:
             return {"status": "error", "message": "Kotak returned invalid required margin"}
-        try:
-            available=float(response_data["avlMrgn"])
-            if not math.isfinite(available) or available<0:available=None
-        except (KeyError,ValueError,TypeError):available=None
 
         # Return standardized format matching OpenAlgo API specification
         return {
             "status": "success",
             "data": {
                 "total_margin_required": total_margin_required,
-                "order_margin_required":total_margin_required,
-                "available_margin":available,
                 "span_margin": 0,  # Kotak doesn't provide separate span margin
                 "exposure_margin": 0,  # Kotak doesn't provide separate exposure margin
             },
