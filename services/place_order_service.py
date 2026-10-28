@@ -15,6 +15,7 @@ from utils.constants import (
     VALID_PRODUCT_TYPES,
 )
 from utils.event_bus import bus
+from utils.httpx_client import UNANSWERED_ORDER_MESSAGE, watch_for_unanswered_writes
 from utils.logging import get_logger
 
 # Initialize logger
@@ -246,8 +247,10 @@ def place_order_with_auth(
         )
         return False, error_response, 404
 
+    unanswered: list[str] = []
     try:
-        res, response_data, order_id = broker_module.place_order_api(order_data, auth_token)
+        with watch_for_unanswered_writes() as unanswered:
+            res, response_data, order_id = broker_module.place_order_api(order_data, auth_token)
     except BrokerBusyError as e:
         # Refused before it was sent: the broker's request queue was longer
         # than a caller may wait under the gthread worker. Never raised under
@@ -271,7 +274,9 @@ def place_order_with_auth(
         logger.exception(f"Error in broker_module.place_order_api: {e}")
         error_response = {
             "status": "error",
-            "message": "Failed to place order due to internal error",
+            "message": UNANSWERED_ORDER_MESSAGE
+            if unanswered
+            else "Failed to place order due to internal error",
         }
         bus.publish(
             OrderFailedEvent(
@@ -285,7 +290,7 @@ def place_order_with_auth(
                 error_message=str(e),
             )
         )
-        return False, error_response, 500
+        return False, error_response, 502 if unanswered else 500
 
     accepted, response_code, message = _order_acknowledgement(res, response_data, order_id)
     if accepted:
@@ -312,6 +317,9 @@ def place_order_with_auth(
 
         return True, order_response_data, 200
     else:
+        if unanswered:
+            # The broker caught the lost response itself and reported a failure.
+            message = UNANSWERED_ORDER_MESSAGE
         error_response = {"status": "error", "message": message}
         bus.publish(
             OrderFailedEvent(
@@ -325,6 +333,8 @@ def place_order_with_auth(
                 error_message=message,
             )
         )
+        if unanswered:
+            return False, error_response, 502
         return False, error_response, response_code
 
 

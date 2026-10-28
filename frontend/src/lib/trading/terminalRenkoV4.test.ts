@@ -1,7 +1,15 @@
-import { type Bar, CandleBuilder, type createChart, type SeriesApi } from 'openalgo-charts'
+import {
+  type Bar,
+  CandleBuilder,
+  type createChart,
+  type SeriesApi,
+  type SeriesTransformSpec,
+  type DataLoadingSnapshot,
+} from 'openalgo-charts'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { CHART_TYPES } from './chartTypes'
-import { renkoV4HistoryInterval, renkoV4SettingsView } from './renkoV4Settings'
+import { renkoV4HistoryInterval, renkoV4Options, renkoV4SettingsView } from './renkoV4Settings'
+import { renkoV4RunKeys } from './renkoV4History'
 import type { RenkoV4Run } from './renkoV4Transform'
 import { type SymbolView, TradingTerminal } from './terminal'
 
@@ -25,6 +33,8 @@ type State = {
   redrawOnFocus(): void
   syncRenkoV4Trend(reset?: boolean): void
   flushRenkoV4(): void
+  withRenkoV4Owner<T>(spec: SeriesTransformSpec, create: () => T): T
+  applyDataSnapshot(snapshot: DataLoadingSnapshot): void
 }
 
 const terminals: TradingTerminal[] = []
@@ -109,6 +119,57 @@ function mount(storageKey = 'oa-trading') {
 }
 
 describe('Renko V4 terminal integration', () => {
+  it('recovers prepared Trading NIFTY from the matching Scalper path without writing preferences', () => {
+    const first = mount('oa-trading-scalper-p0')
+    first.state.onTick({ ltp: 140, timeSec: 1025 })
+    first.state.onTick({ ltp: 100, timeSec: 1026 })
+    const spec = { type: 'renko-v4', options: { ...renkoV4Options(0.05), boxSize: 10 } }
+    const { fallbackKey } = renkoV4RunKeys('oa-trading-p0', 'NSE_INDEX:NIFTY', spec)
+    localStorage.setItem(fallbackKey!, JSON.stringify(first.state.renkoV4Run.snapshot()))
+    const original = localStorage.getItem(fallbackKey!)
+    const second = mount('oa-trading-p0')
+    Object.assign(second.state, {
+      preferences: { getItem: () => null, setItem: vi.fn() },
+      initialWorkspacePane: {},
+      sym: { ...second.state.sym, symbol: 'NIFTY', exchange: 'NSE_INDEX', tick: 0.05 },
+      transformChoices: { 'NSE_INDEX:NIFTY': { 'renko-v4': { boxSize: 10 } } },
+    })
+    second.state.buildChart()
+    expect(second.state.chart.primaryBars()).toEqual(first.state.chart.primaryBars())
+    second.state.flushRenkoV4()
+    expect(localStorage.getItem(fallbackKey!)).toBe(original)
+    expect(
+      Object.keys(localStorage).filter((key) => key.includes('confirmed-history-v2'))
+    ).toHaveLength(0)
+  })
+  it('keeps the same committed owner through a Trading workspace transform restore', () => {
+    const { state } = mount('oa-trading-p0')
+    state.onTick({ ltp: 130, timeSec: 1025 })
+    state.onTick({ ltp: 100, timeSec: 1026 })
+    const committed = structuredClone(state.chart.primaryBars())
+    const owner = state.renkoV4Run
+    const spec = state.chart.seriesTransform(state.price)!
+    state.withRenkoV4Owner(spec, () => state.chart.setSeriesTransform(state.price, spec))
+    expect(state.renkoV4Run).toBe(owner)
+    expect(state.chart.primaryBars()).toEqual(committed)
+    state.onTick({ ltp: 120, timeSec: 1027 })
+    expect(state.chart.primaryBars()).toEqual(state.renkoV4Run.elements())
+  })
+  it('does not lock cached preview prices into an immutable run', () => {
+    const { state } = mount('oa-trading-p0')
+    const confirmed = structuredClone(state.chart.primaryBars())
+    state.applyDataSnapshot({
+      request: { symbol: state.sym.symbol, exchange: state.sym.exchange, interval: state.interval },
+      bars: [bar(960, 100), bar(1020, 300)],
+      reason: 'cache',
+      status: 'loading',
+      historyStatus: 'idle',
+      hasMore: true,
+      paused: false,
+    })
+    expect(state.chart.primaryBars()).toEqual(confirmed)
+    expect(state.rawBars.at(-1)?.close).toBe(120)
+  })
   it.each([
     'oa-trading',
     'oa-trading-scalper-ce',

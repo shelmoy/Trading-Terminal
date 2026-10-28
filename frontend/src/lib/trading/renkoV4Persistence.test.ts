@@ -11,6 +11,36 @@ function run() {
 }
 
 describe('Renko V4 cache', () => {
+  it('matches workspace-serialized option order without crossing instruments', () => {
+    const prefix = 'oa-trading-scalper-p0-renko-v4-cache:NSE_INDEX:NIFTY:'
+    const stored = `${prefix}{"reversal":2,"boxSize":10}`
+    saveRenkoV4(run(), stored, 'oa-trading-scalper-p0-renko-v4-cache:')
+    const restored = new RenkoV4Run({ boxSize: 10 })
+    expect(
+      restoreRenkoV4(restored, 'new-trading-key', `${prefix}{"boxSize":10,"reversal":2}`)
+    ).toBe(true)
+    expect(restored.elements()).toEqual(run().elements())
+    expect(
+      restoreRenkoV4(
+        new RenkoV4Run({ boxSize: 10 }),
+        'absent',
+        'oa-trading-scalper-p0-renko-v4-cache:BSE_INDEX:SENSEX:{"boxSize":10,"reversal":2}'
+      )
+    ).toBe(false)
+  })
+  it('can recover the matching confirmed Scalper run without modifying that cache', () => {
+    const working = run()
+    saveRenkoV4(working, 'scalper:matching', 'scalper:')
+    const original = localStorage.getItem('scalper:matching')
+    localStorage.setItem('trading:recovered', '{invalid')
+    const restored = new RenkoV4Run({ boxSize: 10 })
+    expect(restoreRenkoV4(restored, 'trading:recovered', 'scalper:matching')).toBe(true)
+    expect(restored.elements()).toEqual(working.elements())
+    expect(localStorage.getItem('scalper:matching')).toBe(original)
+    expect(restoreRenkoV4(new RenkoV4Run({ boxSize: 20 }), 'absent', 'scalper:matching')).toBe(
+      false
+    )
+  })
   it('recovers confirmed data and ignores corrupt cache entries', () => {
     const first = run()
     saveRenkoV4(first, 'cache:one', 'cache:')

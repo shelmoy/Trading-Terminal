@@ -16,6 +16,7 @@ from services.broker_busy import BrokerBusyError, broker_busy_result
 from utils import real_threading
 from utils.broker_backpressure import check_queue_wait
 from utils.constants import VALID_EXCHANGES
+from utils.db_sessions import remove_all_scoped_sessions, session_cleanup
 from utils.logging import get_logger
 from utils.thread_safe_cache import LockedTTLCache
 
@@ -160,29 +161,29 @@ _load_disk_history_cache()
 # and paces sustained history API requests evenly.
 _MIN_HISTORY_INTERVAL = 0.35  # 350ms between sustained calls (~3 req/sec)
 _next_history_slot: float = 0.0
-_history_burst_tokens: float = 3.0
-_history_last_book: float = 0.0
+_HISTORY_BURST_CAPACITY = 3
+_MIN_HISTORY_ADMISSION_INTERVAL = 0.03
+_next_history_admission: float = 0.0
 _history_slot_lock = real_threading.Lock()
 
 
 def _enforce_rate_limit(*, background: bool = False):
     """Wait for this request's turn (~3 per second, with 3-request burst after idle)."""
-    global _next_history_slot, _history_burst_tokens, _history_last_book
+    global _next_history_slot, _next_history_admission
     with _history_slot_lock:
         now = time.monotonic()
-        elapsed = max(0.0, now - _history_last_book)
-        _history_last_book = now
-        _history_burst_tokens = min(3.0, _history_burst_tokens + elapsed * 2.0)
-        if not background and _history_burst_tokens >= 1.0:
-            _history_burst_tokens -= 1.0
-            step = 0.03
-        else:
-            step = _MIN_HISTORY_INTERVAL
-        slot = max(now, _next_history_slot)
+        # One virtual 350ms ticket per request. Foreground charts may borrow
+        # at most two tickets for a three-pane burst, while background work
+        # waits for its full ticket. Borrowing never adds sustained capacity.
+        ticket = max(now, _next_history_slot)
+        allowance = 0.0 if background else (_HISTORY_BURST_CAPACITY - 1) * _MIN_HISTORY_INTERVAL
+        slot = max(now, ticket - allowance, _next_history_admission)
         wait = slot - now
         if not background:
             check_queue_wait(wait, kind="data")
-        _next_history_slot = slot + step
+        # A refused request must change neither reservation clock.
+        _next_history_slot = ticket + _MIN_HISTORY_INTERVAL
+        _next_history_admission = slot + _MIN_HISTORY_ADMISSION_INTERVAL
     if wait > 0:
         time.sleep(wait)
 
@@ -633,20 +634,27 @@ _prewarmer_started = False
 _prewarmer_lock = real_threading.Lock()
 
 
+def _scalper_prewarm_auth() -> tuple[str | None, str | None]:
+    """Copy credentials out of the worker's auth session before it idles."""
+    from database.auth_db import Auth, get_api_key_for_tradingview
+
+    with session_cleanup():
+        auth_row = Auth.query.filter_by(is_revoked=False).first()
+        if not auth_row or not auth_row.name:
+            return None, None
+        return get_api_key_for_tradingview(auth_row.name), auth_row.broker
+
+
 def _scalper_prewarm_worker() -> None:
     """Background daemon that keeps 1m history warm for all 5 Scalper indices (SPOT + ATM CE/PE)."""
     time.sleep(3.0)
     ist = pytz.timezone("Asia/Kolkata")
     while True:
         try:
-            from database.auth_db import Auth, get_api_key_for_tradingview
             from services.expiry_service import get_expiry_dates
             from services.option_chain_service import get_option_chain
 
-            auth_row = Auth.query.filter_by(is_revoked=False).first()
-            api_key = (
-                get_api_key_for_tradingview(auth_row.name) if auth_row and auth_row.name else None
-            )
+            api_key, broker = _scalper_prewarm_auth()
             if not api_key:
                 time.sleep(15.0)
                 continue
@@ -654,7 +662,7 @@ def _scalper_prewarm_worker() -> None:
             # Standard FYERS has a small shared data budget. Warming every
             # index and option leg consumes it before the visible chart loads.
             if (
-                auth_row.broker == "fyers"
+                broker == "fyers"
                 and os.getenv("FYERS_HISTORY_PREWARM", "false").lower() != "true"
             ):
                 time.sleep(60.0)
@@ -679,6 +687,7 @@ def _scalper_prewarm_worker() -> None:
                         api_key=api_key,
                         background=True,
                     )
+                    remove_all_scoped_sessions()
                     time.sleep(0.9)
 
                 # 2. Resolve nearest expiry & ATM CE/PE symbols
@@ -734,11 +743,14 @@ def _scalper_prewarm_worker() -> None:
                                 api_key=api_key,
                                 background=True,
                             )
+                            remove_all_scoped_sessions()
                             time.sleep(0.9)
 
             _save_disk_history_cache(force=True)
         except Exception as e:
             logger.debug(f"Scalper prewarm cycle skipped: {e}")
+        finally:
+            remove_all_scoped_sessions()
         time.sleep(60.0)
 
 

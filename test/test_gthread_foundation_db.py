@@ -437,7 +437,29 @@ def test_an_approved_order_is_claimed_for_the_broker_once(action_center):
 
 
 @pytest.fixture
-def blocking_download(monkeypatch):
+def owned_download_threads(monkeypatch):
+    """Join only this fixture's workers before monkeypatch restores claim state.
+
+    Merely releasing the fake download lets its finally run in the next test,
+    where it can discard that test's newly claimed broker from the restored set.
+    """
+    make_thread = auth_utils.Thread
+    workers = []
+
+    def own_thread(*args, **kwargs):
+        thread = make_thread(*args, **kwargs)
+        workers.append(thread)
+        return thread
+
+    monkeypatch.setattr(auth_utils, "Thread", own_thread)
+    yield workers
+    for worker in workers:
+        worker.join(5)
+        assert not worker.is_alive(), "the fixture's master-contract worker did not exit"
+
+
+@pytest.fixture
+def blocking_download(monkeypatch, owned_download_threads):
     started = threading.Event()
     release = threading.Event()
     runs = []
@@ -525,7 +547,7 @@ def status_row(monkeypatch):
 
 
 @pytest.fixture
-def download_in_its_tail(monkeypatch, status_row):
+def download_in_its_tail(monkeypatch, status_row, owned_download_threads):
     """A download that has written success and is still running its tail work.
 
     The real one writes success, then loads the symbol cache, restores
