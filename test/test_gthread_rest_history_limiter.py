@@ -1,8 +1,9 @@
-"""Broker history requests are spaced about three a second, however they arrive.
+"""Sustained background history requests keep their reserved 350ms turns.
 
 ``services.history_service`` paces every broker history call (REST, Flow
 indicator nodes, the /tools pages, the P&L tracker, the agent) to one per
-0.35 s. The old limiter read the time of the last call, slept, and wrote it
+0.35 s after the foreground three-pane burst. The burst's capacity is checked
+separately in test_gthread_custom_history_budget.py. The old limiter read the time of the last call, slept, and wrote it
 back, all unlocked. Callers arriving together computed their sleep from the
 same stale value and woke together, and under the gthread worker the read and
 the write also interleaved on the no-sleep path, so N concurrent callers all
@@ -40,13 +41,14 @@ INTERVAL = history_service._MIN_HISTORY_INTERVAL
 @pytest.fixture(autouse=True)
 def _fresh_limiter(monkeypatch):
     monkeypatch.setattr(history_service, "_next_history_slot", 0.0, raising=False)
+    monkeypatch.setattr(history_service, "_next_history_admission", 0.0, raising=False)
     # The limiter this replaced kept its state here; reset it too so the same
     # tests can be pointed at the old code to show they catch the defect.
     monkeypatch.setattr(history_service, "_last_history_call", 0.0, raising=False)
     yield
 
 
-def test_concurrent_callers_are_spaced_one_interval_apart():
+def test_concurrent_background_callers_are_spaced_one_interval_apart():
     """The defect: six callers arriving together all went through at once.
 
     Checked against when the callers arrived rather than between neighbours:
@@ -65,7 +67,7 @@ def test_concurrent_callers_are_spaced_one_interval_apart():
         barrier.wait()
         with lock:
             arrived.append(time.monotonic())
-        history_service._enforce_rate_limit()
+        history_service._enforce_rate_limit(background=True)
         with lock:
             returned.append(time.monotonic())
 
@@ -83,20 +85,20 @@ def test_concurrent_callers_are_spaced_one_interval_apart():
         assert offset >= turn * INTERVAL - 0.01, offsets
 
 
-def test_a_single_caller_waits_as_it_did_before():
+def test_a_single_background_caller_keeps_sustained_pacing():
     """The non-racing path is unchanged: no wait, one interval, then none."""
     started = time.monotonic()
-    history_service._enforce_rate_limit()
+    history_service._enforce_rate_limit(background=True)
     assert time.monotonic() - started < 0.1
 
     started = time.monotonic()
-    history_service._enforce_rate_limit()
+    history_service._enforce_rate_limit(background=True)
     waited = time.monotonic() - started
     assert INTERVAL - 0.05 <= waited <= INTERVAL + 0.2, waited
 
     time.sleep(INTERVAL + 0.1)
     started = time.monotonic()
-    history_service._enforce_rate_limit()
+    history_service._enforce_rate_limit(background=True)
     assert time.monotonic() - started < 0.1
 
 
@@ -230,12 +232,12 @@ def test_under_eventlet_greenlets_are_spaced_and_the_hub_keeps_running(tmp_path)
 
         returned = []
         def green_caller():
-            hs._enforce_rate_limit()
+            hs._enforce_rate_limit(background=True)
             returned.append(time.monotonic())
 
         real_done = []
         def real_caller():
-            hs._enforce_rate_limit()
+            hs._enforce_rate_limit(background=True)
             real_done.append(time.monotonic())
 
         tick = eventlet.spawn(ticker)
