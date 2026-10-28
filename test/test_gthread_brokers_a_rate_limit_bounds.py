@@ -152,7 +152,9 @@ def _fyers(monkeypatch):
     from broker.fyers.api import rate_limiter as rl
 
     monkeypatch.setattr(rl, "_last_call_time", time.time() + 60)
-    return rl, rl.apply_rate_limit, (lambda: round(rl._last_call_time)), 60
+    # Account/transaction pacing retains the legacy wait contract. Market-data
+    # pacing has a separate clock and an explicit five-second queue ceiling.
+    return rl, (lambda: rl.apply_rate_limit("order")), (lambda: round(rl._last_call_time)), 60
 
 
 def _angel(monkeypatch):

@@ -45,7 +45,7 @@ def _config(sid):
 def test_concurrent_saves_always_publish_valid_json(isolated_configs, caplog):
     config_file = ps.CONFIG_FILE
     errors = []
-    published = []
+    published_count = 0
     stop = threading.Event()
     barrier = threading.Barrier(19)
 
@@ -66,6 +66,7 @@ def test_concurrent_saves_always_publish_valid_json(isolated_configs, caplog):
                     ps.STRATEGY_CONFIGS.pop(sid, None)
 
     def reader():
+        nonlocal published_count
         barrier.wait()
         if os.name == "nt":
             # Windows refuses to rename over a file another thread has open,
@@ -77,9 +78,15 @@ def test_concurrent_saves_always_publish_valid_json(isolated_configs, caplog):
             except (FileNotFoundError, PermissionError):
                 continue
             try:
-                published.append(json.loads(text))
+                # Validate every observed snapshot without retaining all its
+                # dictionaries. A fast reader on a slow VM can otherwise
+                # exhaust RAM while the savers are still working.
+                json.loads(text)
+                published_count += 1
             except ValueError as exc:
                 errors.append(f"published file did not parse: {exc}")
+                stop.set()
+                return
 
     with caplog.at_level(logging.ERROR):
         threads = [threading.Thread(target=saver) for _ in range(16)]
@@ -100,7 +107,7 @@ def test_concurrent_saves_always_publish_valid_json(isolated_configs, caplog):
     leftovers = [p.name for p in config_file.parent.iterdir() if p.name.endswith(".tmp")]
     assert leftovers == [], leftovers
     if os.name != "nt":
-        assert published, "the reader never saw a published file"
+        assert published_count > 0, "the reader never saw a published file"
 
 
 def test_an_older_snapshot_never_overwrites_a_newer_one(isolated_configs, monkeypatch):

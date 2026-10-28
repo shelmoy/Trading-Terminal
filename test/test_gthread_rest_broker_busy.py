@@ -215,6 +215,11 @@ def _chain_symbols(base, expiry, strikes_with_labels, exchange):
 @pytest.fixture
 def chain_stubs(monkeypatch):
     oc = option_chain_service
+    oc._option_chain_cache.clear()
+    monkeypatch.setattr(
+        oc, "get_br_symbol", lambda symbol, exchange: "NSE:NIFTY50-INDEX"
+        if (symbol, exchange) == ("NIFTY", "NSE_INDEX") else None
+    )
     monkeypatch.setattr(
         oc, "get_quotes", lambda **k: (True, {"data": {"ltp": 24010.0, "prev_close": 0}}, 200)
     )
@@ -223,7 +228,8 @@ def chain_stubs(monkeypatch):
     )
     monkeypatch.setattr(oc, "get_option_symbols_for_chain", _chain_symbols)
     monkeypatch.setattr(oc, "get_auth_token_broker", lambda *a, **k: (None, None, None))
-    return oc
+    yield oc
+    oc._option_chain_cache.clear()
 
 
 def _chain():

@@ -11,6 +11,7 @@
 
 # --- Background threads, never a request thread ---------------------------
 services/broker_keepalive_service.py::_keepalive_loop  # benign: the keepalive thread's own loop
+services/history_service.py::_scalper_prewarm_worker  # benign: one named background daemon, never a request thread; 15/60s idle and 0.9s broker pacing hold no lock, and scoped sessions are released before idle/pacing waits and on errors
 services/market_data_service.py::MarketDataService._cleanup_loop  # benign: a background cleanup every 5 minutes
 services/whatsapp_bot_service.py::WhatsAppBotService._run_pair  # benign: its own thread during pairing, bounded at 300 s
 
