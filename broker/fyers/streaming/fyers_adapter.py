@@ -4,7 +4,6 @@ Handles WebSocket streaming for all exchanges: NSE, NFO, BSE, BFO, MCX
 Uses HSM binary protocol for real-time data
 """
 
-import json
 import threading
 import time
 from collections import defaultdict
@@ -59,8 +58,8 @@ class FyersAdapter:
         # Threading
         self.lock = threading.Lock()
 
-        # Deduplication tracking
-        self.last_data = {}  # symbol -> {ltp, timestamp} for deduplication
+        # Real LTP per symbol, borrowed by depth messages (which carry none)
+        self.last_ltp = {}  # "EXCHANGE:SYMBOL" -> last traded price from the sf/if feed
 
         # self.logger.info(f"Fyers adapter initialized for user: {userid}")
 
@@ -69,7 +68,7 @@ class FyersAdapter:
         Connect to Fyers HSM WebSocket
 
         On failure, ``self.last_error`` is populated with the underlying error
-        message so callers can surface it (issue #1419 — ConnectionPool needs
+        message so callers can surface it (issue #1419 â€” ConnectionPool needs
         the real auth keyword to trigger token refresh, not a generic bool).
 
         Returns:
@@ -148,13 +147,13 @@ class FyersAdapter:
                 self.symbol_to_hsm.clear()
                 self.hsm_to_symbol.clear()  # Clear reverse mapping too
                 self.subscription_callbacks.clear()  # Clear callbacks
-                self.last_data.clear()  # Clear deduplication cache
+                self.last_ltp.clear()
                 self.logger.info("Disconnected from Fyers WebSocket (cleared all mappings)")
             else:
                 # Keep mappings but clear active subscriptions for reconnection
                 self.active_subscriptions.clear()
                 self.subscription_callbacks.clear()
-                self.last_data.clear()
+                self.last_ltp.clear()
                 # self.logger.info(f"Disconnected from Fyers WebSocket (preserved {len(self.hsm_to_symbol)} mappings)")
 
         except Exception as e:
@@ -239,7 +238,7 @@ class FyersAdapter:
                 # valid_symbols[i] positionally, on the assumption that Fyers'
                 # /data/symbol-token API preserves input order in its
                 # `validSymbol` response. It DOES NOT reliably preserve order
-                # — especially when index + options are mixed in one call —
+                # â€” especially when index + options are mixed in one call â€”
                 # so the pairing got scrambled. The visible symptom: NIFTY
                 # spot LTP showed an option's premium, far-OTM strikes showed
                 # NIFTY's bid/ask, and CE/PE rows appeared swapped.
@@ -324,6 +323,10 @@ class FyersAdapter:
         """Subscribe to Depth data"""
         return self.subscribe_symbols(symbols, "DepthUpdate", callback)
 
+    def get_last_ltp(self, exchange: str, symbol: str) -> float | None:
+        """Last traded price seen on the sf/if feed, or None if not subscribed there"""
+        return self.last_ltp.get(f"{exchange}:{symbol}")
+
     def unsubscribe_symbols(self, symbols, data_type=None, keep_index=False):
         """Release the requested feed, preserving a sibling quote/depth owner."""
         for row in symbols:
@@ -342,9 +345,11 @@ class FyersAdapter:
                 self.symbol_to_hsm.pop(full_symbol, None)
             if not keep_index:
                 self.active_subscriptions.pop(full_symbol, None)
-            for key in list(self.last_data):
-                if isinstance(key, tuple) and key[0] == full_symbol:
-                    self.last_data.pop(key, None)
+            # Keep a sibling quote owner's real LTP; drop it when no sf/if
+            # feed remains so depth cannot borrow an unsubscribed stale value.
+            if not any(name == full_symbol and token.startswith(("sf|", "if|"))
+                       for token, name in self.hsm_to_symbol.items()):
+                self.last_ltp.pop(full_symbol, None)
 
     def _on_open(self):
         """Handle WebSocket connection open"""
@@ -514,13 +519,13 @@ class FyersAdapter:
 
             # Build the list of callbacks to invoke for this tick.
             #
-            # Stocks have two distinct HSM streams — `sf` (symbol feed → quote)
-            # and `dp` (depth feed) — and each tick belongs to exactly one
+            # Stocks have two distinct HSM streams â€” `sf` (symbol feed â†’ quote)
+            # and `dp` (depth feed) â€” and each tick belongs to exactly one
             # subscriber. Indices have a SINGLE feed (`if`), so a single tick
             # may need to be fanned out to both Quote (mode 2) and Depth
             # (mode 3) subscribers when both are registered. Previously this
             # branch only delivered to whichever callback existed, with Depth
-            # winning when both did — so a Quote-only subscriber that ran
+            # winning when both did â€” so a Quote-only subscriber that ran
             # alongside any prior Depth registration silently received
             # depth-shaped data labelled `subscription_mode: 3`. See issue
             # #1093.
@@ -542,38 +547,36 @@ class FyersAdapter:
                 if quote_cb:
                     dispatches.append((quote_cb, "Quote"))
 
+            # Remember the real last traded price. A Fyers depth (dp) message
+            # carries no LTP, so depth messages borrow it from here.
+            if fyers_type in ("sf", "if") and mapped_data.get("ltp"):
+                self.last_ltp[full_symbol] = mapped_data["ltp"]
+
             if not dispatches:
                 return
 
-            # Compare complete normalized packets independently for quote/index
-            # and depth feeds. LTP alone cannot identify a duplicate: volume or
-            # the book can change repeatedly at the same price within a second.
-            # One comparison before dispatch also preserves both index fan-out legs.
-            symbol_key = (full_symbol, fyers_type)
+            # No LTP-based de-duplication here: the HSM client sends one
+            # message per changed scrip, and an update that moves only bid,
+            # ask or volume still has to reach subscribers (issue #2318).
             now = int(time.time())
-            comparison = self.data_mapper.map_fyers_data(fyers_data, "Depth") if fyers_type == "dp" else mapped_data
-            fingerprint = json.dumps(
-                {key: value for key, value in (comparison or {}).items() if key != "timestamp"},
-                sort_keys=True, separators=(",", ":"),
-            )
-            if self.last_data.get(symbol_key) == fingerprint:
-                return
-            self.last_data[symbol_key] = fingerprint
-            # Bound stale subscription fingerprints even after repeated expiry
-            # switches; the broker's live subscription registry remains authoritative.
-            if len(self.last_data) > 10000:
-                self.last_data.pop(next(iter(self.last_data)))
 
             for cb, openalgo_data_type in dispatches:
                 # Re-map per side. The Quote map already happened above; only
                 # rebuild for Depth to keep the cost of equity/futures (the
                 # common case, single dispatch) unchanged.
                 if openalgo_data_type == "Depth":
-                    side_data = comparison if fyers_type == "dp" else self.data_mapper.map_fyers_data(fyers_data, "Depth")
+                    side_data = self.data_mapper.map_fyers_data(fyers_data, "Depth")
                     if not side_data:
                         continue
                 else:
                     side_data = dict(mapped_data)
+
+                if fyers_type == "dp":
+                    # Real LTP only, from the quote feed when it is subscribed.
+                    # Without one the field is left out rather than invented.
+                    side_data.pop("ltp", None)
+                    if full_symbol in self.last_ltp:
+                        side_data["ltp"] = self.last_ltp[full_symbol]
 
                 side_data["symbol"] = matched_subscription["symbol"]
                 side_data["exchange"] = matched_subscription["exchange"]
@@ -661,8 +664,8 @@ class FyersAdapter:
                 self.symbol_to_hsm.clear()
             if hasattr(self, "hsm_to_symbol"):
                 self.hsm_to_symbol.clear()
-            if hasattr(self, "last_data"):
-                self.last_data.clear()
+            if hasattr(self, "last_ltp"):
+                self.last_ltp.clear()
 
             # Force cleanup WebSocket client
             if hasattr(self, "ws_client") and self.ws_client:
