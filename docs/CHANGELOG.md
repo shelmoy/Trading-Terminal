@@ -6,6 +6,12 @@ Each release adds a stanza here summarising what changed and who contributed.
 The full notes for a release, with commit SHAs and the reasoning behind each
 fix, live in [docs/releases](releases/).
 
+## Local fixes - 2026-10-30
+
+- Kotak commodity quotes retain valid prices when optional open interest, volume or depth fields are blank. Missing bid/ask stays unavailable instead of copying the last traded price.
+- A failed chart switch clears the previous instrument's candles instead of displaying them under the requested contract. Same-instrument cached charts are retained during a refresh failure.
+- Kotak's unavailable MCX/CDS candle history is explained clearly; this does not disable supported quotes or trading. No historical candles are fabricated or silently sourced from another broker.
+
 ## [2.0.3.1] - 2026-10-30
 
 ### Security Fixes and Fyers Live Data Release

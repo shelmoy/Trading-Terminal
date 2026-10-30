@@ -4,6 +4,14 @@ import { fireEvent, render, screen } from '@/test/test-utils'
 import { ChartStateOverlay } from './ChartStateOverlay'
 
 describe('chart state overlay', () => {
+  it('explains an unsupported history feed without inviting repeated retries', () => {
+    render(<ChartStateOverlay view={chartLoadFailed('CRUDEOILM19NOV26FUT','1m',
+      'Kotak does not provide historical candles for MCX. Live quotes and supported trading remain available')}
+      onRetry={vi.fn()} onDismiss={vi.fn()} />)
+    expect(screen.getByRole('alert')).toHaveTextContent('Live quotes and supported trading remain available')
+    expect(screen.queryByRole('button', {name:'Try again'})).toBeNull()
+    expect(screen.getByRole('button', {name:'Dismiss'})).toBeInTheDocument()
+  })
   it('draws nothing for a chart that is showing bars', () => {
     const view = render(<ChartStateOverlay view={null} onRetry={vi.fn()} onDismiss={vi.fn()} />)
     expect(view.container).toBeEmptyDOMElement()

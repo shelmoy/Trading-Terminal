@@ -108,6 +108,7 @@ import {
 import { csvOptions, type DataExportOptions } from './chartDataExport'
 import { chartMotionOptions } from './chartMotion'
 import { CHART_READY, type ChartStateView, chartLoadFailed, chartNoData } from './chartState'
+import { chartDataFetch } from './chartDataFetch'
 import {
   type ComparisonScale,
   comparisonScaleOf,
@@ -7508,6 +7509,7 @@ export class TradingTerminal {
       return loaded && !this.destroyed && ticket === this.loadTicket
     } finally {
       if (!this.destroyed && ticket === this.loadTicket) {
+        if (!loaded) this.clearMismatchedHistoryChart()
         this.historyPending = false
         this.historyFailed = !loaded
         this.syncAlertPause()
@@ -7539,6 +7541,21 @@ export class TradingTerminal {
 
   dataUnavailable(): boolean {
     return this.historyPending || this.historyFailed
+  }
+
+  /** A failed switch must never relabel another instrument's candles or overlays. */
+  private clearMismatchedHistoryChart(): void {
+    if (!this.sym || !this.chart) return
+    const key = this.dataKey({ symbol: this.sym.symbol, exchange: this.sym.exchange, interval: this.interval })
+    if (this.chartDataKey === key) return // same-instrument cached history remains useful
+    this.rawBars = []
+    this.lastLtp = null
+    this.liveBucket = null
+    this.builder = null
+    this.buildChart()
+    // Retry must rebuild once authoritative bars arrive, including the viewport.
+    this.chartDataKey = null
+    this.cb.onSymbolLoaded(this.sym)
   }
 
   private async loadSymbolRequest(
@@ -8569,6 +8586,7 @@ export class TradingTerminal {
     this.rest = new OpenAlgoDataFeed({
       baseUrl: '',
       apiKey: this.apiKey,
+      fetchImpl: chartDataFetch,
       hasOpenInterest: (request) => {
         const sym = this.sym
         return sym?.symbol === request.symbol && sym.exchange === request.exchange

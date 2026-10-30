@@ -63,9 +63,11 @@ export function ChartStateOverlay({ view, onRetry, onDismiss, onMinuteHistory }:
                   View 1-minute history
                 </button>
               )}
-              <button type="button" className={BUTTON} onClick={onRetry}>
-                Try again
-              </button>
+              {view.retryable !== false && (
+                <button type="button" className={BUTTON} onClick={onRetry}>
+                  Try again
+                </button>
+              )}
               <button type="button" className={BUTTON} onClick={onDismiss}>
                 Dismiss
               </button>

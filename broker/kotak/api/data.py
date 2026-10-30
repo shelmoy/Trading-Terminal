@@ -385,9 +385,7 @@ class BrokerData:
                 # For indices, map to correct Neo API format and use static exchange mapping
                 kotak_exchange = self._get_kotak_exchange(exchange)
                 candidates = self._get_index_symbol_candidates(symbol)
-                logger.info(
-                    f"QUOTES API - Index candidates for {symbol}: {candidates}"
-                )
+                logger.info(f"QUOTES API - Index candidates for {symbol}: {candidates}")
                 response, query = self._query_index_with_candidates(
                     kotak_exchange, candidates, "all"
                 )
@@ -437,17 +435,17 @@ class BrokerData:
                 quote_data = response[0]
 
                 # Parse Neo API v2 response format (based on actual API response)
-                ohlc_data = quote_data.get("ohlc", {})
-                ltp_parsed = float(quote_data.get("ltp", 0))
+                ohlc_data = quote_data.get("ohlc") or {}
+                ltp_parsed = _as_float(quote_data.get("ltp", 0))
 
                 # Get depth data for actual bid/ask prices
-                depth_data = quote_data.get("depth", {})
+                depth_data = quote_data.get("depth") or {}
                 buy_orders = depth_data.get("buy", [])
                 sell_orders = depth_data.get("sell", [])
 
                 # Extract best bid and ask prices from depth
-                bid_price = float(buy_orders[0].get("price", 0)) if buy_orders else ltp_parsed
-                ask_price = float(sell_orders[0].get("price", 0)) if sell_orders else ltp_parsed
+                bid_price = _as_float(buy_orders[0].get("price", 0)) if buy_orders else 0.0
+                ask_price = _as_float(sell_orders[0].get("price", 0)) if sell_orders else 0.0
 
                 # Get total quantities (for reference)
                 total_buy_qty = quote_data.get("total_buy", 0)
@@ -465,13 +463,13 @@ class BrokerData:
                 return {
                     "bid": bid_price,
                     "ask": ask_price,
-                    "open": float(ohlc_data.get("open", 0)),
-                    "high": float(ohlc_data.get("high", 0)),
-                    "low": float(ohlc_data.get("low", 0)),
+                    "open": _as_float(ohlc_data.get("open", 0)),
+                    "high": _as_float(ohlc_data.get("high", 0)),
+                    "low": _as_float(ohlc_data.get("low", 0)),
                     "ltp": ltp_parsed,
-                    "prev_close": float(ohlc_data.get("close", 0)),
-                    "volume": float(quote_data.get("last_volume", 0)),
-                    "oi": int(quote_data.get("open_int", 0)),  # Available in response
+                    "prev_close": _as_float(ohlc_data.get("close", 0)),
+                    "volume": _as_float(quote_data.get("last_volume", 0)),
+                    "oi": _as_int(quote_data.get("open_int", 0)),  # Available in response
                 }
             elif response is not None:
                 # API returned 200 but empty response - this is normal for some symbols
@@ -495,9 +493,7 @@ class BrokerData:
                 # For indices, map to correct Neo API format and use static exchange mapping
                 kotak_exchange = self._get_kotak_exchange(exchange)
                 candidates = self._get_index_symbol_candidates(symbol)
-                logger.debug(
-                    f"DEPTH API - Index candidates for {symbol}: {candidates}"
-                )
+                logger.debug(f"DEPTH API - Index candidates for {symbol}: {candidates}")
                 # "all", not "depth": Neo's filters are strict subsets, and the
                 # depth one returns the book alone -- no ltp, ohlc, volume or oi.
                 # "all" carries the identical book plus those fields, in the same
@@ -539,7 +535,7 @@ class BrokerData:
 
             if response and isinstance(response, list) and len(response) > 0:
                 target_quote = response[0]
-                depth_data = target_quote.get("depth", {})
+                depth_data = target_quote.get("depth") or {}
 
                 logger.debug(f"DEPTH API - Raw depth data: {depth_data}")
 
@@ -556,8 +552,8 @@ class BrokerData:
                         logger.debug(f"DEPTH API - Processing bid {i}: {bid}")
                         bids.append(
                             {
-                                "price": float(bid.get("price", 0)),
-                                "quantity": int(bid.get("quantity", 0)),
+                                "price": _as_float(bid.get("price", 0)),
+                                "quantity": _as_int(bid.get("quantity", 0)),
                             }
                         )
 
@@ -570,8 +566,8 @@ class BrokerData:
                         logger.debug(f"DEPTH API - Processing ask {i}: {ask}")
                         asks.append(
                             {
-                                "price": float(ask.get("price", 0)),
-                                "quantity": int(ask.get("quantity", 0)),
+                                "price": _as_float(ask.get("price", 0)),
+                                "quantity": _as_int(ask.get("quantity", 0)),
                             }
                         )
 
@@ -831,14 +827,14 @@ class BrokerData:
                 continue
 
             # Parse and format quote data
-            ohlc_data = quote_data.get("ohlc", {})
+            ohlc_data = quote_data.get("ohlc") or {}
             depth_data = quote_data.get("depth") or {}  # Guard against null depth
             buy_orders = depth_data.get("buy", [])
             sell_orders = depth_data.get("sell", [])
 
-            ltp = float(quote_data.get("ltp", 0))
-            bid_price = float(buy_orders[0].get("price", 0)) if buy_orders else ltp
-            ask_price = float(sell_orders[0].get("price", 0)) if sell_orders else ltp
+            ltp = _as_float(quote_data.get("ltp", 0))
+            bid_price = _as_float(buy_orders[0].get("price", 0)) if buy_orders else 0.0
+            ask_price = _as_float(sell_orders[0].get("price", 0)) if sell_orders else 0.0
 
             result_item = {
                 "symbol": original["symbol"],
@@ -846,13 +842,13 @@ class BrokerData:
                 "data": {
                     "bid": bid_price,
                     "ask": ask_price,
-                    "open": float(ohlc_data.get("open", 0)),
-                    "high": float(ohlc_data.get("high", 0)),
-                    "low": float(ohlc_data.get("low", 0)),
+                    "open": _as_float(ohlc_data.get("open", 0)),
+                    "high": _as_float(ohlc_data.get("high", 0)),
+                    "low": _as_float(ohlc_data.get("low", 0)),
                     "ltp": ltp,
-                    "prev_close": float(ohlc_data.get("close", 0)),
-                    "volume": float(quote_data.get("last_volume", 0)),
-                    "oi": int(quote_data.get("open_int", 0)),
+                    "prev_close": _as_float(ohlc_data.get("close", 0)),
+                    "volume": _as_float(quote_data.get("last_volume", 0)),
+                    "oi": _as_int(quote_data.get("open_int", 0)),
                 },
             }
             results.append(result_item)
@@ -914,8 +910,8 @@ class BrokerData:
 
         if segment not in HISTORY_SEGMENTS:
             raise Exception(
-                f"Kotak Neo serves historical data for NSE, BSE, NFO, BFO, NSE_INDEX and "
-                f"BSE_INDEX only. {exchange} (segment {segment}) is quote-only."
+                f"Kotak does not provide historical candles for {exchange}. "
+                "Live quotes and supported trading remain available"
             )
         return segment
 
@@ -1025,7 +1021,9 @@ class BrokerData:
         return (payload.get("data") or {}).get("candles") or []
 
     @staticmethod
-    def _repair_candles(df: pd.DataFrame, exchange: str, symbol: str, interval: str) -> pd.DataFrame:
+    def _repair_candles(
+        df: pd.DataFrame, exchange: str, symbol: str, interval: str
+    ) -> pd.DataFrame:
         """Make every candle satisfy low <= open, close <= high with volume >= 0.
 
         Neo breaks that invariant on some opening candles: it aggregates the

@@ -14,6 +14,7 @@ These pin the retry, the in-flight gate and the request timeout.
 
 import threading
 import time
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -38,8 +39,12 @@ def broker_data():
 
 @pytest.fixture(autouse=True)
 def no_real_sleep():
-    """Keep the backoff arithmetic without paying it in test time."""
-    with patch.object(kotak_data.time, "sleep") as slept:
+    """Observe this broker's waits, never another background thread's sleep."""
+    from unittest.mock import Mock
+
+    slept = Mock()
+    clock = SimpleNamespace(sleep=slept, monotonic=time.monotonic, time=time.time)
+    with patch.object(kotak_data, "time", clock):
         yield slept
 
 

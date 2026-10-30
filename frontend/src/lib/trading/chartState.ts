@@ -22,6 +22,8 @@ export interface ChartStateView {
   message?: string
   /** Candles are visible from cache while the authoritative request continues. */
   refreshing?: boolean
+  /** A capability refusal cannot be fixed by repeatedly fetching the same range. */
+  retryable?: boolean
 }
 
 /**
@@ -63,6 +65,9 @@ export function traderReason(raw: string): string {
 
 /** A load that failed. `reason` is the cleaned error text. */
 export function chartLoadFailed(symbol: string, interval: string, reason: string): ChartStateView {
+  if (/Kotak does not provide historical candles for /i.test(reason)) {
+    return { kind: 'error', symbol, interval, message: traderReason(reason), retryable: false }
+  }
   return { kind: 'error', symbol, interval, message: traderReason(reason) }
 }
 
@@ -107,7 +112,9 @@ export function chartStateCopy(view: ChartStateView): ChartStateCopy {
   if (view.kind === 'error') {
     return {
       title: `Could not load ${symbol || 'the chart'}${interval ? ` on ${interval}` : ''}`,
-      text: `${view.message ?? 'The broker did not return bars'}. Try again in a moment.`,
+      text: view.retryable === false
+        ? `${view.message ?? 'The broker does not provide history for this instrument'}.`
+        : `${view.message ?? 'The broker did not return bars'}. Try again in a moment.`,
       role: 'alert',
     }
   }

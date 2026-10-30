@@ -42,6 +42,17 @@ pytestmark = pytest.mark.skipif(
 )
 
 SHIMS = {
+    # This suite tests layout selection, not browser installation. Give the
+    # updater a fake existing browser and fail closed if network/package tools
+    # are accidentally reached. Otherwise simple/legacy layouts download a
+    # real Chrome package, depending on the host and internet availability.
+    "chrome": "#!/bin/sh\nexit 0\n",
+    **{
+        name: '#!/bin/sh\necho "unexpected external command '
+        + name
+        + ' $*" >> "$SHIM_STATE/calls.log"\nexit 97\n'
+        for name in ("curl", "apt-get", "dnf", "yum", "pacman")
+    },
     "sudo": r"""#!/bin/bash
 echo "sudo $*" >> "$SHIM_STATE/calls.log"
 while [ $# -gt 0 ]; do
@@ -228,6 +239,18 @@ class UpdateBox:
 
 def _systemctl(box: UpdateBox) -> list[str]:
     return box.calls("systemctl ")
+
+
+@pytest.mark.parametrize("layout", ["simple", "legacy", "multi"])
+def test_layout_checks_never_download_or_install_a_real_browser(box, layout):
+    path = {
+        "simple": box.simple,
+        "legacy": lambda: box.legacy("acme"),
+        "multi": lambda: box.multi(1),
+    }[layout]()
+    result = box.run(path / "install" / "update.sh", cwd=path)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert box.calls("unexpected external command ") == []
 
 
 @pytest.fixture

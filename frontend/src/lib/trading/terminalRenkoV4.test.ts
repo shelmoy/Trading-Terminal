@@ -35,6 +35,9 @@ type State = {
   flushRenkoV4(): void
   withRenkoV4Owner<T>(spec: SeriesTransformSpec, create: () => T): T
   applyDataSnapshot(snapshot: DataLoadingSnapshot): void
+  chartDataKey: string | null
+  dataKey(request: {symbol:string; exchange:string; interval:string}): string
+  clearMismatchedHistoryChart(): void
 }
 
 const terminals: TradingTerminal[] = []
@@ -119,6 +122,27 @@ function mount(storageKey = 'oa-trading') {
 }
 
 describe('Renko V4 terminal integration', () => {
+  it('clears a prior instrument canvas after a commodity history refusal', () => {
+    const { state } = mount('oa-trading-p0')
+    state.chartDataKey = state.dataKey({symbol:state.sym.symbol,exchange:state.sym.exchange,interval:'1m'})
+    const previous = state.chart
+    state.sym = {...state.sym, symbol:'CRUDEOILM19NOV26FUT',exchange:'MCX',quoteOnly:false,lots:true,lotsize:10}
+    state.clearMismatchedHistoryChart()
+    expect(previous.isDestroyed).toBe(true)
+    expect(state.chart.primaryBars()).toEqual([])
+    expect(state.rawBars).toEqual([])
+    expect(state.price.getData()).toEqual([])
+    expect(state.chartDataKey).toBeNull()
+  })
+  it('keeps same-instrument cached candles through a history refresh failure', () => {
+    const { state } = mount('oa-trading-scalper-p0')
+    state.chartDataKey = state.dataKey({symbol:state.sym.symbol,exchange:state.sym.exchange,interval:'1m'})
+    const previous = state.chart
+    const bars = structuredClone(state.rawBars)
+    state.clearMismatchedHistoryChart()
+    expect(state.chart).toBe(previous)
+    expect(state.rawBars).toEqual(bars)
+  })
   it('recovers prepared Trading NIFTY from the matching Scalper path without writing preferences', () => {
     const first = mount('oa-trading-scalper-p0')
     first.state.onTick({ ltp: 140, timeSec: 1025 })
