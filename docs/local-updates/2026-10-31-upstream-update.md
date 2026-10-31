@@ -1,6 +1,6 @@
 # OpenAlgo 2.0.3.2 integration â€” 31 October 2026
 
-Status: validated source/build ready for safe activation. Live installations remain on 2.0.3.1 until the activation record below is completed.
+Status: 2.0.3.2 is activated on both installations; source, dependencies, migrated data and served assets are verified. GitHub synchronization follows this documentation checkpoint.
 
 ## Source and versions
 
@@ -28,7 +28,7 @@ Kotak MCX quotes/trading support does not imply historical candle availability: 
 
 Private records: `C:\Users\ashut\.codex\backups\openalgo-update-20261031` and `C:\Users\ashut\.codex\backups\openalgo-release-20261031`. Both roots have identifiable recovery branches, unknown-work/source/served-asset archives, private environment recovery and complete prior virtual environments. Credentials, account databases, runtime caches and backups stay outside Git and outside the Ubuntu VM.
 
-The three reviewed migration scripts were rehearsed against consistent SQLite backup copies of each installation. Dry runs changed nothing. Application changed only six `qty_freeze` records and eight Muhurat exchange entries; schemas and all other tables remained identical. A second application was logically identical. Fresh consistent offline backups and another activity check are required immediately before live application.
+The three reviewed migration scripts were rehearsed against consistent SQLite backup copies of each installation. Dry runs changed nothing. Application changed only six `qty_freeze` records and eight Muhurat exchange entries; schemas and all other tables remained identical. A second application was logically identical. Fresh consistent offline backups and another activity check were completed immediately before live application. Every SQLite backup passed `PRAGMA quick_check`.
 
 ## Validation
 
@@ -43,4 +43,12 @@ The three reviewed migration scripts were rehearsed against consistent SQLite ba
 
 ## Activation record
 
-Linux gate passed. Pending coherent merge commit, fresh safety check, offline consistent database backups, frozen dependency synchronization, explicit non-destructive migrations, identified service restarts, served-asset/HTTP verification and normal GitHub push. No diagnostic order, order cancellation, position close, execution-mode change, credential change or network exposure change is authorized or performed by this run.
+Application merge commit: `67b1038c0f72aa68e00aafd386b94bdcbf51a49f` ([GitHub commit](https://github.com/shelmoy/Trading-Terminal/commit/67b1038c0f72aa68e00aafd386b94bdcbf51a49f)). Both installations fast-forwarded from the preserved recovery point after a fresh safe-window check: Analyze mode, no active strategy processes/workflows, no working orders or open Analyze positions. No execution mode was changed.
+
+Both frozen dependency synchronizations succeeded. The holiday correction reported no change; each database received six freeze updates and eight Muhurat entries. All six final freeze values, eight special-session windows and live database integrity were checked read-only after activation.
+
+Kotak restarted at 12:38:06 IST and FYERS at 12:38:33 IST on 31 October. Both serve `/faq` and `/trading` with HTTP200 and byte-identical canonical HTML/new entry `/assets/index-3CmmXKCC.js`. All400 canonical files match the validated manifest in each installation; four older entry chunks remain accessible with HTTP200 for already-open tabs. Kotak login is HTTP200; FYERS login correctly returns the shared-login HTTP302. Installed platform2.0.3.2, LiteLLM1.106.6 and SDK2.6.9/2.0.5 pins were verified. Exact environment hashes and all333 unknown primary documentation/static files are preserved.
+
+The controller retains its pre-existing Windows readiness-display limitation: Windows sometimes reports no TCP listening state for genuinely bound endpoints, and the linked FYERS login redirect differs from its probe. FYERS's controller wait timed out while retaining the healthy process. No repeated restart was attempted. Public HTTP, served-byte checks and all six bound-port owners matched the controller's identified broker process IDs. Its shutdown PID-identity race also reported an error after workers had exited; all endpoints were independently proved free before installation. These diagnostics are retained privately and are not represented as a clean controller status result.
+
+The retained Ubuntu VM was powered off after collecting its passing gate. No rollback was required. No diagnostic order, order cancellation, position close, credential change or network exposure change occurred. Normal GitHub push and final head verification are recorded in this automation's private last-run record.
