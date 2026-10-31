@@ -46,14 +46,17 @@ const fake = vi.hoisted(() => ({
 vi.mock('@/stores/authStore', () => {
   const state = {
     isAuthenticated: true,
+    apiKey: null,
     user: { username: 'fixture', broker: 'fixturebroker' },
     logout: () => {},
   }
   // The page reads one field through a selector; the header's account
   // controls, shared with the navbar, read the whole store.
   return {
-    useAuthStore: (selector?: (value: typeof state) => unknown) =>
-      selector ? selector(state) : state,
+    useAuthStore: Object.assign(
+      (selector?: (value: typeof state) => unknown) => selector ? selector(state) : state,
+      { getState: () => state, subscribe: vi.fn(() => () => {}) }
+    ),
   }
 })
 vi.mock('@/hooks/useProfileMenuItems', async () => {
@@ -280,16 +283,16 @@ describe('chart grid dividers', () => {
 })
 
 describe('terminal header', () => {
-  it('replaces the app navbar with the way out and the account controls, all named', async () => {
+  it('keeps named account controls visible and reveals navigation without remounting charts', async () => {
     const user = userEvent.setup()
     const { container } = render(<Trading />)
     await waitFor(() => expect(screen.getByRole('button', { name: 'Replay p0' })).toBeVisible())
 
-    // The page has no navbar of its own any more: the row is the header.
+    // Navigation starts folded so the chart retains the full workspace.
     expect(container.querySelector('[data-testid="navbar-row"]')).toBeNull()
 
-    const dashboard = screen.getByRole('link', { name: 'Dashboard' })
-    expect(dashboard).toHaveAttribute('href', '/dashboard')
+    const dashboard = screen.getByRole('button', { name: 'Toggle OpenAlgo navigation' })
+    expect(dashboard).toHaveAttribute('aria-expanded', 'false')
     expect(screen.getByRole('button', { name: 'Switch to Analyze mode' })).toBeEnabled()
     expect(screen.getByRole('button', { name: /^Switch to (dark|light) mode$/ })).toBeEnabled()
     const profile = screen.getByRole('button', { name: 'Open user menu' })
@@ -313,6 +316,18 @@ describe('terminal header', () => {
     const menu = await screen.findByRole('menu')
     expect(within(menu).getByRole('menuitem', { name: 'Profile' })).toBeVisible()
     expect(within(menu).getByRole('menuitem', { name: 'Logout' })).toBeVisible()
+    await user.keyboard('{Escape}')
+
+    const chart = screen.getByRole('button', { name: 'Replay p0' })
+    await user.click(dashboard)
+    expect(dashboard).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByTestId('navbar-row')).toBeVisible()
+    expect(screen.getByTestId('navbar-row').querySelector('a[href="/dashboard"]')).not.toBeNull()
+    expect(screen.getByRole('button', { name: 'Replay p0' })).toBe(chart)
+    await user.click(dashboard)
+    expect(dashboard).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByTestId('navbar-row')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Replay p0' })).toBe(chart)
   })
 })
 

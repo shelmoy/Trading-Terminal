@@ -622,7 +622,13 @@ schema forever and the change silently never reaches the ~290k live deployments.
   installs and nobody else. Ship a migration that updates the rows, guarded on
   every value OpenAlgo shipped or the exchange published before, and leave an
   empty table to the seed: one inserted row stops the seed from running.
-  `upgrade/migrate_qty_freeze_oct_2026.py` is the pattern.
+  `upgrade/migrate_qty_freeze_nov_2026.py` is the pattern.
+- **A later revision of the same values replaces the earlier migration.**
+  `migrate_all.py` runs every listed script on every upgrade, in order, so an
+  older revision left in the list rewrites the rows before the newer one runs.
+  NSE's November 2026 freeze limits went back to values the October migration
+  treated as stale and raised. Fold the old script's guard values into the new
+  one, then delete the old script and its entry.
 - **SQLite limits shape the approach.** It cannot alter a `CHECK` constraint or
   add a `UNIQUE` column in place: rebuild the table (see
   `migrate_sandbox_trigger_pending.py`) or add a partial unique index instead.
@@ -671,9 +677,10 @@ precisely so a package bump brings new models with it. This provider is the one
 exception, and it needs a person.
 
 **The symptom, if you do not know this.** LiteLLM's registry lags the backend:
-at 1.104.0 its bundled map carries fourteen `chatgpt/*` entries, newest the
-`gpt-5.6` variants, while the backend serves more. The map LiteLLM fetches from
-GitHub at import is usually ahead of the bundled one, so check both. A model
+at 1.106.6 its bundled map carries nineteen `chatgpt/*` entries, newest the
+`gpt-6` and `gpt-6.1` models, while the map it fetches from GitHub at import
+already lists `gpt-6.1-terra` as well. The remote map is usually ahead of the
+bundled one, so check both. A model
 absent from that registry has no `mode`, so LiteLLM routes it through the
 chat-completions bridge instead of `/v1/responses`. The request never reaches
 the API: it lands on a Cloudflare interstitial and returns
@@ -731,7 +738,9 @@ for this provider raises `Unknown items in responses API response: []` on a
 reply that streams back perfectly (upstream #26179, open; its fix #27562 was
 closed unmerged), and the agent only ever runs `stream=True` anyway.
 
-Delete the file when LiteLLM ships these names. Its entries win automatically.
+LiteLLM's entries win automatically once it ships a name, so drop that name from
+`SUPPLEMENTAL` in the bump that brings it. At 1.106.6 the map is empty; keep the
+file anyway, since the remote map is already a model ahead of the bundle.
 
 ## Frontend build
 

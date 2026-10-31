@@ -110,7 +110,14 @@ def test_green_smart_orders_for_one_symbol_place_one_order(tmp_path, broker):
             status = status_code = 200
 
         def place_order_api(data, auth):
+            heartbeat_before = ticks[0]
             eventlet.sleep(0.1)
+            # A loaded VM need not wake a 10ms timer ten times in 100ms.
+            # Wait for observed hub progress instead of inferring it from
+            # elapsed wall time. A blocked hub still fails the process timeout.
+            with eventlet.Timeout(2):
+                while ticks[0] - heartbeat_before < 12:
+                    eventlet.sleep(0.01)
             qty = int(data["quantity"])
             orders.append((data["action"], qty))
             book[data["symbol"]] = book.get(data["symbol"], 0) + (qty if data["action"] == "BUY" else -qty)
