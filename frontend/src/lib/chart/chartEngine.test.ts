@@ -45,5 +45,7 @@ describe('chart engine', () => {
           .join('/')
       )
     expect(offenders).toEqual([])
-  })
+    // This guard reads the entire source tree. Its I/O budget is independent
+    // of browser-render timing, especially with Windows antivirus scanning.
+  }, 60_000)
 })

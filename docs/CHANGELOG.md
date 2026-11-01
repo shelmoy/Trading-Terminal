@@ -6,6 +6,12 @@ Each release adds a stanza here summarising what changed and who contributed.
 The full notes for a release, with commit SHAs and the reasoning behind each
 fix, live in [docs/releases](releases/).
 
+## Local maintenance - 2026-11-01
+
+- Pin follow-redirects 1.16.2 for GHSA-mrwp-f3q8-3g9p; refresh the matching npm lock and build without changing the chart SDK.
+- Backport the upstream joserfc 1.7.7 pin, updated application downloads and tool-count documentation.
+- Keep the broker-auth rewrite isolated until the linked Kotak/FYERS handoff supports its new login-state and session-revocation contract. See [the maintenance report](local-updates/2026-11-01-maintenance.md).
+
 ## Local fixes - 2026-10-30
 
 - Kotak commodity quotes retain valid prices when optional open interest, volume or depth fields are blank. Missing bid/ask stays unavailable instead of copying the last traded price.
