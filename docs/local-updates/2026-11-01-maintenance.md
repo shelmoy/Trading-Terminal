@@ -1,5 +1,7 @@
 # Maintenance update â€” 1 November 2026
 
+> **Superseded on 2 November:** the linked-login adapter is now tested, installed on both instances and pushed. See [linked broker authentication and activation](2026-11-01-linked-auth.md). The held-auth status below records the earlier independent subset, not the current installation.
+
 Status: the tested independent subset is installed and activated on both Kotak and FYERS. The upstream broker-auth rewrite is deferred because direct integration breaks the existing linked-instance login contract. This is a partial upstream integration, not a claim that all of upstream/main is installed.
 
 ## Versions and scope

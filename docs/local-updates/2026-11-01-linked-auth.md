@@ -1,6 +1,6 @@
 # Linked broker authentication — 1–2 November 2026
 
-Status: implementation and isolated validation complete; guarded local activation and GitHub synchronization are pending.
+Status: installed, restarted and independently verified on both Kotak and FYERS on 2 November. Tested application commit `564afedef7e020248539ec528042115da7131ff5` is pushed and verified on origin/main. The former linked-login incompatibility is resolved for this release.
 
 ## Scope and behavior
 
@@ -41,10 +41,21 @@ Offline changed-source secret scanning reviewed 93 candidates: placeholders, fie
 
 Both migrations were rehearsed twice on fresh consistent private **local** copies of each database. All existing rows and original columns remained identical, integrity checks passed, and the second run changed nothing. They add only `broker_keys`, `broker_login_states`, `session_revocations` and nullable `sm_strategy_run.broker_account`. No historical account association is guessed. Real account data and `.env` files never entered the Linux VM.
 
-Recovery branch in both live repositories: `backup/before-linked-auth-20261101`. Private base source/assets archive, unknown-work snapshots, configuration recovery copies, rehearsals, screenshots, hashes, logs and gates are in `C:/Users/ashut/.codex/backups/openalgo-linked-auth-20261101`. Fresh consistent offline database backups are required immediately before applying the additive migrations. Credentials and network exposure are unchanged.
+Recovery branch in both live repositories: `backup/before-linked-auth-20261101`. Private base source/assets archive, unknown-work snapshots, configuration recovery copies, rehearsals, screenshots, hashes, logs and gates are in `C:/Users/ashut/.codex/backups/openalgo-linked-auth-20261101`. Immediately before the live additive migrations, five databases per instance were backed up consistently and checked (ten snapshots total). The live migrations added exactly the three tables and nullable strategy column listed above; all existing rows and original columns remained unchanged and integrity checks passed. Credentials and network exposure are unchanged.
 
-Activation and normal-push results will be recorded below after final health checks. Actual interactive broker authentication remains the user's normal login step; it was verified here with mocked broker transports, not real account login or execution.
+Actual interactive broker authentication remains the user's normal login step; it was verified here with mocked broker transports, not real account login or execution. Refresh both tabs and sign in normally if prompted; linked FYERS opens its own broker sign-in flow on port 5001.
 
 ## Other observations
 
 The later fetched upstream head `89442ceec` includes an unrelated LiteLLM agent/MCP change (`00314fb63`) outside this authentication task. Its redirect dependency fix is already present locally. Do not claim this release includes that separate agent change. The known Windows null TCP-state controller display issue, Kotak's broker-rejected MCX history (422), and the intentional filelock/LiteLLM metadata warning remain unchanged.
+
+## Activation and GitHub results — 2 November
+
+- Fresh activity check at **10:04:07 IST** found both instances in Analyze mode, no current-day browser/broker sessions, no open Analyze positions or working orders, and no running workflows, strategies or strategy processes. Both identified services stopped through their controller; no unrelated application was stopped.
+- Frozen dependencies synchronized without package-source patches. Ten offline consistent SQLite snapshots were verified before the additive migrations; private `.env` hashes remained exact. Both installed heads match application merge `564afedef7e020248539ec528042115da7131ff5`, whose parents preserve the prior live commit and full upstream target `da15d464127c363da0980cbd45c0a3f94e090e10`.
+- Kotak started **10:06:34 IST**, controller Ready **10:07:34**; FYERS started **10:07:56**, Ready **10:08:17**. Read-only checks passed for `/faq`, `/trading`, the new `/assets/index-v6Lm39dV.js`, and six previous entry chunks. Served HTML and all **403 canonical files per instance** match the reviewed build. The guest broker list refuses unauthenticated access (401); FYERS `/login` uses the expected shared-login redirect. Additive schema/integrity, pinned package versions, all six endpoint owners and correct process roots passed.
+- All **333 unknown primary docs/static files** were byte-identical after deployment; runtime caches were preserved and remain untracked. Old compatibility assets are retained for previously opened tabs. Credentials and network exposure are unchanged.
+- Normal push succeeded; `git ls-remote` verified application commit [564afedef](https://github.com/shelmoy/Trading-Terminal/commit/564afedef7e020248539ec528042115da7131ff5) on origin/main. This activation report is a documentation-only follow-up; final local/remote refs are recorded in automation `last-run.json` and the private completion record.
+- The approved Ubuntu VM is retained and powered off. Temporary validation awake requests were released. No orders, diagnostic cancellations, position closes, execution-mode changes or actual broker account logins occurred.
+
+The existing controller table may still display “Starting / unavailable” because Windows reports null TCP states despite Ready logs. Independent HTTP, exact served assets and six owned endpoints all passed; healthy services were not repeatedly restarted to chase that display label. The later agent/MCP patch remains a separate upstream item, rather than a claim of full integration through fetched head `89442ceec`.
