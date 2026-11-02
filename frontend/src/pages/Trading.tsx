@@ -1,3 +1,4 @@
+import { mobilePreferenceKey } from '@/lib/mobileTerminal'
 import { LayoutGrid, Link2 as LinkIcon } from 'lucide-react'
 import { type ChartObjects, createLinkGroup, type LinkGroup } from 'openalgo-charts'
 import type { WorkspaceDocument, WorkspacePayload } from 'openalgo-charts/workspace'
@@ -127,17 +128,17 @@ const NO_DRAW: DrawStats = {
   shortcuts: {},
 }
 
-const LAYOUT_KEY = 'oa-trading-layout'
-const SYNC_KEY = 'oa-trading-sync'
-const PANEL_KEY = 'oa-trading-panel'
+const LAYOUT_KEY = mobilePreferenceKey('oa-trading-layout')
+const SYNC_KEY = mobilePreferenceKey('oa-trading-sync')
+const PANEL_KEY = mobilePreferenceKey('oa-trading-panel')
 /**
  * One-Click, the scalping terminal's convention ('1' / '0'). Off by default
  * and off whenever the key is unreadable: a chart must never open with its
  * Buy button live because storage was cleared or blocked.
  */
-const ARMED_KEY = 'oa-trading-armed'
+const ARMED_KEY = mobilePreferenceKey('oa-trading-armed')
 /** The drawing rail folded away ('1') or shown ('0'), beside the rail's last tools. */
-const RAIL_FOLDED_KEY = 'oa-trading-rail-folded'
+const RAIL_FOLDED_KEY = mobilePreferenceKey('oa-trading-rail-folded')
 
 /** Shown unless the trader folded it: an unreadable key keeps the tools in reach. */
 function readRailShown(): boolean {

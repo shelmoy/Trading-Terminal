@@ -1,3 +1,4 @@
+import { isMobileTerminal, mobilePreferenceKey } from '@/lib/mobileTerminal'
 /**
  * Scalper.tsx — External 3-Pane Scalping Terminal (SPOT + CALL CE + PUT PE)
  *
@@ -146,14 +147,14 @@ const NO_DRAW: DrawStats = {
   shortcuts: {},
 }
 
-const SCALPER_SYNC_KEY = 'oa-scalper-sync'
-const SCALPER_PANEL_KEY = 'oa-scalper-panel'
-const SCALPER_ARMED_KEY = 'oa-scalper-armed'
-const SCALPER_LAYOUT_KEY = 'oa-scalper-layout'
-const SCALPER_UNDERLYING_KEY = 'oa-scalper-underlying'
-const SCALPER_CE_LOTS_KEY = 'oa-scalper-ce-lots'
-const SCALPER_PE_LOTS_KEY = 'oa-scalper-pe-lots'
-const SCALPER_PRODUCT_KEY = 'oa-scalper-product'
+const SCALPER_SYNC_KEY = mobilePreferenceKey('oa-scalper-sync')
+const SCALPER_PANEL_KEY = mobilePreferenceKey('oa-scalper-panel')
+const SCALPER_ARMED_KEY = mobilePreferenceKey('oa-scalper-armed')
+const SCALPER_LAYOUT_KEY = mobilePreferenceKey('oa-scalper-layout')
+const SCALPER_UNDERLYING_KEY = mobilePreferenceKey('oa-scalper-underlying')
+const SCALPER_CE_LOTS_KEY = mobilePreferenceKey('oa-scalper-ce-lots')
+const SCALPER_PE_LOTS_KEY = mobilePreferenceKey('oa-scalper-pe-lots')
+const SCALPER_PRODUCT_KEY = mobilePreferenceKey('oa-scalper-product')
 const ALERT_LOG_LIMIT = 200
 
 export type ScalperPaneId = 'scalper-p0' | 'scalper-p1' | 'scalper-p2'
@@ -560,7 +561,14 @@ function ScalperWorkspace({ account }: { account: string | null }) {
   }>({ spot: true, ce: true, pe: true })
 
   // Maximized single pane inside the 3-pane grid (null = show normal grid)
-  const [maximizedPane, setMaximizedPane] = useState<ScalperPaneId | null>(null)
+  const [maximizedPane, setMaximizedPane] = useState<ScalperPaneId | null>(() => isMobileTerminal() && window.innerWidth < 768 ? 'scalper-p0' : null)
+  useEffect(() => {
+    if (!isMobileTerminal()) return
+    const media = window.matchMedia('(max-width: 767px)')
+    const update = () => setMaximizedPane(media.matches ? 'scalper-p0' : null)
+    media.addEventListener('change', update)
+    return () => media.removeEventListener('change', update)
+  }, [])
 
   const [sync, setSync] = useState<SyncState>(readSync)
   const [armed, setArmed] = useState<boolean>(readArmed)
@@ -2655,6 +2663,7 @@ function ScalperWorkspace({ account }: { account: string | null }) {
         {/* Optional full OpenAlgo Navbar (can be toggled with 1 click) */}
         {showMainNavbar && <Navbar fluid />}
 
+        {isMobileTerminal() && <div className="mobile-pane-selector">{(['scalper-p0', 'scalper-p1', 'scalper-p2'] as ScalperPaneId[]).map((id, i) => <button key={id} type="button" className="rounded border px-4 py-2" aria-pressed={maximizedPane === id} onClick={() => { setVisiblePanes({ spot: true, ce: true, pe: true }); setMaximizedPane(id); }}>{['Spot', 'Call', 'Put'][i]}</button>)}</div>}
         <ScalperHeader
           underlying={activeUnderlying}
           underlyings={UNDERLYINGS}

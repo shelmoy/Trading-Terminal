@@ -66,7 +66,8 @@ def instance_login_url(broker):
     own_origin = loopback_origin(os.getenv("HOST_SERVER"))
     if not origin or not own_origin or origin == own_origin:
         return None
-    return f"{origin}/auth/instance-login"
+    from utils.mobile_origins import external_instance_origin
+    return f"{external_instance_origin(origin)}/auth/instance-login"
 
 
 def login_authority():
@@ -120,7 +121,8 @@ def _primary_identity():
         abort(403)
     key = config.get("APP_KEY")
     cookie_name = config.get("SESSION_COOKIE_NAME") or "session"
-    if origin.startswith("https:"):
+    from utils.mobile_origins import browser_origin
+    if browser_origin(origin, config).startswith("https:"):
         cookie_name = f"__Secure-{cookie_name}"
     cookie = request.cookies.get(cookie_name)
     if not key or not cookie:
@@ -316,8 +318,9 @@ def guard_managed_login():
     if request.method == "GET" and not path.startswith("/auth/2fa/"):
         return redirect("/auth/instance-login")
     authority = login_authority()
+    from utils.mobile_origins import external_instance_origin
     return jsonify(
         status="error",
         message="Use your original OpenAlgo account to manage login, password and two-factor settings.",
-        redirect=f"{authority[2]}/profile",
+        redirect=f"{external_instance_origin(authority[2])}/profile",
     ), 403

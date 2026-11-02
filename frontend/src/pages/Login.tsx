@@ -18,6 +18,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useAuthStore } from '@/stores/authStore'
 import { showToast } from '@/utils/toast'
+import { isLinkedLoginDestination } from '@/lib/mobileTerminal'
 
 export default function Login() {
   const navigate = useNavigate()
@@ -44,8 +45,7 @@ export default function Login() {
         )?.instance_url
         if (response.ok && config.status === 'success' && typeof destination === 'string') {
           const url = new URL(destination)
-          if (url.hostname === '127.0.0.1' && url.port && !url.username && !url.password &&
-            url.pathname === '/auth/instance-login' && !url.search && !url.hash && ['http:', 'https:'].includes(url.protocol)) {
+          if (isLinkedLoginDestination(url, new URL(window.location.href))) {
             window.location.replace(url.href)
             return
           }

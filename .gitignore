@@ -151,3 +151,12 @@ docs/audit/qa_audit/**/~$*
 
 # Regenerated history cache; old v1 files are retained for recovery.
 db/fast_history_cache_v2.pkl
+
+# Personal Android tools, signing material and generated builds stay local.
+mobile/android/.gradle/
+mobile/android/.kotlin/
+mobile/android/**/build/
+mobile/android/local.properties
+*.jks
+*.keystore
+*.apk

@@ -293,7 +293,8 @@ def broker_exchanges(broker):
 
 def default_redirect_url(broker):
     """The callback address OpenAlgo serves for a broker on this host."""
-    host = (os.getenv("HOST_SERVER") or "http://127.0.0.1:5000").strip().rstrip("/")
+    from utils.mobile_origins import browser_origin
+    host = browser_origin().strip().rstrip("/")
     return f"{host}/{broker}/callback"
 
 

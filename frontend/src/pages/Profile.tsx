@@ -1,3 +1,4 @@
+import { ChartSettingsTransfer } from '@/components/trading/ChartSettingsTransfer'
 import {
   AlertCircle,
   AlertTriangle,
@@ -745,6 +746,7 @@ export default function ProfilePage() {
 
         {/* Account Tab */}
         <TabsContent value="account" className="space-y-6">
+          <ChartSettingsTransfer />
           {/* Account Info */}
           <Card>
             <CardHeader>

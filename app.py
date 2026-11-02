@@ -56,6 +56,7 @@ from blueprints.arbitrage import arbitrage_bp  # Import the Arbitrage blueprint
 from blueprints.auth import auth_bp
 from blueprints.brlogin import brlogin_bp
 from blueprints.broker_instances import broker_instances_bp
+from blueprints.mobile import mobile_bp
 from blueprints.broker_config import broker_config_bp  # Broker Configuration and Select Broker
 from blueprints.broker_credentials import (
     broker_credentials_bp,  # Import the broker credentials blueprint
@@ -176,7 +177,9 @@ def create_app():
     app = Flask(__name__)
 
     # Initialize SocketIO
-    socketio.init_app(app)  # Link SocketIO to the Flask app
+    from utils.mobile_origins import cloud_origins
+    private_origins = cloud_origins()
+    socketio.init_app(app, **({"cors_allowed_origins": list(private_origins.values())} if private_origins else {}))
 
     # Initialize EventBus subscribers
     from subscribers import register_all as register_event_subscribers
@@ -228,7 +231,9 @@ def create_app():
 
     # Dynamic cookie security configuration based on HOST_SERVER
     HOST_SERVER = os.getenv("HOST_SERVER", "http://127.0.0.1:5000")
-    USE_HTTPS = HOST_SERVER.startswith("https://")
+    from utils.mobile_origins import browser_origin, cloud_origins
+    cloud_origins()  # Invalid opt-in cloud configuration prevents startup.
+    USE_HTTPS = browser_origin(HOST_SERVER).startswith("https://")
 
     # Configure session cookie security
     session_cookie_name = os.getenv("SESSION_COOKIE_NAME", "session")
@@ -302,6 +307,9 @@ def create_app():
     # Register other blueprints
     app.register_blueprint(auth_bp)
     app.register_blueprint(broker_instances_bp)
+    app.register_blueprint(mobile_bp)
+    from utils.mobile_origins import guard_cloud_origin
+    app.before_request(guard_cloud_origin)
     from utils.broker_instances import guard_managed_login
 
     app.before_request(guard_managed_login)

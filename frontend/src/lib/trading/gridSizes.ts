@@ -27,7 +27,8 @@ export interface DividerSegment {
   to: number
 }
 
-const SIZES_KEY = 'oa-trading-layout-sizes'
+import { mobilePreferenceKey } from '@/lib/mobileTerminal'
+const SIZES_KEY = mobilePreferenceKey('oa-trading-layout-sizes')
 /** The engine's own ceiling on a workspace weight. */
 const MAX_WEIGHT = 1000
 

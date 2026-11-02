@@ -25,6 +25,7 @@ import {
 } from '@/lib/brokerProfiles'
 import { useAuthStore } from '@/stores/authStore'
 import { useBrokerStore } from '@/stores/brokerStore'
+import { cancelMobileLogin } from '@/lib/mobileTerminal'
 
 /**
  * Select Broker, a card per broker, as OpenAlgo Desktop has it.
@@ -254,6 +255,7 @@ export default function BrokerSelect() {
           </div>
         </div>
 
+        {searchParams.get('mobile_login_pending') === '1' && (<Alert><AlertDescription>Complete FYERS sign-in in Chrome, then return here. <Button variant="outline" onClick={() => void cancelMobileLogin()}>Cancel login</Button></AlertDescription></Alert>)}
         {(pageError || list.error) && (
           <Alert variant="destructive">
             <AlertDescription>

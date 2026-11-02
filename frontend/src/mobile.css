@@ -1,0 +1,11 @@
+/* Opt-in native-shell styling. Desktop retains its existing layout. */
+html[data-mobile-terminal] { overscroll-behavior: none; }
+html[data-mobile-terminal] body { min-width: 0; }
+html[data-mobile-terminal] input,
+html[data-mobile-terminal] select { font-size: max(16px, 1em); }
+html[data-mobile-terminal] button { touch-action: manipulation; }
+html[data-mobile-terminal] .mobile-pane-selector { display: flex; gap: .5rem; padding: .375rem .5rem; }
+.mobile-pane-selector { display: none; }
+@media (min-width: 768px) {
+  html[data-mobile-terminal] .mobile-pane-selector { display: none; }
+}

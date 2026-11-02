@@ -78,7 +78,8 @@ def build_external_url(path: str) -> str:
     Returns:
         str: Absolute URL rooted at HOST_SERVER.
     """
-    base = get_host_server().strip().rstrip("/")
+    from utils.mobile_origins import browser_origin
+    base = browser_origin(get_host_server()).strip().rstrip("/")
     if not path.startswith("/"):
         path = f"/{path}"
     return f"{base}{path}"

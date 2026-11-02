@@ -29,7 +29,8 @@ def instance_login():
         try:
             if not import_primary_login():
                 authority = login_authority()
-                return redirect(f"{authority[2]}/login?{urlencode({'broker': broker})}")
+                from utils.mobile_origins import external_instance_origin
+                return redirect(f"{external_instance_origin(authority[2])}/login?{urlencode({'broker': broker})}")
         except (ValueError, OSError, sqlite3.Error):
             return jsonify(
                 status="error",

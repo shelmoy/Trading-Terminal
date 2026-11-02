@@ -1,3 +1,4 @@
+import { mobilePreferenceKey } from '@/lib/mobileTerminal'
 /**
  * Framework-agnostic controller for the charting terminal.
  *
@@ -1826,9 +1827,9 @@ export class TradingTerminal {
     try {
       const storage = this.preferences === undefined ? globalThis.localStorage : this.preferences
       if (!storage) return null
-      const value = storage.getItem(`${this.sk}-${key}`)
+      const value = storage.getItem(key === 'qty' || key === 'product' ? mobilePreferenceKey(`${this.sk}-${key}`) : `${this.sk}-${key}`)
       if (value !== null) return value
-      return this.sk.endsWith('-p0') ? storage.getItem(`-${key}`) : null
+      return key !== 'qty' && key !== 'product' && this.sk.endsWith('-p0') ? storage.getItem(`-${key}`) : null
     } catch {
       this.reportPreferenceFailure('Chart preferences are unavailable. Using defaults.')
       return null
@@ -1838,7 +1839,7 @@ export class TradingTerminal {
     const changed = key !== 'product' && this.lsGet(key) !== val
     try {
       const storage = this.preferences === undefined ? globalThis.localStorage : this.preferences
-      storage?.setItem(`${this.sk}-${key}`, val)
+      storage?.setItem(key === 'qty' || key === 'product' ? mobilePreferenceKey(`${this.sk}-${key}`) : `${this.sk}-${key}`, val)
     } catch {
       this.reportPreferenceFailure(
         'Chart preferences could not be saved. Changes remain in this view.'

@@ -158,6 +158,11 @@ def broker_callback(broker, para=None):
         return _refuse_login(
             "broker_instance", "Open this broker's linked local instance from Select Broker.", 409
         )
+    if broker == "fyers":
+        from blueprints.mobile import fyers_browser_return
+        native_return = fyers_browser_return()
+        if native_return is not None:
+            return native_return
     had_user = "user" in session
     try:
         return _broker_callback(broker, para)
@@ -202,7 +207,7 @@ def _claim_login(broker):
     sign-out since then stops it from being stored.
     """
     if g.get("broker_login_started_at") is None:
-        g.broker_login_started_at = verify_broker_return(broker, state=request.args.get("state"))
+        g.broker_login_started_at = verify_broker_return(broker, state=g.get("mobile_fyers_state") if broker == "fyers" and g.get("mobile_fyers_state") else request.args.get("state"))
 
 
 def _complete_login(auth_token, username, broker, feed_token=None, user_id=None):
@@ -249,7 +254,7 @@ def _broker_callback(broker, para=None):
     # sign-in that starts at the callback) must belong to a login started from
     # Select Broker, checked before any code is exchanged or OTP requested. It
     # is used up only when the login completes (_claim_login).
-    if not has_pending_login(broker, state=request.args.get("state")):
+    if not has_pending_login(broker, state=g.get("mobile_fyers_state") if broker == "fyers" and g.get("mobile_fyers_state") else request.args.get("state")):
         raise BrokerLoginRefused(broker)
 
     # This broker's keys (.env first, then the keys saved in OpenAlgo), for
@@ -454,7 +459,7 @@ def _broker_callback(broker, para=None):
             return jsonify({"error": "Could not process broker callback"}), 500
 
     elif broker == "fyers":
-        code = request.args.get("auth_code")
+        code = g.get("mobile_fyers_code") or request.args.get("auth_code")
         # The common pending-login contract checks the server-generated state
         # before any exchange and consumes it once in _complete_login.
         if not code:

@@ -24,7 +24,7 @@ _URL_CREDENTIAL = re.compile(
 _QUERY_CREDENTIAL = re.compile(
     r"(?P<prefix>[?&](?:"
     r"api[_-]?session|token(?:[_-]?id)?|request[_-]?token|auth[_-]?code|"
-    r"access[_-]?token|session|code|state|redirect[_-]?params"
+    r"access[_-]?token|session|code|state|ticket|redirect[_-]?params"
     r")=)[^&#\s'\"<>]+",
     flags=re.IGNORECASE,
 )

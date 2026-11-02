@@ -10,6 +10,7 @@
  */
 
 import { brokerConfigApi, csrfToken } from '@/api/broker-config'
+import { nativeFyersFlow, sendNative } from '@/lib/mobileTerminal'
 
 /** The Broker Configuration page. */
 export const BROKER_SETUP_PATH = '/broker/config'
@@ -86,7 +87,12 @@ export type BrokerLoginStart =
  */
 export async function startBrokerLogin(broker: string): Promise<BrokerLoginStart> {
   const failed = 'The broker login could not be started. Try again.'
-  const { ok, body } = await postJson('/auth/broker/login', { broker })
+  const native = broker === 'fyers' && nativeFyersFlow()
+  const { ok, body } = await postJson(native ? '/mobile/fyers/start' : '/auth/broker/login', { broker })
+  if (native && ok && typeof body?.url === 'string' && body.url.startsWith('https://api-t1.fyers.in/')) {
+    sendNative({ type: 'fyers-login', url: body.url })
+    return { url: '/broker?mobile_login_pending=1' }
+  }
   if (ok && typeof body?.url === 'string' && body.url) return { url: body.url }
   return { error: (typeof body?.message === 'string' && body.message) || failed }
 }
