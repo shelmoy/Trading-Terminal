@@ -5,6 +5,13 @@ Branch `feat/android-private-cloud-20261102` starts at `fd12560d6`, the tested
 prepared maintenance head. Live Windows instances remain at `186595980`.
 The cancelled chart-trading redesign is not part of this work.
 
+The native Android app now has its own private repository:
+[Trading-Terminal-Android](https://github.com/shelmoy/Trading-Terminal-Android).
+Its local checkout is `C:\Users\ashut\Documents\Codex\Trading-Terminal-Android`.
+This web repository owns React, broker integration, mobile server endpoints,
+cloud deployment and migration. Native source/build files are maintained only
+in the Android repository; both projects share the protocol described below.
+
 ## Implemented
 
 - Android Kotlin/Compose shell: API 37, minimum 34, two retained WebViews,
@@ -38,8 +45,9 @@ JDK 17.0.21, Gradle 9.5.0, AGP 9.3.3, Kotlin/Compose compiler 2.2.10.
 The stable SDK package is named `platforms;android-37.0` in Google's repository;
 Gradle compileSdk/targetSdk are 37. No emulator/system image is installed.
 
-Set JAVA_HOME and ANDROID_HOME to these native Windows tools. Build with
-`mobile/android/gradlew.bat :app:testDebugUnitTest :app:lintRelease :app:assembleRelease`.
+Set JAVA_HOME and ANDROID_HOME to these native Windows tools. In the separate
+Android repository, build with
+`gradlew.bat :app:testDebugUnitTest :app:lintRelease :app:assembleRelease`.
 The Gradle property `terminalHost` pins the exact `.ts.net` server hostname.
 Without that property, the build displays **Cloud setup pending** and cannot
 navigate or connect to a broker. This unconfigured build is for installation
