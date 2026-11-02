@@ -1,6 +1,6 @@
 # Upstream Agent compatibility update — 2 November 2026
 
-Status: complete exact-source validation passed; guarded activation and normal GitHub synchronization are pending. The linked-login release was already completed separately.
+Status: tested application merge `6403b1d2180507c6438dc4ac6e979544b91a2de7` is pushed and verified on origin/main. **Local Agent activation is deferred** because FYERS has a current authenticated session during market hours. The earlier linked-login fix is deployed and healthy on both instances; this defer applies only to the later Agent patch.
 
 ## Scope and review
 
@@ -28,4 +28,13 @@ No schema migration is required. Recovery branches `backup/before-agent-update-2
 - Real-thread/green-thread first-import race, original MCP dependency failure, gated function-tool requests, explicit MCP passthrough, idempotent installation, changed-signature refusal, model wiring, ChatGPT OAuth bookkeeping and streaming/tool-argument regressions are covered. Mock responses/closed loopback endpoints were used; no actual broker or agent account call was made.
 - Existing closed-stream logging warnings occur after successful pytest exit; the gate uses JUnit failures/errors and exit status. The temporary awake requests were released. No Windows feature or permanent power setting changed.
 
-Activation and remote refs are recorded below after health checks. The original linked-auth report continues to document that already completed release; this report covers the later Agent patch.
+Activation and remote refs are recorded below. The original linked-auth report continues to document that already completed release; this report covers the later Agent patch.
+
+## GitHub synchronization and deferred activation
+
+- Tested application merge [6403b1d21](https://github.com/shelmoy/Trading-Terminal/commit/6403b1d2180507c6438dc4ac6e979544b91a2de7) includes full upstream through `89442ceec72a74c32f17a015b2258f79943ad2b7`. Normal push succeeded and the remote ref was verified. No force push or remote commit overwrite occurred. This status report follows as a documentation-only commit; exact final remote ref is stored in automation `last-run.json`.
+- Fresh activity check at **10:37:49 IST on 2 November** found one unrevoked FYERS broker session and one current-day authenticated browser session. Both instances remain Analyze/flat with no working orders or strategies, but a disruptive restart cannot be established safe during the active session. Neither server was stopped again and no new source was installed while it is running.
+- Both live installations remain at documentation head `1865959801bd170dce4dc6ea991345c07b1f97f4`, running tested auth application `564afedef7e020248539ec528042115da7131ff5`. Their chart SDK2.6.9, 403 canonical files, native themes and linked-login fix remain active. GitHub intentionally contains the later tested Agent source before its local activation; do not blindly pull it into running checkouts.
+- Next safe-window step: confirm expired/inactive broker/browser sessions using the native daily boundary, no live trading/queued work or strategy processes; take fresh consistent backups, guarded-stop only identified services, fast-forward both to the tested Agent release and matching documentation, frozen-sync, then restart and verify HTTP, exact source/assets, credentials, preserved unknown files and six endpoint owners. No migration is required for this Agent patch. A stale unrevoked database row alone must not be mistaken for a current valid session; verify its authority/expiry rather than clearing it.
+- Recovery branches and private unknown-work ZIPs are retained. No live database migration, dependency change or second restart occurred for this deferred step. Ten database backups and the additive auth migration belong to the earlier completed authentication release, not this Agent patch.
+- The Linux VM is retained/off; temporary awake requests were released. No diagnostic order, cancellation, position close, execution-mode or credential change occurred. No further user approval is required for activation when a safe window is established.
