@@ -8,18 +8,19 @@ never copied. This feature deliberately supports local loopback instances only.
 
 import json
 import os
-from datetime import datetime
-from pathlib import Path
 import re
 import secrets
 import sqlite3
+from contextlib import closing
+from datetime import datetime, timedelta
+from pathlib import Path
 from urllib.parse import urlsplit
 
+import pytz
 from dotenv import dotenv_values
 from flask import abort, jsonify, redirect, request, session
 from flask.sessions import SecureCookieSessionInterface
 from itsdangerous import BadData, URLSafeTimedSerializer
-import pytz
 
 
 def loopback_origin(value):
@@ -59,6 +60,15 @@ def configured_instances():
     }
 
 
+def instance_login_url(broker):
+    """A configured other loopback instance, never a destination from a request."""
+    origin = configured_instances().get(broker)
+    own_origin = loopback_origin(os.getenv("HOST_SERVER"))
+    if not origin or not own_origin or origin == own_origin:
+        return None
+    return f"{origin}/auth/instance-login"
+
+
 def login_authority():
     """Return explicitly configured primary settings, never a browser-supplied path."""
     filename = os.getenv("BROKER_LOGIN_SOURCE_ENV", "")
@@ -81,19 +91,32 @@ def managed_login_enabled():
     return bool(os.getenv("BROKER_LOGIN_SOURCE_ENV"))
 
 
-def import_primary_login():
-    """Establish only the app identity, after verifying its primary signed cookie."""
-    from database.user_db import add_user, db_session, find_user_by_exact_username
+def _instant(value, *, naive_utc=False):
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return pytz.UTC.localize(parsed) if naive_utc else None
+    return parsed
 
+
+def _primary_identity():
+    """Verify primary cookie, daily boundary, device and durable revocations.
+
+    The primary store is read-only and its connection closes on every exit.
+    No password, broker key, token or second-factor secret is copied.
+    """
     authority = login_authority()
     if authority is None:
-        return False
+        return None
     source, config, origin = authority
     # Do not accept a forwarded Host or a remotely reached server for local SSO.
-    if (
-        request.remote_addr not in {"127.0.0.1", "::1"}
-        or request.host_url.rstrip("/") != loopback_origin(os.getenv("HOST_SERVER"))
-    ):
+    if request.remote_addr not in {"127.0.0.1", "::1"} or request.host_url.rstrip(
+        "/"
+    ) != loopback_origin(os.getenv("HOST_SERVER")):
         abort(403)
     key = config.get("APP_KEY")
     cookie_name = config.get("SESSION_COOKIE_NAME") or "session"
@@ -101,7 +124,7 @@ def import_primary_login():
         cookie_name = f"__Secure-{cookie_name}"
     cookie = request.cookies.get(cookie_name)
     if not key or not cookie:
-        return False
+        return None
     interface = SecureCookieSessionInterface()
     serializer = URLSafeTimedSerializer(
         key,
@@ -115,25 +138,37 @@ def import_primary_login():
     try:
         identity = serializer.loads(cookie, max_age=86400)
         if not isinstance(identity, dict) or identity.get("pending_totp_user"):
-            return False
+            return None
         username = identity.get("user")
         if not isinstance(username, str) or not username or len(username) > 80:
-            return False
+            return None
+        # A legacy completed broker session has a login_time. A pre-broker
+        # identity with no auth_at must sign in again, as upstream requires.
+        signed_in = _instant(identity.get("auth_at"))
+        if identity.get("auth_at") is None and identity.get("logged_in"):
+            signed_in = _instant(identity.get("login_time"))
+        now = datetime.now(pytz.timezone("Asia/Kolkata"))
+        if signed_in is None or signed_in > now + timedelta(seconds=5):
+            return None
+        hour, minute = map(int, (config.get("SESSION_EXPIRY_TIME") or "03:00").split(":"))
+        boundary = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        if now < boundary:
+            boundary -= timedelta(days=1)
+        disabled = str(config.get("DISABLE_SESSION_EXPIRY", "false")).lower() == "true"
+        if not disabled and signed_in < boundary:
+            return None
         if identity.get("logged_in"):
-            logged_at = datetime.fromisoformat(identity["login_time"])
-            if logged_at.tzinfo is None:
-                return False
-            now = datetime.now(pytz.timezone("Asia/Kolkata"))
-            hour, minute = map(int, (config.get("SESSION_EXPIRY_TIME") or "03:00").split(":"))
-            boundary = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-            disabled = str(config.get("DISABLE_SESSION_EXPIRY", "false")).lower() == "true"
-            if not disabled and now >= boundary and logged_at < boundary:
-                return False
-        else:
-            # Password/2FA completed, but broker login is still pending.
-            serializer.loads(cookie, max_age=900)
+            logged_at = _instant(identity.get("login_time"))
+            if logged_at is None or logged_at > now + timedelta(seconds=5):
+                return None
+            if not disabled and logged_at < boundary:
+                return None
+        # Upstream app authentication, including a sign-in before broker
+        # connection, lasts to the daily boundary and honors durable sign-out
+        # cutoffs. The legacy 15-minute cookie heuristic predates auth_at and
+        # must not expire a valid linked session during the trading day.
     except (BadData, ValueError, KeyError, TypeError):
-        return False
+        return None
 
     database_url = config.get("DATABASE_URL") or ""
     if not database_url.startswith("sqlite:///"):
@@ -141,10 +176,13 @@ def import_primary_login():
     database_path = Path(database_url.removeprefix("sqlite:///"))
     if not database_path.is_absolute():
         database_path = source.parent / database_path
-    with sqlite3.connect(database_path.resolve().as_uri() + "?mode=ro", uri=True) as connection:
+    with closing(
+        sqlite3.connect(database_path.resolve().as_uri() + "?mode=ro", uri=True, timeout=2)
+    ) as connection:
         record = connection.execute(
             "SELECT username, email, is_admin, totp_enabled, totp_required_for_login "
-            "FROM users WHERE username = ?", (username,)
+            "FROM users WHERE username = ?",
+            (username,),
         ).fetchone()
         if identity.get("logged_in"):
             active = connection.execute(
@@ -152,18 +190,53 @@ def import_primary_login():
                 (username, identity.get("session_id", "")),
             ).fetchone()
             if active is None:
-                return False
+                return None
+        revocations = connection.execute(
+            "SELECT revoked_at, pre_broker_revoked_at FROM session_revocations WHERE username = ?",
+            (username,),
+        ).fetchone()
     if record is None:
-        return False
+        return None
     if record[3] and record[4] and not identity.get("totp_verified_at"):
+        return None
+    revoked, pre_broker = (
+        tuple(_instant(value, naive_utc=True) for value in revocations)
+        if revocations
+        else (None, None)
+    )
+    if revoked is not None and signed_in <= revoked:
+        return None
+    if not identity.get("logged_in") and pre_broker is not None and signed_in <= pre_broker:
+        return None
+    return {
+        "record": record,
+        "origin": origin,
+        "signed_in": signed_in,
+        "revoked": revoked,
+        "pre_broker_revoked": pre_broker,
+        "primary_logged_in": bool(identity.get("logged_in")),
+        "boundary": None if disabled else boundary,
+    }
+
+
+def import_primary_login():
+    """Establish only the app identity using verified primary authentication."""
+    from database.user_db import add_user, db_session, find_user_by_exact_username
+
+    identity = _primary_identity()
+    if identity is None:
         return False
+    record = identity["record"]
+    username, origin = record[0], identity["origin"]
     local_user = find_user_by_exact_username(username)
     if local_user is not None and local_user.email != record[1]:
         raise ValueError("This broker instance already has a different account identity.")
     if local_user is None:
         # A local identity row is required by broker/API tables. Its random
         # password is unusable: local credential routes are disabled below.
-        local_user = add_user(username, record[1], secrets.token_urlsafe(64), is_admin=bool(record[2]))
+        local_user = add_user(
+            username, record[1], secrets.token_urlsafe(64), is_admin=bool(record[2])
+        )
         if local_user is None:
             raise ValueError("Could not link the original OpenAlgo account.")
         from blueprints.apikey import generate_api_key
@@ -178,7 +251,42 @@ def import_primary_login():
         session.clear()
     session["user"] = username
     session["login_authority"] = origin
+    # The SSO sign-in is new here, while its original proof time remains
+    # bound separately. A primary revocation must reject that original proof
+    # even if this instance's broker login stamps a newer auth_at later.
+    from utils.session import mark_signed_in
+
+    mark_signed_in()
+    session["login_authority_auth_at"] = identity["signed_in"].isoformat()
+    session["login_authority_pre_broker"] = not identity["primary_logged_in"]
     return True
+
+
+def _managed_identity_current():
+    identity = _primary_identity()
+    bound = _instant(session.get("login_authority_auth_at"))
+    if identity is None or bound is None:
+        return False
+    if identity["record"][0] != session.get("user") or identity["origin"] != session.get(
+        "login_authority"
+    ):
+        return False
+    if identity["boundary"] is not None and bound < identity["boundary"]:
+        return False
+    cutoffs = [identity["revoked"]]
+    if session.get("login_authority_pre_broker"):
+        cutoffs.append(identity["pre_broker_revoked"])
+    return all(cutoff is None or bound > cutoff for cutoff in cutoffs)
+
+
+def managed_login_current():
+    """Recheck SSO at the final login commit, after a slow broker exchange."""
+    if not managed_login_enabled() or not session.get("login_authority"):
+        return True
+    try:
+        return _managed_identity_current()
+    except (ValueError, OSError, sqlite3.Error):
+        return False
 
 
 def guard_managed_login():
@@ -186,6 +294,21 @@ def guard_managed_login():
     if not managed_login_enabled():
         return None
     path = request.path
+    if session.get("user") and session.get("login_authority"):
+        try:
+            valid = _managed_identity_current()
+        except (ValueError, OSError, sqlite3.Error):
+            return jsonify(
+                status="error", message="The original OpenAlgo login could not be verified."
+            ), 503
+        if not valid:
+            session.clear()
+            if request.method != "GET" or path.startswith(("/api/", "/auth/broker/")):
+                return jsonify(
+                    status="error", message="Sign in to your original OpenAlgo account again."
+                ), 401
+            if path != "/auth/instance-login":
+                return redirect("/auth/instance-login")
     managed_paths = {"/login", "/setup", "/reset-password", "/auth/change", "/auth/change-password"}
     managed_prefixes = ("/auth/login", "/auth/reset-password", "/auth/2fa/")
     if path not in managed_paths and not path.startswith(managed_prefixes):

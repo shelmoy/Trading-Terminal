@@ -1,5 +1,10 @@
 # Changelog
 
+## Local linked-instance authentication — 1 November 2026
+
+- Adapted the upstream server-started broker login and encrypted broker configuration to the separate Kotak/FYERS instances. Shared login preserves primary proof/revocation checks; FYERS callbacks use the common one-time state contract, and linked navigation does not switch Kotak's broker.
+- Added isolated security, browser and migration verification. Chart SDK, trading customizations, broker credentials and network exposure remain unchanged.
+
 All notable changes to OpenAlgo will be documented in this file.
 
 Each release adds a stanza here summarising what changed and who contributed.

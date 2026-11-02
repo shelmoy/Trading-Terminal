@@ -35,14 +35,18 @@ export default function Login() {
     const requestedBroker = new URLSearchParams(window.location.search).get('broker')
     if (requestedBroker && /^[a-z][a-z0-9_]*$/.test(requestedBroker)) {
       try {
-        const response = await fetch('/auth/broker-config', { credentials: 'include' })
+        const response = await fetch('/api/broker/list', {
+          credentials: 'include', headers: { Accept: 'application/json' },
+        })
         const config = await response.json()
-        const destination = config.broker_instances?.[requestedBroker]
-        if (response.ok && config.status === 'success' && config.broker_api_key && destination) {
+        const destination = config.data?.brokers?.find(
+          (broker: { id: string; instance_url?: string }) => broker.id === requestedBroker
+        )?.instance_url
+        if (response.ok && config.status === 'success' && typeof destination === 'string') {
           const url = new URL(destination)
           if (url.hostname === '127.0.0.1' && url.port && !url.username && !url.password &&
-            url.pathname === '/' && !url.search && !url.hash && ['http:', 'https:'].includes(url.protocol)) {
-            window.location.replace(`${url.origin}/auth/instance-login`)
+            url.pathname === '/auth/instance-login' && !url.search && !url.hash && ['http:', 'https:'].includes(url.protocol)) {
+            window.location.replace(url.href)
             return
           }
         }
