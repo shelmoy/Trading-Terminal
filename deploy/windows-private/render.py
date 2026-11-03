@@ -46,7 +46,14 @@ def render(host: str, output: Path, primary: Path, fyers: Path):
                     "handle": [
                         {
                             "handler": "reverse_proxy",
-                            "headers": {"request": {"set": {"Host": [f"127.0.0.1:{5000 + i}"]}}},
+                            "headers": {
+                                "request": {
+                                    "set": {
+                                        "Host": [f"127.0.0.1:{5000 + i}"],
+                                        "X-Terminal-Private-Origin": [own],
+                                    }
+                                }
+                            },
                             "upstreams": [{"dial": f"127.0.0.1:{5000 + i}"}],
                         }
                     ]
@@ -55,10 +62,10 @@ def render(host: str, output: Path, primary: Path, fyers: Path):
         }
         settings = {
             "HOST_SERVER": internal[broker],
+            "PRIVATE_ACCESS_MODE": "dual",
             "PUBLIC_ORIGIN": own,
             "BROKER_INSTANCES": json.dumps(internal, separators=(",", ":")),
             "BROKER_PUBLIC_ORIGINS": json.dumps(origins, separators=(",", ":")),
-            "WEBSOCKET_URL": own.replace("https://", "wss://") + "/ws",
             "REDIRECT_URL": own + f"/{broker}/callback",
         }
         if broker == "fyers":

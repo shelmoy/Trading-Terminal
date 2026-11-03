@@ -16,6 +16,23 @@ mobile_bp = Blueprint("mobile", __name__, url_prefix="/mobile")
 RETURN_URI = "in.shelmoy.tradingterminal://oauth/fyers"
 
 
+def record_desktop_return(broker):
+    """Local Chrome keeps its cookie while the single FYERS callback uses HTTPS."""
+    from utils.broker_instances import loopback_origin
+    from utils.mobile_origins import cloud_origins, local_browser_request
+
+    if broker == "fyers" and cloud_origins() and local_browser_request():
+        if not loopback_origin(os.getenv("HOST_SERVER")):
+            abort(503)
+        mobile_login.begin(session["broker_login"]["state"], binding(), return_kind="desktop")
+
+
+def intercept_browser_return():
+    if request.path == "/fyers/callback" and request.method == "GET":
+        return fyers_browser_return()
+    return None
+
+
 def enabled(f):
     @wraps(f)
     def wrapped(*args, **kwargs):
@@ -105,13 +122,22 @@ def fyers_browser_return():
     if not cloud_origins() or request.method != "GET":
         return None
     state = request.args.get("state", "")
-    if not mobile_login.known(state):
+    kind = mobile_login.kind(state)
+    if not kind:
         return None
     ticket = mobile_login.receive(state, request.args.get("auth_code", ""))
     response = redirect(
-        RETURN_URI
+        (os.getenv("HOST_SERVER", "").rstrip("/") + "/broker" if kind == "desktop" else RETURN_URI)
         + "?"
-        + urlencode({"ticket": ticket} if ticket else {"error": "login_not_completed"})
+        + urlencode(
+            (
+                {"desktop_ticket": ticket, "broker": "fyers"}
+                if kind == "desktop"
+                else {"ticket": ticket}
+            )
+            if ticket
+            else {"error": "login_not_completed"}
+        )
     )
     response.headers["Cache-Control"] = "no-store"
     response.headers["Referrer-Policy"] = "no-referrer"

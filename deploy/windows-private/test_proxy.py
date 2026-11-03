@@ -29,7 +29,11 @@ def main(caddy):
             self.end_headers()
             self.wfile.write(
                 json.dumps(
-                    {"host": self.headers.get("Host"), "origin": self.headers.get("Origin")}
+                    {
+                        "host": self.headers.get("Host"),
+                        "origin": self.headers.get("Origin"),
+                        "edge": self.headers.get("X-Terminal-Private-Origin"),
+                    }
                 ).encode()
             )
 
@@ -75,12 +79,19 @@ def main(caddy):
                 origin = "https://terminal.example.ts.net" + (":8443" if i else "")
                 url = f"http://127.0.0.1:{15380 + i}"
                 with urllib.request.urlopen(
-                    urllib.request.Request(url + "/mobile/bootstrap", headers={"Origin": origin}),
+                    urllib.request.Request(
+                        url + "/mobile/bootstrap",
+                        headers={
+                            "Origin": origin,
+                            "X-Terminal-Private-Origin": "https://spoof.invalid",
+                        },
+                    ),
                     timeout=3,
                 ) as response:
                     result = json.load(response)
                     assert result["host"] == f"127.0.0.1:{5000 + i}"
                     assert result["origin"] == origin
+                    assert result["edge"] == origin
                 count = len(received)
                 try:
                     urllib.request.urlopen(

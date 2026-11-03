@@ -122,7 +122,9 @@ def _primary_identity():
     key = config.get("APP_KEY")
     cookie_name = config.get("SESSION_COOKIE_NAME") or "session"
     from utils.mobile_origins import browser_origin
-    if browser_origin(origin, config).startswith("https:"):
+    from utils.mobile_origins import private_request
+    secure_source = private_request() if config.get("PRIVATE_ACCESS_MODE") == "dual" else browser_origin(origin, config).startswith("https:")
+    if secure_source:
         cookie_name = f"__Secure-{cookie_name}"
     cookie = request.cookies.get(cookie_name)
     if not key or not cookie:

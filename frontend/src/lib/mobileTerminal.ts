@@ -18,6 +18,26 @@ export function sendNative(message: object): void {
   if (isMobileTerminal()) window.TerminalNative?.postMessage(JSON.stringify(message))
 }
 
+/** Finish a locally started desktop login after the HTTPS broker return relay. */
+export async function finishDesktopFyers(ticket: string): Promise<string> {
+  if (!/^[A-Za-z0-9_-]{32,128}$/.test(ticket)) throw new Error('Invalid login return')
+  const csrf = await csrfToken()
+  const response = await fetch('/mobile/fyers/complete', {
+    method: 'POST', credentials: 'include',
+    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
+    body: JSON.stringify({ ticket }),
+  })
+  if (!response.ok) throw new Error('Login did not complete. Start FYERS login again.')
+  if (response.redirected) {
+    const destination = new URL(response.url)
+    if (destination.origin !== window.location.origin) throw new Error('Unapproved login destination')
+    return destination.pathname + destination.search
+  }
+  const body = await response.json().catch(() => null)
+  if (body?.status !== 'success') throw new Error('Login did not complete. Start FYERS login again.')
+  return '/trading'
+}
+
 export function nativeFyersFlow(): boolean {
   return isMobileTerminal() && window.location.protocol === 'https:' &&
     window.location.port === '8443' && window.location.hostname.endsWith('.ts.net')

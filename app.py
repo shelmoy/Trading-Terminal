@@ -178,8 +178,20 @@ def create_app():
 
     # Initialize SocketIO
     from utils.mobile_origins import cloud_origins
+
     private_origins = cloud_origins()
-    socketio.init_app(app, **({"cors_allowed_origins": list(private_origins.values())} if private_origins else {}))
+    if private_origins:
+        from utils.broker_instances import configured_instances
+        from utils.mobile_origins import dual_access
+
+        if dual_access():
+            private_origins = {
+                **private_origins,
+                **{f"local_{k}": v for k, v in configured_instances().items()},
+            }
+    socketio.init_app(
+        app, **({"cors_allowed_origins": list(private_origins.values())} if private_origins else {})
+    )
 
     # Initialize EventBus subscribers
     from subscribers import register_all as register_event_subscribers
@@ -232,8 +244,15 @@ def create_app():
     # Dynamic cookie security configuration based on HOST_SERVER
     HOST_SERVER = os.getenv("HOST_SERVER", "http://127.0.0.1:5000")
     from utils.mobile_origins import browser_origin, cloud_origins
+
     cloud_origins()  # Invalid opt-in cloud configuration prevents startup.
-    USE_HTTPS = browser_origin(HOST_SERVER).startswith("https://")
+    from utils.mobile_origins import dual_access, install_dual_session_interface
+
+    USE_HTTPS = (HOST_SERVER if dual_access() else browser_origin(HOST_SERVER)).startswith(
+        "https://"
+    )
+    if dual_access():
+        install_dual_session_interface(app)
 
     # Configure session cookie security
     session_cookie_name = os.getenv("SESSION_COOKIE_NAME", "session")
@@ -293,6 +312,7 @@ def create_app():
     # Warming here means the first backtest does not pay it and boot does not
     # block on it.
     from portfolio import warm_analytics
+
     warm_analytics()
 
     # Exempt API endpoints from CSRF protection (they use API key authentication)
@@ -309,9 +329,13 @@ def create_app():
     app.register_blueprint(broker_instances_bp)
     app.register_blueprint(mobile_bp)
     from utils.mobile_origins import guard_cloud_origin
+
     app.before_request(guard_cloud_origin)
     from utils.broker_instances import guard_managed_login
 
+    from blueprints.mobile import intercept_browser_return
+
+    app.before_request(intercept_browser_return)
     app.before_request(guard_managed_login)
     app.register_blueprint(dashboard_bp)
     app.register_blueprint(orders_bp)
@@ -603,9 +627,7 @@ def create_app():
 
         from utils.url_redaction import redact_url_credentials
 
-        logger.warning(
-            f"CSRF Error on {redact_url_credentials(request.path)}: {error_description}"
-        )
+        logger.warning(f"CSRF Error on {redact_url_credentials(request.path)}: {error_description}")
 
         # Check if it's a CSRF error
         if "CSRF" in error_description or "csrf" in error_description.lower():
@@ -693,8 +715,7 @@ def create_app():
         from utils.url_redaction import redact_url_credentials
 
         logger.warning(
-            f"Rate limit exceeded for {request.remote_addr}: "
-            f"{redact_url_credentials(request.path)}"
+            f"Rate limit exceeded for {request.remote_addr}: {redact_url_credentials(request.path)}"
         )
 
         # For API requests, return JSON response
@@ -1111,7 +1132,6 @@ def shutdown_database_sessions(exception=None):
     remove_all_scoped_sessions()
 
 
-
 # Integrate the WebSocket proxy server with the Flask app. Where it runs is
 # decided in one place, websocket_proxy.app_integration.resolve_proxy_mode():
 # a child *process* under gunicorn with either worker (so the proxy's asyncio
@@ -1288,4 +1308,11 @@ if __name__ == "__main__":
 
         install_signal_handlers()
 
-    socketio.run(app, host=host_ip, port=port, debug=debug, reloader_options=reloader_options, allow_unsafe_werkzeug=True)
+    socketio.run(
+        app,
+        host=host_ip,
+        port=port,
+        debug=debug,
+        reloader_options=reloader_options,
+        allow_unsafe_werkzeug=True,
+    )

@@ -10,6 +10,33 @@ import re
 from urllib.parse import urlsplit
 
 
+def dual_access():
+    return os.getenv("PRIVATE_ACCESS_MODE", "") == "dual"
+
+
+def private_request():
+    """Only the owned loopback proxy marks private HTTPS requests."""
+    from flask import has_request_context, request
+
+    if not has_request_context():
+        return False
+    from utils.broker_instances import loopback_origin
+
+    expected = private_origin(os.getenv("PUBLIC_ORIGIN", ""))
+    return bool(
+        expected
+        and request.remote_addr in {"127.0.0.1", "::1"}
+        and request.host_url.rstrip("/") == loopback_origin(os.getenv("HOST_SERVER"))
+        and request.headers.get("X-Terminal-Private-Origin") == expected
+    )
+
+
+def local_browser_request():
+    from flask import has_request_context
+
+    return dual_access() and has_request_context() and not private_request()
+
+
 def private_origin(value):
     if not isinstance(value, str):
         return None
@@ -37,7 +64,11 @@ def cloud_origins():
     """Fail closed on partial/invalid configuration, disabled by default."""
     own = os.getenv("PUBLIC_ORIGIN", "")
     raw = os.getenv("BROKER_PUBLIC_ORIGINS", "")
+    if os.getenv("PRIVATE_ACCESS_MODE", "") not in {"", "dual"}:
+        raise ValueError("Unsupported private access mode")
     if not own and not raw:
+        if dual_access():
+            raise ValueError("Dual access requires explicit private origins")
         return {}
     try:
         values = json.loads(raw)
@@ -71,7 +102,7 @@ def external_instance_origin(internal):
     from utils.broker_instances import configured_instances
 
     mapping = cloud_origins()
-    if not mapping:
+    if not mapping or local_browser_request():
         return internal
     for broker, origin in configured_instances().items():
         if origin == internal and broker in mapping:
@@ -98,5 +129,33 @@ def guard_cloud_origin():
         if not source:
             ref = urlsplit(request.headers.get("Referer", ""))
             source = f"{ref.scheme}://{ref.netloc}"
-        if source != browser_origin():
+        if (
+            dual_access()
+            and request.headers.get("X-Terminal-Private-Origin")
+            and not private_request()
+        ):
             abort(403)
+        expected = os.getenv("HOST_SERVER") if local_browser_request() else browser_origin()
+        if source != expected:
+            abort(403)
+
+
+def install_dual_session_interface(app):
+    """Choose cookie name/security per request without mutating shared config."""
+    from flask.sessions import SecureCookieSessionInterface
+
+    class DualSessionInterface(SecureCookieSessionInterface):
+        def get_cookie_name(self, app):
+            name = super().get_cookie_name(app)
+            return "__Secure-" + name if private_request() else name
+
+        def get_cookie_secure(self, app):
+            return private_request() or super().get_cookie_secure(app)
+
+    app.session_interface = DualSessionInterface()
+
+
+def request_websocket_url():
+    if dual_access() and private_request():
+        return browser_origin().replace("https://", "wss://") + "/ws"
+    return os.getenv("WEBSOCKET_URL", "ws://localhost:8765")

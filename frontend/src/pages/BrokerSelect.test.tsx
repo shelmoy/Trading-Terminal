@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { BrokerList } from '@/api/broker-config'
+import { StrictMode } from 'react'
 import { useAuthStore } from '@/stores/authStore'
 import { useBrokerStore } from '@/stores/brokerStore'
 import { brokerEntry, brokerList, saved } from '@/test/brokerList'
@@ -33,6 +34,7 @@ function serve(
     loseStartReply?: boolean
     /** The server refuses to join the live session with this message. */
     refuseResume?: string
+    loseCompletionReply?: boolean
   } = {}
 ) {
   vi.stubGlobal(
@@ -47,6 +49,10 @@ function serve(
       if (init?.method === 'POST') {
         const body = init.body ? JSON.parse(String(init.body)) : null
         posts.push({ url, body })
+        if (url === '/mobile/fyers/complete') {
+          if (opts.loseCompletionReply) throw new TypeError('Failed to fetch')
+          return json({ status: 'success' })
+        }
         if (url === '/auth/broker/login') {
           if (opts.loseStartReply) throw new TypeError('Failed to fetch')
           if (opts.refuseStart) return json({ status: 'error', message: opts.refuseStart }, 409)
@@ -70,6 +76,23 @@ function renderPage(path = '/broker') {
 }
 
 const card = async (id: string) => within(await screen.findByTestId(`broker-card-${id}`))
+
+it('completes a desktop relay once under StrictMode and navigates locally', async () => {
+  serve()
+  const replace = vi.fn()
+  Object.defineProperty(window.location, 'replace', { configurable: true, value: replace })
+  Object.assign(window.location, { pathname: '/broker', search: '?desktop_ticket=' + 'a'.repeat(43) })
+  renderWithQuery(<StrictMode><BrokerSelect /></StrictMode>)
+  await waitFor(() => expect(replace).toHaveBeenCalledWith('/trading'))
+  expect(posts.filter(p => p.url === '/mobile/fyers/complete')).toHaveLength(1)
+})
+
+it('does not retry an uncertain desktop login completion', async () => {
+  serve({ loseCompletionReply: true })
+  renderPage('/broker?desktop_ticket=' + 'b'.repeat(43))
+  await screen.findByText('Failed to fetch')
+  expect(posts.filter(p => p.url === '/mobile/fyers/complete')).toHaveLength(1)
+})
 
 beforeEach(() => {
   assigned = []

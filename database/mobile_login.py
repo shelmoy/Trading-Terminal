@@ -29,10 +29,13 @@ class MobileLoginTicket(broker_keys_db.Base):
     binding_hash = Column(String(64), nullable=False, index=True)
     ticket_hash = Column(String(64), unique=True, nullable=True, index=True)
     payload = Column(Text, nullable=True)
+    return_kind = Column(String(16), nullable=False, default="native")
     expires = Column(Integer, nullable=False)
 
 
-def begin(state, binding):
+def begin(state, binding, return_kind="native"):
+    if return_kind not in {"native", "desktop"}:
+        raise ValueError("Unsupported login return kind")
     now = int(time.time())
     with Session(broker_keys_db.engine) as db, db.begin():
         db.execute(delete(MobileLoginTicket).where(MobileLoginTicket.expires <= now))
@@ -43,14 +46,22 @@ def begin(state, binding):
         )
         for key in ids[: max(0, len(ids) - MAX_PENDING + 1)]:
             db.execute(delete(MobileLoginTicket).where(MobileLoginTicket.state_hash == key))
-        db.add(MobileLoginTicket(state_hash=digest(state), binding_hash=binding, expires=now + TTL))
+        db.add(
+            MobileLoginTicket(
+                state_hash=digest(state),
+                binding_hash=binding,
+                expires=now + TTL,
+                return_kind=return_kind,
+            )
+        )
 
 
-def known(state):
+def kind(state):
     if not state or len(state) > 256:
-        return False
+        return None
     with Session(broker_keys_db.engine) as db:
-        return db.get(MobileLoginTicket, digest(state)) is not None
+        row = db.get(MobileLoginTicket, digest(state))
+        return row.return_kind if row is not None else None
 
 
 def receive(state, code):

@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { BookOpen, Info, Loader2, Search, Settings } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router'
 import {
   BrokerConfigError,
@@ -25,7 +25,7 @@ import {
 } from '@/lib/brokerProfiles'
 import { useAuthStore } from '@/stores/authStore'
 import { useBrokerStore } from '@/stores/brokerStore'
-import { cancelMobileLogin } from '@/lib/mobileTerminal'
+import { cancelMobileLogin, finishDesktopFyers } from '@/lib/mobileTerminal'
 
 /**
  * Select Broker, a card per broker, as OpenAlgo Desktop has it.
@@ -94,6 +94,17 @@ export default function BrokerSelect() {
   // The reason a sign-in failed, shown on that broker's card.
   const [cardError, setCardError] = useState<{ broker: string; message: string } | null>(null)
   const [pageError, setPageError] = useState<string | null>(null)
+  const completingDesktop = useRef(false)
+  useEffect(() => {
+    const ticket = searchParams.get('desktop_ticket')
+    if (!ticket || completingDesktop.current) return
+    completingDesktop.current = true
+    const cleaned = new URLSearchParams(searchParams)
+    cleaned.delete('desktop_ticket')
+    setSearchParams(cleaned, { replace: true })
+    void finishDesktopFyers(ticket).then(destination => window.location.replace(destination))
+      .catch(error => setPageError(error instanceof Error ? error.message : 'Login did not complete.'))
+  }, [searchParams, setSearchParams])
   // A login waiting for the trader to confirm ending the live session.
   const [pendingLogin, setPendingLogin] = useState<{ from: string; to: string } | null>(null)
 
