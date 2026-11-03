@@ -1,5 +1,10 @@
 # Trading Terminal Android / private-cloud rollout
 
+**Hosting choice superseded on 3 November 2026:** use the existing Windows
+laptop over Tailscale. See [mobile-laptop.md](mobile-laptop.md). Oracle signup,
+cloud provisioning and cloud data migration are no longer the active task.
+The shared mobile protocol and security design below still apply.
+
 Status: implementation checkpoint, **not activated or accepted on a phone**.
 Branch `feat/android-private-cloud-20261102` starts at `fd12560d6`, the tested
 prepared maintenance head. Live Windows instances remain at `186595980`.
