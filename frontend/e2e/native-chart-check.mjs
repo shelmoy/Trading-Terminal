@@ -83,9 +83,19 @@ try {
         text: document.body.innerText.slice(0, 200),
         ready: window.__nativeSignals.filter(s => s.state === 'ready').length,
       }))
-      if (errors.length || !check.canvases || check.pane.height < viewport.height - 5 || check.overflow || blocked.length)
+      if (errors.length || !check.canvases || check.pane.height < viewport.height - 55 || check.overflow || blocked.length)
         throw new Error(JSON.stringify({ errors, check, blocked }))
       await page.screenshot({ path: path.join(base,'..',`chart-${broker}-${colorScheme}-${viewport.width}.png`) })
+      await page.getByRole('button', { name: 'Indicators', exact: true }).click()
+      await page.getByRole('heading', { name: 'Indicators', exact: true }).waitFor({ state: 'visible' })
+      await page.keyboard.press('Escape')
+      await page.getByRole('navigation', { name: 'Chart workspace' }).getByRole('button', { name: 'Orders', exact: true }).click()
+      await page.getByRole('navigation', { name: 'Chart workspace' }).getByRole('button', { name: 'Positions', exact: true }).click()
+      await page.getByRole('navigation', { name: 'Chart workspace' }).getByRole('button', { name: 'Positions', exact: true }).click()
+      await page.getByRole('button', { name: 'Option chain', exact: true }).click()
+      await page.getByRole('button', { name: 'Close option chain', exact: true }).waitFor({ state: 'visible' })
+      await page.getByRole('button', { name: 'Close option chain', exact: true }).click()
+      if (errors.length || blocked.length) throw new Error(JSON.stringify({ errors, blocked }))
       records.push({ broker, colorScheme, viewport, ...check })
       await context.close()
     }

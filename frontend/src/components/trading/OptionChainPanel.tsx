@@ -102,6 +102,7 @@ const STRIKE_COUNT = 10
 const ROW_GRID = 'grid grid-cols-[1fr_64px_1fr]'
 
 interface Props {
+  place?: import('./PlaceOrderDialog').PlaceOrderDialogProps['place']
   apiKey: string
   /** Charts the leg that was clicked, in whichever pane was last touched. */
   onPick(row: SearchRow): void
@@ -260,7 +261,7 @@ export async function prefetchIndicesOptionChains(apiKey: string): Promise<void>
   }
 }
 
-export function OptionChainPanel({ apiKey, onPick, activeSymbol }: Props) {
+export function OptionChainPanel({ apiKey, onPick, activeSymbol, place }: Props) {
   const [prefs, setPrefs] = useState<Prefs>(readPrefs)
   const [underlyings, setUnderlyings] = useState<string[]>(() => cachedSegmentUnderlyings[readPrefs().exchange] || [])
   const [globalUnderlyings, setGlobalUnderlyings] = useState<Array<{ name: string; exchange: Exchange }>>(() => cachedGlobalUnderlyings)
@@ -1044,6 +1045,7 @@ export function OptionChainPanel({ apiKey, onPick, activeSymbol }: Props) {
           price type are confirmed there, so a pill starts an order but never
           places one, and analyze mode is honoured the same way everywhere. */}
       <PlaceOrderDialog
+        place={place}
         open={order !== null}
         onOpenChange={(next) => !next && setOrder(null)}
         symbol={order?.leg.symbol}

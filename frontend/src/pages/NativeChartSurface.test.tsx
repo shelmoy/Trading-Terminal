@@ -4,10 +4,12 @@ import { MemoryRouter } from 'react-router'
 import NativeChartSurface from './NativeChartSurface'
 
 const fixture = vi.hoisted(() => ({
-  terminal: { ensureSymbol: vi.fn(), setInterval: vi.fn(), setChartType: vi.fn() },
+  terminal: { ensureSymbol: vi.fn(), setInterval: vi.fn(), setChartType: vi.fn(), currentInstrument: vi.fn(), replayState: vi.fn(), placeTicket: vi.fn() },
   props: {} as Record<string, unknown>,
   failInit: false,
   native: vi.fn(),
+  ticket: {} as Record<string, unknown>,
+  chain: {} as Record<string, unknown>,
 }))
 vi.mock('@/components/trading/ChartPane', async () => {
   const React = await import('react')
@@ -20,13 +22,20 @@ vi.mock('@/components/trading/ChartPane', async () => {
 vi.mock('@/lib/trading/chartTypes', () => ({ CHART_TYPE_GROUPS: [[{ value: 'candlestick' }, { value: 'renko-v4' }]] }))
 vi.mock('@/stores/themeStore', () => ({ useThemeStore: { getState: () => ({ syncAppMode: vi.fn() }) } }))
 vi.mock('@/lib/mobileTerminal', () => ({ sendNative: fixture.native }))
+vi.mock('@/components/trading/dock/TradingDock', () => ({ TradingDock: () => <div data-testid="books" /> }))
+vi.mock('@/components/trading/PlaceOrderDialog', () => ({ PlaceOrderDialog: (props: Record<string, unknown>) => { fixture.ticket = props; return <div data-testid="ticket" /> } }))
+vi.mock('@/components/trading/OptionChainPanel', () => ({ OptionChainPanel: (props: Record<string, unknown>) => { fixture.chain = props; return <div data-testid="chain" /> } }))
 
 beforeEach(() => {
   fixture.terminal.ensureSymbol.mockReset().mockResolvedValue(true)
   fixture.terminal.setInterval.mockReset()
   fixture.terminal.setChartType.mockReset()
+  fixture.terminal.currentInstrument.mockReset().mockReturnValue(null)
+  fixture.terminal.replayState.mockReset().mockReturnValue(null)
   fixture.failInit = false
   fixture.native.mockClear()
+  fixture.ticket = {}; fixture.chain = {}
+  fixture.terminal.placeTicket.mockReset().mockResolvedValue({ orderId: 'fake-order-only' })
   vi.stubGlobal('fetch', vi.fn((url: string) => Promise.resolve({ ok: true, json: async () =>
     url.includes('apikey') ? { status: 'success', api_key: 'fake-test-only' }
       : { websocket_url: `wss://${location.host}/ws` } })))
@@ -93,5 +102,43 @@ describe('native-only SDK surface', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('broker')
     expect(screen.queryByTestId('sdk-canvas')).toBeNull()
     expect(fixture.terminal.ensureSymbol).not.toHaveBeenCalled()
+  })
+
+  it('exposes indicators and books directly in the chart workspace', async () => {
+    page()
+    await screen.findByTestId('sdk-canvas')
+    fireEvent.click(screen.getByRole('button', { name: 'Indicators' }))
+    expect(fixture.props.indicatorRequest).toBe(1)
+    expect(screen.getByRole('button', { name: 'Option chain' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Positions' })).toBeVisible()
+  })
+
+  it('opens an explicit lot-sized ticket and refuses confirmation during replay', async () => {
+    fixture.terminal.currentInstrument.mockReturnValue({ symbol: 'TESTCE', exchange: 'NFO', lots: true, lotsize: 65, tick: .05, product: 'NRML' })
+    page('?symbol=TESTCE&exchange=NFO')
+    const buy = await screen.findByRole('button', { name: 'Buy', exact: true })
+    await waitFor(() => expect(buy).toBeEnabled())
+    fireEvent.change(screen.getByLabelText('Order lots or quantity'), { target: { value: '2' } })
+    fireEvent.click(buy)
+    expect(fixture.ticket.quantity).toBe(130)
+    expect(fixture.ticket.symbol).toBe('TESTCE')
+    expect(fixture.terminal.placeTicket).not.toHaveBeenCalled()
+    fixture.terminal.replayState.mockReturnValue('paused')
+    const submit = fixture.ticket.place as (value: never) => Promise<unknown>
+    await expect(submit({} as never)).rejects.toThrow('replaying')
+    expect(fixture.terminal.placeTicket).not.toHaveBeenCalled()
+  })
+
+  it('routes chain confirmation through the same guarded chart feed', async () => {
+    page()
+    await waitFor(() => expect(fixture.terminal.ensureSymbol).toHaveBeenCalled())
+    fireEvent.click(screen.getByRole('button', { name: 'Option chain' }))
+    await screen.findByTestId('chain')
+    const submit = fixture.chain.place as (value: never) => Promise<unknown>
+    fixture.terminal.replayState.mockReturnValue('paused')
+    await expect(submit({} as never)).rejects.toThrow('replaying')
+    fixture.terminal.replayState.mockReturnValue(null)
+    await expect(submit({} as never)).resolves.toEqual({ orderId: 'fake-order-only' })
+    expect(fixture.terminal.placeTicket).toHaveBeenCalledTimes(1)
   })
 })

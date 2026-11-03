@@ -180,6 +180,7 @@ function ledClass(state: string): string {
 }
 
 interface Props {
+  indicatorRequest?: number
   /** Undefined keeps the local toolbar; null waits for the shared host. */
   toolbarHost?: HTMLElement | null
   focused?: boolean
@@ -284,6 +285,7 @@ interface Props {
  * the selected chart's toolbar is displayed in the shared workspace row.
  */
 export function ChartPane({
+  indicatorRequest = 0,
   toolbarHost,
   focused = true,
   paneLabel,
@@ -884,6 +886,9 @@ export function ChartPane({
       showToast.error('could not load the indicator catalogue')
     }
   }
+  useEffect(() => {
+    if (indicatorRequest > 0) { setPickerOpen(true); void openIndicators() }
+  }, [indicatorRequest])
   const toggleGrid = (which: 'vertical' | 'horizontal' | 'both' | 'none') => {
     const next =
       which === 'both'
