@@ -1,28 +1,33 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import NativeChartSurface from './NativeChartSurface'
 
 const fixture = vi.hoisted(() => ({
   terminal: { ensureSymbol: vi.fn(), setInterval: vi.fn(), setChartType: vi.fn() },
   props: {} as Record<string, unknown>,
+  failInit: false,
+  native: vi.fn(),
 }))
 vi.mock('@/components/trading/ChartPane', async () => {
   const React = await import('react')
-  return { ChartPane: (props: { onInitialized: (id: string, value: unknown) => void }) => {
+  return { ChartPane: (props: { onInitialized: (id: string, value: unknown) => void; onInitializationError: () => void }) => {
     fixture.props = props
-    React.useEffect(() => { props.onInitialized('native', fixture.terminal) }, [])
+    React.useEffect(() => { if (fixture.failInit) props.onInitializationError(); else props.onInitialized('native', fixture.terminal) }, [])
     return <div data-testid="sdk-canvas" />
   } }
 })
 vi.mock('@/lib/trading/chartTypes', () => ({ CHART_TYPE_GROUPS: [[{ value: 'candlestick' }, { value: 'renko-v4' }]] }))
 vi.mock('@/stores/themeStore', () => ({ useThemeStore: { getState: () => ({ syncAppMode: vi.fn() }) } }))
+vi.mock('@/lib/mobileTerminal', () => ({ sendNative: fixture.native }))
 
 beforeEach(() => {
   fixture.terminal.ensureSymbol.mockReset().mockResolvedValue(true)
   fixture.terminal.setInterval.mockReset()
   fixture.terminal.setChartType.mockReset()
-  vi.stubGlobal('fetch', vi.fn((url: string) => Promise.resolve({ json: async () =>
+  fixture.failInit = false
+  fixture.native.mockClear()
+  vi.stubGlobal('fetch', vi.fn((url: string) => Promise.resolve({ ok: true, json: async () =>
     url.includes('apikey') ? { status: 'success', api_key: 'fake-test-only' }
       : { websocket_url: `wss://${location.host}/ws` } })))
 })
@@ -43,7 +48,7 @@ describe('native-only SDK surface', () => {
   })
 
   it('rejects a WebSocket configuration outside this private origin', async () => {
-    vi.stubGlobal('fetch', vi.fn((url: string) => Promise.resolve({ json: async () =>
+    vi.stubGlobal('fetch', vi.fn((url: string) => Promise.resolve({ ok: true, json: async () =>
       url.includes('apikey') ? { status: 'success', api_key: 'fake' }
         : { websocket_url: 'wss://unapproved.invalid/ws' } })))
     page()
@@ -69,5 +74,24 @@ describe('native-only SDK surface', () => {
     expect(fixture.terminal.setInterval).toHaveBeenCalledWith('5m')
     act(() => window.dispatchEvent(new CustomEvent('terminal-native-chart', { detail: { tools: true } })))
     expect(fixture.props.toolbarHost).toBeUndefined()
+  })
+
+  it('shows an initialization failure and can retry instead of leaving a blank canvas', async () => {
+    fixture.failInit = true
+    page('?symbol=SENSEX&exchange=BSE_INDEX&native_request=42')
+    expect(await screen.findByRole('alert')).toHaveTextContent('Chart could not initialize')
+    expect(fixture.native).toHaveBeenCalledWith(expect.objectContaining({ request: '42', state: 'error' }))
+    fixture.failInit = false
+    fireEvent.click(screen.getByRole('button', { name: 'Retry chart' }))
+    await screen.findByTestId('sdk-canvas')
+    await waitFor(() => expect(fixture.native).toHaveBeenCalledWith(expect.objectContaining({ request: '42', state: 'ready' })))
+  })
+
+  it('refuses an expired session before constructing a chart', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve({ ok: false, status: 401 })))
+    page()
+    expect(await screen.findByRole('alert')).toHaveTextContent('broker')
+    expect(screen.queryByTestId('sdk-canvas')).toBeNull()
+    expect(fixture.terminal.ensureSymbol).not.toHaveBeenCalled()
   })
 })
