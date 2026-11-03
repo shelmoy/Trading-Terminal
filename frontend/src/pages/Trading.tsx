@@ -1,4 +1,4 @@
-import { mobilePreferenceKey } from '@/lib/mobileTerminal'
+import { isMobileTerminal, mobilePreferenceKey } from '@/lib/mobileTerminal'
 import { LayoutGrid, Link2 as LinkIcon } from 'lucide-react'
 import { type ChartObjects, createLinkGroup, type LinkGroup } from 'openalgo-charts'
 import type { WorkspaceDocument, WorkspacePayload } from 'openalgo-charts/workspace'
@@ -236,7 +236,16 @@ function readSync(): SyncState {
   }
 }
 
+const NativeChartSurface = lazy(() => import('@/pages/NativeChartSurface'))
+
 export default function Trading() {
+  const [params] = useSearchParams()
+  if (isMobileTerminal() && location.protocol === 'https:' && params.get('android_chart') === '1')
+    return <Suspense fallback={<div role="status">Loading chart…</div>}><NativeChartSurface /></Suspense>
+  return <DesktopTrading />
+}
+
+function DesktopTrading() {
   const account = useAuthStore((state) =>
     state.isAuthenticated ? (state.user?.username ?? null) : null
   )
