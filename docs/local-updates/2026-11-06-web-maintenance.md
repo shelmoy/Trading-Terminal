@@ -3,7 +3,7 @@
 Latest official upstream through `e2e31e91f217ca6d07dd260631aad1eb86cb12cc`
 is integrated on `maintenance/web-20261106`, based on customized web main
 `32c086a1f8873b327327e0b56378cd019ebd3293`. The tested source and matching build
-are ready for normal GitHub synchronization; local activation is deferred below.
+were pushed to origin/main and activated on both web instances as recorded below.
 
 ## Changes and preservation
 
@@ -47,18 +47,40 @@ No auth/security rewrite, dependency-lock or migration changes in these seven co
  No migration or live database write; no database restore needed. No Linux,
  VM, emulator, real/sandbox diagnostic trade, cancellation or mode change.
 
-## Local activation deferred
+## Activated on both web instances
 
-Both live roots remain at32c086a1f. Premarket read-only checks found Analyze mode,
-no current-rollover broker sessions, no active flows/strategy engines and no open
-Analyze positions/orders. Nonzero persistent strategy bookkeeping rows remain
-(29 Kotak,3 FYERS); these are not claimed to be a verified current broker book.
-No unrevoked auth row is treated as a valid session after daily expiry.
+Initial HTTP checks found both instance ports offline, so this was a startup,
+not disruption of an active web service. Premarket checks found Analyze mode,
+no current-rollover broker session, no active flows/strategy engines, no running
+hosted strategies and no open Analyze positions or orders. Stored strategy
+bookkeeping quantities (29 Kotak,3 FYERS rows) were preserved and are not claimed
+as a verified current broker book. Stale unrevoked rows were not treated as valid
+broker authority after daily expiry.
 
-The identified controller unconditionally invokes its private-access helper,
-which calls missing `C:/Program Files/Tailscale/tailscale.exe` on Start/Restart.
-This dependency was already absent before this run. Avoid stopping working web
-services until the obsolete optional launcher dependency is safely resolved;
-shared FYERS callback/CSRF/relay/controller settings were not changed here.
-Recheck actual session/strategy/book/market authority immediately before activation.
-No restart or partial local code/build publication was attempted.
+Four consistent private SQLite backups passed quick_check before activation.
+Both live roots fast-forwarded to application commit
+`1d17a7c9c950a615ea4a235fd52d0e28444fda88`, with407 exact canonical build files,
+older compatible chunks and all unknown static/docs/configuration intact.
+No migration, restore, dependency change, order or execution-mode action occurred.
+
+The existing local controller now skips the optional private-access helper when
+Tailscale is not installed, allowing normal localhost Start/Stop/Restart to work.
+Its original script is backed up privately. This changes no network exposure,
+registered callback or broker credential. The separate OpenAlgo Desktop app again
+owned port8765; closed only its verified executable/process identity using the
+user's earlier explicit authorization. It was not uninstalled.
+
+Owned controller startup completed: Kotak Ready08:47:54IST, FYERS Ready08:48:05IST.
+Both pages opened as tabs in the existing Chrome window. Fourteen read-only HTTP
+checks (including new and compatibility entries) and two WebSocket101 handshakes
+pass. No authenticated subscriptions or diagnostic orders were sent. Both .env
+fingerprints match their recovery records. No live broker delivery/fill latency
+or interactive authentication acceptance is claimed.
+
+Existing limitation: FYERS REDIRECT_URL still names the previously registered
+private Tailscale8443 callback. Tailscale was already uninstalled/private DNS
+unavailable before this run, so fresh FYERS OAuth return needs the provider and
+server callback coordinated for web-only access. This update deliberately leaves
+those existing settings/credentials unchanged; localhost HTTP readiness alone
+does not prove that broker authentication flow. The cancelled Android project
+was not recreated or maintained.
