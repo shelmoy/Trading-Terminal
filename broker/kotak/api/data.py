@@ -260,10 +260,10 @@ class BrokerData:
             "BANKNIFTY": ["Nifty Bank"],
             "FINNIFTY": ["Nifty Fin Service"],
             "MIDCPNIFTY": [
-                "NIFTY MID SELECT",
                 "Nifty Mid Select",
                 "Nifty Midcap Sel",
                 "Nifty Midcap Select",
+                "NIFTY MID SELECT",
             ],
             "NIFTYNXT50": ["Nifty Next 50"],
             "INDIAVIX": ["India VIX"],

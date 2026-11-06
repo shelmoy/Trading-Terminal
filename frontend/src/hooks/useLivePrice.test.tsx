@@ -32,12 +32,19 @@ vi.mock('./useMarketStatus', () => ({
   useMarketStatus: () => ({
     isMarketOpen: () => true,
     isAnyMarketOpen: () => true,
+    getMarketStatus: () => 'open',
   }),
 }))
 
-vi.mock('@/stores/authStore', () => ({
-  useAuthStore: () => ({ apiKey: 'k' }),
-}))
+vi.mock('@/stores/authStore', () => {
+  const state = { apiKey: 'k', user: { broker: 'kotak', username: 'fixture', loginTime: 'test' } }
+  return {
+    useAuthStore: Object.assign(
+      (selector?: (value: typeof state) => unknown) => selector ? selector(state) : state,
+      { getState: () => state, subscribe: () => () => {} }
+    ),
+  }
+})
 
 vi.mock('@/api/trading', () => ({
   tradingApi: {
@@ -57,7 +64,7 @@ describe('useLivePrice closed-position gate', () => {
   it('takes live prices for an item that carries no quantity at all', async () => {
     // A watchlist row. Not a position, so it must never be frozen.
     const { result } = renderHook(() =>
-      useLivePrice([{ symbol: 'RELIANCE', exchange: 'NSE' }], { enabled: true })
+      useLivePrice([{ symbol: 'RELIANCE', exchange: 'NSE' }], { enabled: true, useMultiQuotesFallback: false })
     )
 
     await waitFor(() => expect(result.current.data[0].ltp).toBe(1350))
@@ -68,6 +75,7 @@ describe('useLivePrice closed-position gate', () => {
     const { result } = renderHook(() =>
       useLivePrice([{ symbol: 'RELIANCE', exchange: 'NSE', quantity: 0, ltp: 1000 }], {
         enabled: true,
+        useMultiQuotesFallback: false,
       })
     )
 
@@ -79,6 +87,7 @@ describe('useLivePrice closed-position gate', () => {
     const { result } = renderHook(() =>
       useLivePrice([{ symbol: 'RELIANCE', exchange: 'NSE', quantity: 5, ltp: 1000 }], {
         enabled: true,
+        useMultiQuotesFallback: false,
       })
     )
 
