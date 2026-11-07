@@ -34,8 +34,7 @@ Trading/Scalper, all Renko versions/icons, NIFTY history, Gaussian blue/maroon,
 615 studies, FYERS routing/linked login, chart defaults, P&L/margin and Exit All
 safeguards remain intact. Neither cancelled application project is resumed.
 
-Windows validation: **225 backend checks**, additional Kotak P&L/LTP regression
-checks, **48 frontend checks**, TypeScript and temporary production build passed.
+Windows validation: **225 backend checks plus 70 Kotak P&L/LTP regression checks**, **48 frontend checks**, TypeScript and temporary production build passed.
 All **407** newly built files are byte-identical to the existing canonical build:
 there is no frontend source change, no UI replacement and no asset churn.
 Older compatibility chunks remain available. Python lock changes only project
@@ -60,7 +59,29 @@ and long-duration memory/latency behavior are not claimed verified.
 
 ## Activation
 
-Prepared and tested; activation/push result will be recorded after verification.
+**Activated successfully on both web instances**, application merge
+`ecccda3fa2d6725057ad67fbc45890bae95c762a`. Kotak became Ready at
+10:11:39 IST and FYERS at 10:11:55 IST on 7 November. Four consistent private
+SQLite backups passed quick-check; **no migrations** were needed. Both frozen
+223-package environments pass synchronization checks after reinstalling only the
+local project's version metadata. All 76 direct npm packages match the lock.
+
+**16 read-only HTTP checks and two WebSocket handshakes passed**, including the
+runtime 2.0.3.3 version, login/CSRF, Trading/Scalper, current and compatibility
+assets. All 407 canonical assets match in both installations; credentials and
+unknown work remain unchanged. No live broker delivery or execution was tested.
+
+The controller logged a disappearing FYERS process ID during Stop; both services
+and all six owned ports were then independently verified stopped before source
+activation. Normal Start subsequently reported both Ready. No unrelated process,
+network setting or controller code was changed.
+
+**GitHub synchronization pending:** two normal pushes failed because this laptop
+could not connect to `github.com:443` (connection timeout, not an authentication
+rejection). The tested merge and completion documentation remain committed
+locally. Last successfully fetched origin/main was `d637fbd563`. The daily web
+maintenance task must retry a normal push after fetching/reconciling remote work;
+no force push or remote overwrite is authorized.
 Read-only preflight found both instances in Analyze mode, no active workflows,
 strategies/scalping protection, current daily browser sessions, working Analyze
 orders or open Analyze positions. Historical strategy bookkeeping is preserved;
