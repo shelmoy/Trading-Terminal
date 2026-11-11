@@ -16,15 +16,19 @@ mobile_bp = Blueprint("mobile", __name__, url_prefix="/mobile")
 RETURN_URI = "in.shelmoy.tradingterminal://oauth/fyers"
 
 
-def record_desktop_return(broker):
-    """Local Chrome keeps its cookie while the single FYERS callback uses HTTPS."""
+def record_desktop_return(broker, redirect_url):
+    """Relay a local FYERS login only when it returns through the private origin."""
     from utils.broker_instances import loopback_origin
-    from utils.mobile_origins import cloud_origins, local_browser_request
+    from utils.mobile_origins import local_browser_request
 
-    if broker == "fyers" and cloud_origins() and local_browser_request():
-        if not loopback_origin(os.getenv("HOST_SERVER")):
-            abort(503)
-        mobile_login.begin(session["broker_login"]["state"], binding(), return_kind="desktop")
+    if broker != "fyers" or not local_browser_request():
+        return
+    private_origin = cloud_origins().get("fyers")
+    if not private_origin or redirect_url != f"{private_origin}/fyers/callback":
+        return
+    if not loopback_origin(os.getenv("HOST_SERVER")):
+        abort(503)
+    mobile_login.begin(session["broker_login"]["state"], binding(), return_kind="desktop")
 
 
 def intercept_browser_return():

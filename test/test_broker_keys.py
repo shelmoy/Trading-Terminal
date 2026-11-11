@@ -2992,8 +2992,9 @@ def test_the_setup_guide_matches_where_each_login_goes(stores, environment, monk
         if guide["sign_in"] not in ("redirect", "form"):
             continue
         monkeypatch.setenv("VALID_BROKERS", broker)
+        api_key = "FYAPP-200" if broker == "fyers" else "user1:::app1"
         keys_db.save_broker_keys(
-            broker, {"api_key": "user1:::app1", "api_secret": "s", "api_key_market": "m",
+            broker, {"api_key": api_key, "api_secret": "s", "api_key_market": "m",
                      "api_secret_market": "ms"}, None
         )
         app = _app()

@@ -352,6 +352,8 @@ _KEY_FORMATS = {
 
 def key_format_error(broker, api_key):
     """Why an API key does not fit its broker's layout, or None when it does."""
+    if broker == "fyers" and api_key and not re.fullmatch(r"[A-Za-z0-9]+-[0-9]{3}", api_key):
+        return "Enter the full FYERS App ID from the API Dashboard, including its app type suffix."
     expected = _KEY_FORMATS.get(broker)
     if not expected or not api_key:
         return None
@@ -792,7 +794,10 @@ def keys_for_login(broker):
             when no key is configured for this one.
     """
     _refuse_another_broker(broker)
-    return _resolve_or_refuse(broker)
+    keys = _resolve_or_refuse(broker)
+    if broker == "fyers" and (error := key_format_error(broker, keys.api_key)):
+        raise BrokerKeysRefused(error)
+    return keys
 
 
 def use_broker_keys(broker, check_live=False):

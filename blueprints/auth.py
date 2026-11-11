@@ -199,7 +199,7 @@ def start_broker_login():
     try:
         url = begin_login(keys)
         from blueprints.mobile import record_desktop_return
-        record_desktop_return(broker)
+        record_desktop_return(broker, keys.redirect_url)
     except BrokerLoginRefused:
         return jsonify(
             {"status": "error", "message": "The broker login could not be started. Try again."}

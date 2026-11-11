@@ -169,6 +169,60 @@ def test_old_start_bookmark_cannot_create_oauth_state(linked):
         assert "broker_login" not in sess and "fyers_oauth_state" not in sess
 
 
+def test_malformed_fyers_app_id_stops_login_before_redirect(linked):
+    linked.environment.write(
+        {
+            "BROKER_API_KEY": "fake-account-name",
+            "BROKER_API_SECRET": "fake-secret",
+            "REDIRECT_URL": BASE + "/fyers/callback",
+        }
+    )
+
+    result = _start(linked)
+
+    assert result.status_code == 409
+    assert "full FYERS App ID" in result.json["message"]
+    assert "fake-account-name" not in result.get_data(as_text=True)
+    with linked.client.session_transaction(base_url=BASE) as sess:
+        assert "broker_login" not in sess
+
+
+@pytest.mark.parametrize("private_callback", [False, True])
+def test_fyers_desktop_relay_depends_on_the_actual_callback(
+    linked, monkeypatch, private_callback
+):
+    from database import mobile_login
+
+    private = "https://terminal.example.ts.net:8443"
+    monkeypatch.setenv("PRIVATE_ACCESS_MODE", "dual")
+    monkeypatch.setenv("PUBLIC_ORIGIN", private)
+    monkeypatch.setenv(
+        "BROKER_PUBLIC_ORIGINS",
+        json.dumps({"kotak": "https://terminal.example.ts.net", "fyers": private}),
+    )
+    redirect_url = (private if private_callback else BASE) + "/fyers/callback"
+    linked.environment.write(
+        {
+            "BROKER_API_KEY": "FYAPP-200",
+            "BROKER_API_SECRET": "fake-secret",
+            "REDIRECT_URL": redirect_url,
+        }
+    )
+    relayed = []
+    monkeypatch.setattr(
+        mobile_login,
+        "begin",
+        lambda state, binding, *, return_kind: relayed.append((state, return_kind)),
+    )
+
+    result = _start(linked)
+
+    assert result.status_code == 200
+    query = parse_qs(urlsplit(result.json["url"]).query)
+    assert query["redirect_uri"] == [redirect_url]
+    assert relayed == ([(query["state"][0], "desktop")] if private_callback else [])
+
+
 @pytest.mark.parametrize(
     "changes",
     [
