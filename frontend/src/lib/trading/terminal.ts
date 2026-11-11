@@ -141,6 +141,7 @@ import { replayTiming } from './replayTiming'
 import { loadSecondsHistory, rememberSecondsBar, rememberSecondsTick } from './secondsHistory'
 import {
   applySessionHours,
+  calendarExchange,
   candleSessionAnchor,
   isTradingSessionOpenForCandles,
   isValidIntradaySessionBar,
@@ -165,6 +166,7 @@ import {
   renkoV2Options,
 } from './renkoV2Settings'
 import { calculateRenkoV2BoxSize } from './renkoV2Transform'
+import { completeRenkoV2History, needsRenkoV2History } from './renkoV2History'
 import {
   RENKO_V3_DEFAULTS,
   renkoV3SettingsView,
@@ -199,9 +201,9 @@ export const globalBarMemoryCache = new Map<string, { bars: readonly Bar[]; time
 // Share cold requests across panes without extending the freshness of cached bars.
 const initialBarRequests = new Map<string, Promise<Bar[]>>()
 
-// v1 could contain July candles labelled as a recently refreshed October
-// window. Ignore that history preview, preserving chart settings/drawings.
-const FAST_CACHE_STORAGE_KEY = 'openalgo.scalper.fastCache.v2'
+// Older previews could contain an incomplete window from the previous
+// backend cache. Settings and drawings are stored independently.
+const FAST_CACHE_STORAGE_KEY = 'openalgo.scalper.fastCache.v3'
 // Saved candles are a preview, never an excuse to skip authoritative refresh.
 const BAR_PREVIEW_RETENTION_MS = 7 * 86400_000
 let fastCachePersistTimer: ReturnType<typeof setTimeout> | null = null
@@ -1932,10 +1934,6 @@ export class TradingTerminal {
 
   /* ── chart types (transforms bucket volume onto their own element times) */
   private boxOf(): number {
-    if (this.ctype === 'renko-v2') {
-      const opts = renkoV2Options(this.chartSettingsSaved as Record<string, string | number | boolean>, this.tick())
-      return calculateRenkoV2BoxSize(this.rawBars, opts)
-    }
     if (this.ctype === 'renko-v3') {
       const opts = renkoV3Options(this.chartSettingsSaved as Record<string, string | number | boolean>, this.tick())
       return calculateRenkoV3BoxSize(this.rawBars, opts)
@@ -1943,6 +1941,27 @@ export class TradingTerminal {
     const c = this.rawBars.length ? this.rawBars[this.rawBars.length - 1].close : 100
     const t = this.tick()
     return Math.max(t, Number((Math.round((c * 0.0015) / t) * t).toFixed(this.dp())))
+  }
+
+  private renkoV2Spec(): SeriesTransformSpec {
+    const tickSize = this.tick()
+    const options = renkoV2Options(this.chartSettingsSaved, tickSize)
+    const seconds = intervalSeconds(this.interval)
+    const exchange = calendarExchange(this.sym?.exchange ?? '')
+    const sessionClock = seconds !== null && seconds < 86400
+      ? exchange === 'CRYPTO' ? 'utc'
+        : ['NSE', 'BSE', 'NFO', 'BFO', 'MCX', 'CDS', 'BCD', 'NCDEX'].includes(exchange) ? 'ist'
+        : 'continuous'
+      : 'continuous'
+    return {
+      type: 'renko-v2',
+      options: {
+        ...options,
+        tickSize,
+        sessionClock,
+        boxSize: options.mode === 'atr' ? 0 : calculateRenkoV2BoxSize(this.rawBars, options),
+      },
+    }
   }
 
   /**
@@ -2941,7 +2960,9 @@ export class TradingTerminal {
     // sized once per build from the instrument's price, so bricks keep their
     // size through ticks, history refreshes and older pages, unless the trader
     // chose options for this instrument in chart settings.
-    const rawBase = cfg.transform?.(this.boxOf()) ?? null
+    const rawBase = this.ctype === 'renko-v2'
+      ? this.renkoV2Spec()
+      : cfg.transform?.(this.boxOf()) ?? null
     const base = rawBase?.type === 'renko-v4'
       ? { ...rawBase, options: { ...renkoV4Options(this.tick()), ...rawBase.options } }
       : rawBase
@@ -3391,7 +3412,19 @@ export class TradingTerminal {
     const key = this.transformChoiceKey()
     const chosen = key ? this.transformChoices[key]?.[this.ctype] : undefined
     if (!chosen || typeof chosen !== 'object') return base
-    return { type: base.type, options: { ...base.options, ...chosen } }
+    return base.type === 'renko-v2'
+      ? this.restoreRenkoV2Spec(base, chosen)
+      : { type: base.type, options: { ...base.options, ...chosen } }
+  }
+
+  private restoreRenkoV2Spec(base: SeriesTransformSpec, saved: SeriesTransformSpec['options']): SeriesTransformSpec {
+    const options = { ...base.options, ...saved }
+    // Old workspace saves may contain a box from the latest ATR of the old
+    // history window. Sizing in ATR mode belongs to each closed source bar.
+    if (options.mode === 'atr') options.boxSize = 0
+    options.tickSize = base.options!.tickSize
+    options.sessionClock = base.options!.sessionClock
+    return { type: base.type, options }
   }
 
   /**
@@ -5376,8 +5409,18 @@ export class TradingTerminal {
     this.adoptGridFromPatch(patch)
     this.refreshDisplayedVolume()
     this.refreshLegend(this.drawnBars())
-    if (this.ctype === 'renko-v2') {
-      this.setPriceData()
+    if (this.ctype === 'renko-v2' && this.price && Object.keys(patch).some((key) => key.startsWith('renkov2.'))) {
+      this.stopReplay()
+      const base = this.renkoV2Spec()
+      this.transformBase = base
+      // The Renko V2 dialog owns these settings. Clear older generic choices
+      // for the same transform when the user applies the dedicated controls.
+      chart.setSeriesTransform(this.price, base)
+      this.rememberTransformChoice()
+      for (const [option, value] of Object.entries(transformValues(base))) {
+        this.chartDefaults['transform.' + option] = value
+      }
+      this.afterTransformChange()
     }
     if (this.ctype === 'renko-v3') {
       this.buildChart()
@@ -7918,7 +7961,12 @@ export class TradingTerminal {
     if (interval !== this.interval) {
       this.setInterval(interval)
       this.toast(`Using ${interval} bars for ${CHART_TYPES[v].label}`, '')
-    } else if (this.rawBars.length) this.buildChart()
+    } else if (this.rawBars.length) {
+      this.buildChart()
+      if (v === 'renko-v2' && this.sym && needsRenkoV2History({
+        exchange: this.sym.exchange, interval: this.interval,
+      })) this.reloadCurrent()
+    }
     return v
   }
   setProduct(p: string) {
@@ -8498,7 +8546,10 @@ export class TradingTerminal {
       const savedTransform = primary?.transform
       if (savedTransform && this.price && savedTransform.type === this.transformBase?.type) {
         try {
-          this.withRenkoV4Owner(savedTransform, () => chart.setSeriesTransform(this.price!, savedTransform))
+          const transform = savedTransform.type === 'renko-v2'
+            ? this.restoreRenkoV2Spec(this.transformBase, savedTransform.options)
+            : savedTransform
+          this.withRenkoV4Owner(transform, () => chart.setSeriesTransform(this.price!, transform))
           this.rememberTransformChoice()
           this.afterTransformChange()
         } catch {
@@ -8600,7 +8651,8 @@ export class TradingTerminal {
     const baseCachedBars = withBarCache(this.rest, { ttlMs: 10 * 60_000 })
     const origCachedBars = baseCachedBars.getCachedBars.bind(baseCachedBars)
     baseCachedBars.getCachedBars = async (request): Promise<Bar[] | undefined> => {
-      if (this.ctype === 'renko-v4') return undefined
+      if (this.ctype === 'renko-v4' || (this.ctype === 'renko-v2' && needsRenkoV2History(request)))
+        return undefined
       if (!request.noCache && !request.interval.endsWith('s') &&
           (request.to ?? 0) >= nowSec() - 3600 && (request.to ?? 0) - (request.from ?? 0) >= 3600) {
         const key = `${request.symbol.toUpperCase()}:${(request.exchange || '').toUpperCase()}:${request.interval}`
@@ -8632,21 +8684,26 @@ export class TradingTerminal {
         return [...merged.values()].sort((a, b) => a.time - b.time)
       }
       const isWideWindow = reqTo - reqFrom >= 3600 && reqTo >= nowSec() - 3600
+      const repairV2 = this.ctype === 'renko-v2' && isWideWindow && needsRenkoV2History(request)
       const isInitialWindow = !request.noCache && isWideWindow
       const memKey = `${request.symbol.toUpperCase()}:${(request.exchange || '').toUpperCase()}:${request.interval}`
-      if (isInitialWindow && this.ctype !== 'renko-v4') {
+      if (isInitialWindow && this.ctype !== 'renko-v4' && !repairV2) {
         const hit = globalBarMemoryCache.get(memKey)
         if (hit?.bars?.length && Date.now() - hit.time < 6 * 3600_000) {
           const bars = historyBarsInRange(hit.bars, request)
           if (bars.length) return bars
         }
       }
-      const requestKey = JSON.stringify([this.apiKey, request.symbol, request.exchange, request.interval, reqFrom, reqTo, Boolean(request.noCache)])
+      const repairV4 = this.ctype === 'renko-v4' && isWideWindow
+      const requestKey = JSON.stringify([this.apiKey, request.symbol, request.exchange, request.interval, reqFrom, reqTo, Boolean(request.noCache), repairV2, repairV4])
       let pending = isWideWindow ? initialBarRequests.get(requestKey) : undefined
       if (!pending) {
-        pending = this.ctype === 'renko-v4' && isWideWindow
-          ? confirmedRenkoV4History(origGetBars, request)
-          : origGetBars(request)
+        if (repairV2) {
+          pending = prepareSessionHours(this.apiKey, request).then(() =>
+            completeRenkoV2History(origGetBars, request, sessionCalendar(request), nowSec()))
+        } else {
+          pending = repairV4 ? confirmedRenkoV4History(origGetBars, request) : origGetBars(request)
+        }
         if (isWideWindow) {
           initialBarRequests.set(requestKey, pending)
           const owner = pending

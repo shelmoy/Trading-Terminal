@@ -116,7 +116,7 @@ export function renkoV2SettingsView(
       ? {
           ...tab,
           description:
-            'Renko Version 2: True movement-based Renko with 2-brick reversal rule and zero repainting.',
+            'ATR bricks use prior closed candles. The current candle can still change until it closes.',
           inputs: [
             ...renkoV2Fields,
             ...tab.inputs,
