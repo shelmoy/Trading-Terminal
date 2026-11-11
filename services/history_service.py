@@ -36,9 +36,9 @@ _history_latest_lock = real_threading.Lock()
 _inflight_locks: dict[tuple[str, str, str, str, str], real_threading.Event] = {}
 _inflight_guard = real_threading.Lock()
 
-# A v2 single-day refresh could expand a wide entry's end without fetching
-# the intervening sessions. Rebuild coverage from broker responses.
-_DISK_CACHE_PATH = Path("db/fast_history_cache_v3.pkl")
+# v1 entries can advertise a refreshed range while carrying a stale older
+# window. Leave the old file recoverable; never hydrate those entries again.
+_DISK_CACHE_PATH = Path("db/fast_history_cache_v2.pkl")
 _disk_persist_lock = real_threading.Lock()
 _last_disk_persist = 0.0
 
@@ -584,23 +584,34 @@ def get_history(
                 with _history_latest_lock:
                     prev_entry = _history_latest_by_sym_iv.get(sym_iv_key)
                     if s_str == e_str and prev_entry is not None and prev_entry[0] < prev_entry[1]:
-                        p_start, p_end, p_time, p_res = prev_entry
-                        # The exact single-day cache above keeps this response. A
-                        # different date cannot extend or truncate a wide snapshot.
-                        if s_str == p_end:
-                            by_time = {float(r["timestamp"]): r for r in p_res[1]["data"]}
-                            by_time.update((float(r["timestamp"]), r) for r in rows)
+                        # Single-day live tail repair: merge fresh today bars into multi-day history
+                        p_start, _p_end, _p_time, p_res = prev_entry
+                        p_rows = (
+                            (p_res[1] or {}).get("data") if isinstance(p_res[1], dict) else None
+                        )
+                        first_new_ts = (
+                            rows[0].get("timestamp") if isinstance(rows[0], dict) else None
+                        )
+                        if p_rows and first_new_ts is not None:
+                            kept = [
+                                r
+                                for r in p_rows
+                                if isinstance(r, dict) and (r.get("timestamp") or 0) < first_new_ts
+                            ]
                             merged_res = (
                                 True,
-                                {"status": "success", "data": [by_time[t] for t in sorted(by_time)]},
+                                {"status": "success", "data": kept + list(rows)},
                                 200,
                             )
                             _history_latest_by_sym_iv[sym_iv_key] = (
-                                p_start, p_end, p_time, merged_res
+                                p_start,
+                                max(_p_end, e_str),
+                                now_ts,
+                                merged_res,
                             )
-                            # Serve the merge under its original wide-fetch
-                            # age instead of restarting that entry's TTL.
-                            _history_cache.pop((sym_u, exch_u, interval, p_start, p_end), None)
+                            _history_cache[
+                                (sym_u, exch_u, interval, p_start, max(_p_end, e_str))
+                            ] = merged_res
                     else:
                         _history_latest_by_sym_iv[sym_iv_key] = (s_str, e_str, now_ts, res)
                 _save_disk_history_cache()
