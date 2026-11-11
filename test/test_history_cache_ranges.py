@@ -118,3 +118,39 @@ def test_ist_day_boundaries_are_inclusive_dates_with_exclusive_next_midnight(cac
             {"timestamp": start+86399}, {"timestamp": start+86400}, {"timestamp": "invalid"}]
     result = ns["_history_result_in_range"](response(rows), "2026-10-23", "2026-10-23")
     assert result[1]["data"] == rows[1:3]
+
+
+@pytest.mark.parametrize("day", ["2026-11-09", "2026-11-11"])
+def test_single_day_cannot_truncate_or_extend_a_wide_snapshot(cache, day):
+    ns, provider, now = cache
+    key = ("NIFTY", "NSE_INDEX", "1m")
+    old = ("2026-10-28", "2026-11-10", now - 60,
+           response([row("2026-11-04"), row("2026-11-09")]))
+    ns["_history_latest_by_sym_iv"][key] = old
+    provider.return_value = response([row(day, 25000)])
+    result = request(ns, day, day)
+    assert result[1]["data"] == [row(day, 25000)]
+    assert ns["_history_latest_by_sym_iv"][key] == old
+    assert (*key, old[0], day) not in ns["_history_cache"]
+
+
+def test_same_date_repair_merges_by_timestamp_without_dropping_later_bars(cache):
+    ns, provider, now = cache
+    key = ("NIFTY", "NSE_INDEX", "1m")
+    day = "2026-11-11"
+    first = row(day, 25000)
+    second = {**row(day, 25001), "timestamp": first["timestamp"] + 60}
+    ns["_history_latest_by_sym_iv"][key] = (
+        "2026-11-04", day, now - 60,
+        response([row("2026-11-04"), first, second]),
+    )
+    wide = (*key, "2026-11-04", day)
+    ns["_history_cache"][wide] = ns["_history_latest_by_sym_iv"][key][3]
+    corrected = row(day, 25002)
+    provider.return_value = response([corrected])
+    request(ns, day, day)
+    assert ns["_history_latest_by_sym_iv"][key][2] == now - 60
+    assert wide not in ns["_history_cache"]
+    assert ns["_history_latest_by_sym_iv"][key][3][1]["data"] == [
+        row("2026-11-04"), corrected, second,
+    ]
