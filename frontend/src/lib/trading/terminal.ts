@@ -141,6 +141,7 @@ import { replayTiming } from './replayTiming'
 import { loadSecondsHistory, rememberSecondsBar, rememberSecondsTick } from './secondsHistory'
 import {
   applySessionHours,
+  calendarExchange,
   candleSessionAnchor,
   isTradingSessionOpenForCandles,
   isValidIntradaySessionBar,
@@ -1932,10 +1933,6 @@ export class TradingTerminal {
 
   /* ── chart types (transforms bucket volume onto their own element times) */
   private boxOf(): number {
-    if (this.ctype === 'renko-v2') {
-      const opts = renkoV2Options(this.chartSettingsSaved as Record<string, string | number | boolean>, this.tick())
-      return calculateRenkoV2BoxSize(this.rawBars, opts)
-    }
     if (this.ctype === 'renko-v3') {
       const opts = renkoV3Options(this.chartSettingsSaved as Record<string, string | number | boolean>, this.tick())
       return calculateRenkoV3BoxSize(this.rawBars, opts)
@@ -1943,6 +1940,27 @@ export class TradingTerminal {
     const c = this.rawBars.length ? this.rawBars[this.rawBars.length - 1].close : 100
     const t = this.tick()
     return Math.max(t, Number((Math.round((c * 0.0015) / t) * t).toFixed(this.dp())))
+  }
+
+  private renkoV2Spec(): SeriesTransformSpec {
+    const tickSize = this.tick()
+    const options = renkoV2Options(this.chartSettingsSaved, tickSize)
+    const seconds = intervalSeconds(this.interval)
+    const exchange = calendarExchange(this.sym?.exchange ?? '')
+    const sessionClock = seconds !== null && seconds < 86400
+      ? exchange === 'CRYPTO' ? 'utc'
+        : ['NSE', 'BSE', 'NFO', 'BFO', 'MCX', 'CDS', 'BCD', 'NCDEX'].includes(exchange) ? 'ist'
+        : 'continuous'
+      : 'continuous'
+    return {
+      type: 'renko-v2',
+      options: {
+        ...options,
+        tickSize,
+        sessionClock,
+        boxSize: options.mode === 'atr' ? 0 : calculateRenkoV2BoxSize(this.rawBars, options),
+      },
+    }
   }
 
   /**
@@ -2941,7 +2959,9 @@ export class TradingTerminal {
     // sized once per build from the instrument's price, so bricks keep their
     // size through ticks, history refreshes and older pages, unless the trader
     // chose options for this instrument in chart settings.
-    const rawBase = cfg.transform?.(this.boxOf()) ?? null
+    const rawBase = this.ctype === 'renko-v2'
+      ? this.renkoV2Spec()
+      : cfg.transform?.(this.boxOf()) ?? null
     const base = rawBase?.type === 'renko-v4'
       ? { ...rawBase, options: { ...renkoV4Options(this.tick()), ...rawBase.options } }
       : rawBase
@@ -3391,7 +3411,19 @@ export class TradingTerminal {
     const key = this.transformChoiceKey()
     const chosen = key ? this.transformChoices[key]?.[this.ctype] : undefined
     if (!chosen || typeof chosen !== 'object') return base
-    return { type: base.type, options: { ...base.options, ...chosen } }
+    return base.type === 'renko-v2'
+      ? this.restoreRenkoV2Spec(base, chosen)
+      : { type: base.type, options: { ...base.options, ...chosen } }
+  }
+
+  private restoreRenkoV2Spec(base: SeriesTransformSpec, saved: SeriesTransformSpec['options']): SeriesTransformSpec {
+    const options = { ...base.options, ...saved }
+    // Old workspace saves may contain a box from the latest ATR of the old
+    // history window. Sizing in ATR mode belongs to each closed source bar.
+    if (options.mode === 'atr') options.boxSize = 0
+    options.tickSize = base.options!.tickSize
+    options.sessionClock = base.options!.sessionClock
+    return { type: base.type, options }
   }
 
   /**
@@ -5376,8 +5408,18 @@ export class TradingTerminal {
     this.adoptGridFromPatch(patch)
     this.refreshDisplayedVolume()
     this.refreshLegend(this.drawnBars())
-    if (this.ctype === 'renko-v2') {
-      this.setPriceData()
+    if (this.ctype === 'renko-v2' && this.price && Object.keys(patch).some((key) => key.startsWith('renkov2.'))) {
+      this.stopReplay()
+      const base = this.renkoV2Spec()
+      this.transformBase = base
+      // The Renko V2 dialog owns these settings. Clear older generic choices
+      // for the same transform when the user applies the dedicated controls.
+      chart.setSeriesTransform(this.price, base)
+      this.rememberTransformChoice()
+      for (const [option, value] of Object.entries(transformValues(base))) {
+        this.chartDefaults['transform.' + option] = value
+      }
+      this.afterTransformChange()
     }
     if (this.ctype === 'renko-v3') {
       this.buildChart()
@@ -8498,7 +8540,10 @@ export class TradingTerminal {
       const savedTransform = primary?.transform
       if (savedTransform && this.price && savedTransform.type === this.transformBase?.type) {
         try {
-          this.withRenkoV4Owner(savedTransform, () => chart.setSeriesTransform(this.price!, savedTransform))
+          const transform = savedTransform.type === 'renko-v2'
+            ? this.restoreRenkoV2Spec(this.transformBase, savedTransform.options)
+            : savedTransform
+          this.withRenkoV4Owner(transform, () => chart.setSeriesTransform(this.price!, transform))
           this.rememberTransformChoice()
           this.afterTransformChange()
         } catch {

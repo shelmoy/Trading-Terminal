@@ -1,3 +1,4 @@
+import { getSeriesTransform } from 'openalgo-charts'
 import { describe, expect, it } from 'vitest'
 import {
   calculateATR,
@@ -84,5 +85,91 @@ describe('RenkoV2Transform', () => {
     for (let i = 1; i < result.length; i++) {
       expect(result[i].time).toBeGreaterThan(result[i - 1].time)
     }
+  })
+})
+
+describe('registered Renko V2 ATR run', () => {
+  const start = Date.parse('2026-11-09T09:15:00+05:30') / 1000
+  const candle = (time: number, open: number, close: number, high = Math.max(open, close), low = Math.min(open, close)) =>
+    ({ time, open, close, high, low })
+  const previous = start - 18 * 3600
+  const before = [
+    candle(previous - 180, 100, 100, 102, 98),
+    candle(previous - 120, 100, 100, 102, 98),
+    candle(previous - 60, 100, 100, 102, 98),
+  ]
+  const day = [
+    candle(start, 100, 108),
+    candle(start + 60, 108, 114),
+    candle(start + 120, 114, 103),
+    candle(start + 180, 103, 97),
+  ]
+  const run = (options: Record<string, number | string> = {}) =>
+    getSeriesTransform('renko-v2').create({
+      mode: 'atr', atrPeriod: 2, tickSize: 0.05, sessionClock: 'ist', ...options,
+    })
+
+  it('uses prior closed ranges and preserves all older bricks after a volatile next session', () => {
+    const historical = run({ boxSize: 75 })
+    historical.setData([...before, ...day])
+    expect(historical.elements().slice(0, 2).map(({ open, close }) => [open, close]))
+      .toEqual([[100, 104], [104, 108]])
+    const old = [...historical.elements()]
+
+    const reopened = run()
+    const nextDay = start + 2 * 86400
+    reopened.setData([...before, ...day, candle(nextDay, 140, 200), candle(nextDay + 60, 200, 85)])
+    expect(reopened.elements().filter((brick) => brick.time < nextDay)).toEqual(old)
+    expect(reopened.elements().some((brick) => brick.time >= nextDay)).toBe(true)
+  })
+
+  it('preserves a fully loaded date when an older page changes the history start', () => {
+    const chart = run()
+    chart.setData([...before, ...day])
+    const expected = chart.elements().filter((brick) => brick.time >= start)
+    const earlier = candle(previous - 240, 60, 100, 100, 50)
+    chart.prepend([earlier, before[0]])
+    expect(chart.elements().filter((brick) => brick.time >= start)).toEqual(expected)
+    expect(chart.source()).toHaveLength(before.length + day.length + 1)
+    expect(chart.sourceIndex()?.filter((_, i) => chart.elements()[i].time >= start))
+      .toEqual([4, 4, 5, 7])
+  })
+
+  it('replaces only provisional bricks and matches a fresh chart with the same source', () => {
+    const live = run()
+    live.setData([...before, day[0]])
+    const initial = [...live.elements()]
+    const time = day[1].time
+    const transient = candle(time, 108, 125)
+    live.update(transient)
+    expect(live.elements().length).toBeGreaterThan(initial.length)
+    expect(live.update(candle(time, 108, 109, 125))).toBe(initial.length)
+    expect(live.elements()).toEqual(initial)
+
+    for (const bar of day.slice(1)) live.update(bar)
+    const reload = run()
+    reload.setData([...before, ...day])
+    expect(live.elements()).toEqual(reload.elements())
+    expect(live.sourceIndex()).toEqual(reload.sourceIndex())
+  })
+
+  it('keeps all gap bricks in the source minute and avoids fabricating a seed brick', () => {
+    const chart = run({ atrPeriod: 1 })
+    const flat = candle(start, 100, 100, 101, 99)
+    chart.setData([...before, flat])
+    expect(chart.elements()).toHaveLength(0)
+    const gap = candle(start + 60, 100, 300)
+    chart.update(gap)
+    expect(chart.elements().length).toBeGreaterThan(60)
+    expect(chart.elements().every((brick) => brick.time >= gap.time && brick.time < gap.time + 1))
+      .toBe(true)
+  })
+
+  it('keeps fixed-point sizing and does not reseed the newest candle', () => {
+    const fixed = run({ mode: 'points', points: 10 })
+    fixed.setData([candle(start, 100, 110), candle(start + 60, 110, 112)])
+    expect(fixed.elements().map((brick) => brick.close)).toEqual([110])
+    fixed.update(candle(start + 60, 110, 120))
+    expect(fixed.elements().map((brick) => brick.close)).toEqual([110, 120])
   })
 })
