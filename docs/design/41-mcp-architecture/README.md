@@ -37,7 +37,7 @@ Supported scopes are:
 | Scope | Capability |
 |---|---|
 | `read:market` | Quotes, depth, history, instruments and research data |
-| `read:account` | Orders, trades, positions, holdings, funds |
+| `read:account` | Orders, trades, positions, holdings, funds; Telegram alerts (`send_telegram_alert`) to the owner’s configured bot |
 | `write:orders` | Place, modify, cancel, and close trading actions |
 
 `write:orders` is advertised only when `MCP_OAUTH_WRITE_SCOPE_ENABLED=True`. Consent can require a fresh TOTP verification. Dynamic clients can require admin approval through `MCP_OAUTH_REQUIRE_APPROVAL`.

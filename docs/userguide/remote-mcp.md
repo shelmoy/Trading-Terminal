@@ -103,6 +103,8 @@ The notice _"CIMD is unavailable…"_ is expected — OpenAlgo advertises DCR. D
 
 Default scopes ChatGPT requests are `read:market read:account`. Add `write:orders` only if you've turned `MCP_OAUTH_WRITE_SCOPE_ENABLED=True` on the server **and** you want this connector to place orders.
 
+`read:account` also lets the connector send alerts to your own Telegram. Slack and Discord alerts are available from local MCP.
+
 **Step 4 — Acknowledge and create**
 
 Tick _"I understand and want to continue"_ under the orange warning, then **Create**.

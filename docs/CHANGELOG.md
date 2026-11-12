@@ -13,17 +13,96 @@ fix, live in [docs/releases](releases/).
 
 ## [Unreleased]
 
+### Added
+
+- **Alerts page (`/alerts`)**: Telegram, WhatsApp, Slack and Discord on one
+  page. Each channel has a card with how it stands, an on/off switch, a test
+  button and a link to its own setup page, and a grid chooses which orders
+  each channel hears about: orders placed, modified, cancelled, positions
+  closed, basket/split/options orders and GTT orders. The profile menu's
+  Telegram Bot and WhatsApp Bot entries are replaced by one Alerts entry; both
+  pages are a click away from it.
+- **Slack and Discord alerts** through an incoming webhook, set up on `/slack`
+  and `/discord`. Nothing to host and no bot token. The webhook URL is stored
+  encrypted, never shown again, kept out of the logs, and only Slack's or
+  Discord's own webhook URLs are accepted. Alerts can never ping a whole
+  channel (`<!channel>`, `@everyone` and other mentions are shown as text).
+- **`POST /api/v1/slack/notify` and `POST /api/v1/discord/notify`** post a
+  message to the saved webhook, like the Telegram and WhatsApp notify
+  endpoints. Both are in the API Playground. The API can only post; it can
+  never read or replace a webhook.
+- **Chart alerts on `/trading` can go to Slack and Discord** too, chosen per
+  alert next to Telegram and WhatsApp. Both are off for a new alert, and
+  alerts saved before read them as off.
+- **Flow Slack and Discord nodes** (`slackAlert`, `discordAlert`), under
+  Utility next to Telegram and WhatsApp. Each posts its message, with workflow
+  variables filled in, to the webhook saved on `/slack` or `/discord`, under
+  the notify endpoint's rules: nothing is posted unless the channel is
+  switched on at `/alerts`. The post is queued so the workflow never waits on
+  the provider, and a message over the channel's limit (Slack 4000
+  characters, Discord 2000) is shortened to fit rather than lost.
+- **MCP tools `send_slack_alert` and `send_discord_alert`**, beside
+  `send_telegram_alert`, on the local MCP server. They call the
+  notify endpoints, so the same rules and the 30-a-minute limit apply, and
+  read-only mode drops them. The Python SDK has no Slack or Discord method
+  yet; call the endpoints directly until it does.
+
 ### Changed
 
-- `/trading`, Historify and every other chart now use openalgo-charts 2.7.0
+- Remote MCP `read:account` keeps its existing Telegram alert permission.
+  Slack and Discord tools are available in local MCP.
+
+- Alerts are event driven end to end: one subscriber raises an alert per order
+  event, only when a channel wants it, and hands it to each routed channel.
+  Every channel queues its send on its own pool, so a slow or failing channel
+  never delays another. Telegram and WhatsApp alerts are unchanged for an
+  install that never opens `/alerts`: both stay on with every order type, the
+  messages are word for word the same, and their own rules (bot running,
+  device paired) still apply.
+- GTT alerts on WhatsApp now say what happened: the symbol, the trigger
+  prices, the trigger id and, when a GTT fires, the order it placed. They
+  used to show only "Order Update" and the time. Slack and Discord get the
+  same; Telegram's GTT alerts are unchanged.
+- Upgrade: one migration, `migrate_alert_channels.py`, adds the
+  `alert_channels` table (no rows are written). `migrate_all.py` runs it, and
+  the app also creates the table at startup. It and
+  `migrate_password_reset_grants.py` are now required migrations: if either
+  fails, `migrate_all.py` reports the failure and exits non-zero instead of
+  calling it a warning.
+
+- `/trading`, Historify and every other chart now use openalgo-charts 2.7.1
   (from 2.6.9). The drawing tool icons on the `/trading` rail are redrawn:
   each one shows its drawing the way the chart shows it when selected, with an
   open ring at every point you place, so a trend line has a ring at each end
   and the channels, patterns, positions, Fibonacci and Gann tools show their
   anchors too. The brush, highlighter, measure, text, note and arrow tools
-  get icons of their own. Only the icons change: every tool, indicator and
-  chart type works as before, saved charts and drawings load unchanged, and
-  existing custom indicators keep working.
+  get icons of their own. Indicators, chart types and existing custom
+  indicators work as before.
+- **Elliott waves on `/trading`.** The Patterns group of the drawing rail has
+  an Elliott waves section with five counts: impulse (0 1 2 3 4 5),
+  correction (0 A B C), and three new ones, triangle (0 A B C D E), double
+  combination (0 W X Y) and triple combination (0 W X Y X Z). Each count now
+  starts at its origin, the point the first wave starts from, so the first
+  wave is drawn: place the origin first, then the end of each wave. An
+  impulse or correction you drew before this upgrade loads exactly as it
+  looked, labelled 1 to 5 or A to C; drag its first point away and the first
+  wave and its 0 appear. Counts are labelled in the Minor degree (plain
+  numbers and capital letters); the terminal has no control yet for choosing
+  another degree or a circled or bracketed label style.
+
+### Fixed
+
+- **`upgrade/rotate_pepper.py` on an install with its own `FERNET_SALT`.**
+  It derived the encryption key with the legacy static salt, so on any
+  install that has a per-install salt (every install started since that salt
+  was introduced) it could decrypt none of the broker tokens, API keys, TOTP
+  secrets, broker keys or webhooks. It still wrote the new pepper to `.env`,
+  leaving them all unreadable, and encrypted a TOTP secret a second time. It
+  now uses the install's own salt, the same rule as the app. If you ran it on
+  such an install, the database backup it made
+  (`db/backups/openalgo.db.before-rotate-pepper-<time>`) still holds the data
+  under the old pepper; restoring it also needs the old `API_KEY_PEPPER` back
+  in `.env`.
 
 ## Local maintenance - 2026-11-01
 

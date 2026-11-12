@@ -77,10 +77,11 @@ TOOL_SCOPES: dict[str, str] = {
     "get_funds": SCOPE_READ_ACCOUNT,
     "calculate_margin": SCOPE_READ_ACCOUNT,
     "analyzer_status": SCOPE_READ_ACCOUNT,
-    # send_telegram_alert is account-scoped because the receiving channel
-    # is the account owner's bot. No order placement, but it has a real
-    # external side effect.
+    # Telegram retains its existing account scope. Slack and Discord retain
+    # registry metadata for local tools but are excluded from OAuth below.
     "send_telegram_alert": SCOPE_READ_ACCOUNT,
+    "send_slack_alert": SCOPE_READ_ACCOUNT,
+    "send_discord_alert": SCOPE_READ_ACCOUNT,
     # ---- Market data ----
     "get_quote": SCOPE_READ_MARKET,
     "get_multi_quotes": SCOPE_READ_MARKET,
@@ -121,12 +122,16 @@ TOOL_SCOPES: dict[str, str] = {
 # Tools that change something but are deliberately not write-scoped.
 # Every entry is a tool a read-only token can still trigger, so each one
 # needs a justification next to its TOOL_SCOPES entry above.
-WRITE_SCOPE_EXCEPTIONS = {"send_telegram_alert"}
+WRITE_SCOPE_EXCEPTIONS = {"send_telegram_alert", "send_slack_alert", "send_discord_alert"}
+
+
+# Existing OAuth grants did not authorize publishing to Slack or Discord.
+_LOCAL_ALERT_TOOLS = frozenset({"send_slack_alert", "send_discord_alert"})
 
 
 def required_scope(tool_name: str) -> str | None:
-    """Return the scope required to call ``tool_name``, or None if unknown."""
-    return TOOL_SCOPES.get(tool_name)
+    """Return the remote scope required to call ``tool_name``, or None if unknown."""
+    return None if tool_name in _LOCAL_ALERT_TOOLS else TOOL_SCOPES.get(tool_name)
 
 
 def active_tool_names() -> set[str] | None:
@@ -165,7 +170,7 @@ def list_tools_for_scopes(granted_scopes: Iterable[str]) -> list[str]:
     return sorted(
         name
         for name, scope in TOOL_SCOPES.items()
-        if scope in granted and (active is None or name in active)
+        if name not in _LOCAL_ALERT_TOOLS and scope in granted and (active is None or name in active)
     )
 
 

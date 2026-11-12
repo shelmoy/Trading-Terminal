@@ -91,13 +91,12 @@ def parse_margin_response(response_data):
             )
             return {"status": "error", "message": error_message}
 
-        # Extract margin data
-        # Kotak returns: avlMrgn, reqdMrgn, ordMrgn, mrgnUsd, rmsVldtd, etc.
-        # Missing margin is not a zero-cost order. Let the UI show unavailable.
-        raw_margin = response_data.get("reqdMrgn")
-        if raw_margin is None:
-            return {"status": "error", "message": "Kotak did not return required margin"}
-        total_margin_required = float(raw_margin)
+        # ordMrgn is the order's margin. reqdMrgn includes margin already
+        # used by the account and would count it once per basket leg.
+        order_margin = response_data.get("ordMrgn")
+        if order_margin in (None, ""):
+            return {"status": "error", "message": "Broker did not return the order margin"}
+        total_margin_required = float(order_margin)
         if not math.isfinite(total_margin_required) or total_margin_required < 0:
             return {"status": "error", "message": "Kotak returned invalid required margin"}
 
@@ -118,32 +117,30 @@ def parse_margin_response(response_data):
 
 def parse_batch_margin_response(responses):
     """
-    Parse multiple Kotak margin responses and aggregate them.
+    Sum per-leg Kotak margins into one basket figure.
 
-    Args:
-        responses: List of individual margin responses
+    Kotak's check-margin prices one order at a time, so the sum carries no
+    hedge benefit between legs (a calendar spread is quoted at the margin of
+    its legs taken separately).
 
-    Returns:
-        Aggregated margin response
+    Any failed leg fails the basket. Skipping it reported the margin of a
+    different basket, and with every leg failed it reported a "success" of 0
+    (issue #2156).
     """
-    try:
-        total_required_margin = 0
+    failures = [
+        r.get("message", "Failed to calculate margin")
+        for r in responses
+        if r.get("status") != "success"
+    ]
+    if failures:
+        return {"status": "error", "message": "; ".join(dict.fromkeys(failures))}
 
-        for response in responses:
-            if response.get("status") == "success":
-                data = response.get("data", {})
-                total_required_margin += data.get("total_margin_required", 0)
-
-        # Return standardized format matching OpenAlgo API specification
-        return {
-            "status": "success",
-            "data": {
-                "total_margin_required": total_required_margin,
-                "span_margin": 0,  # Kotak doesn't provide separate span margin
-                "exposure_margin": 0,  # Kotak doesn't provide separate exposure margin
-            },
-        }
-
-    except Exception as e:
-        logger.error(f"Error parsing batch margin response: {e}")
-        return {"status": "error", "message": f"Failed to parse batch margin response: {str(e)}"}
+    total_required_margin = sum(r["data"]["total_margin_required"] for r in responses)
+    return {
+        "status": "success",
+        "data": {
+            "total_margin_required": round(total_required_margin, 2),
+            "span_margin": 0,  # Kotak doesn't provide separate span margin
+            "exposure_margin": 0,  # Kotak doesn't provide separate exposure margin
+        },
+    }
