@@ -142,8 +142,8 @@ def _order_acknowledgement(response, payload, order_id):
     if status is None or (isinstance(status, int) and status >= 500):
         # A transport failure may happen after delivery. Do not imply that
         # resubmitting is safe, and never retry placement automatically.
-        if "order book before retrying" not in message:
-            message += ". Check the broker order book before retrying."
+        if "order book before" not in message.casefold():
+            message = message.rstrip().rstrip(".") + ". Check the broker order book before retrying."
     return False, code, message
 
 
