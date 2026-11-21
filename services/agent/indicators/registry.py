@@ -1,8 +1,8 @@
-"""The 127-entry indicator registry for the ``openalgo.ta`` singleton.
+"""The 128-entry indicator registry for the ``openalgo.ta`` singleton.
 
 ``from openalgo import ta`` yields a *singleton instance* of
-``TechnicalAnalysis``, not a module. On the pinned openalgo 2.0.3 build
-``len([m for m in dir(ta) if not m.startswith("_")]) == 127``: 114 indicators
+``TechnicalAnalysis``, not a module. On the pinned openalgo 2.3.0 build
+``len([m for m in dir(ta) if not m.startswith("_")]) == 128``: 115 indicators
 plus 13 utilities. The introduction doc says "over 80" and the flow reference
 says 116; both are wrong. Every fact below was obtained by executing the
 installed build over OHLCV frames, not by reading a doc page.
@@ -73,9 +73,8 @@ Traps this table encodes, all verified by execution
 * ``ta.psar`` returns a SINGLE series, not the 2-tuple the hybrid doc shows.
 * ``ta.aroon`` default period is 25, not 14.
 * ``ta.stochastic`` hides ``smooth_k`` between ``k_period`` and ``d_period``.
-* ``ta.rvi`` is the Relative *Vigor* Index (OHLC, 2-tuple). The Relative
-  *Volatility* Index is imported as ``VolatilityRVI`` and never exposed on
-  ``ta``.
+* ``ta.rvi`` is the Relative *Vigor* Index (OHLC, 2-tuple).
+  ``ta.rvi_volatility`` is the Relative *Volatility* Index (close, one series).
 * ``ta.median_bands`` takes ``source`` as its 4th positional parameter, an
   optional override series defaulting to hl2. Pass the tuning parameters by
   keyword or an int binds silently to ``source``.
@@ -552,7 +551,7 @@ _SPECS: tuple[IndicatorSpec, ...] = (
         99,
         note="Connors RSI. lenroc=100 means it needs about 100 bars before the first value.",
     ),
-    # ---- volatility (15) ---------------------------------------------------
+    # ---- volatility (16) ---------------------------------------------------
     _spec("atr", "volatility", _HLC, ("atr",), 13),
     _spec("bbands", "volatility", _C, ("upper_band", "middle_band", "lower_band"), 19),
     _spec("keltner", "volatility", _HLC, ("upper_channel", "middle_line", "lower_channel"), 19),
@@ -573,6 +572,16 @@ _SPECS: tuple[IndicatorSpec, ...] = (
         note="Chaikin Volatility: high and low only, not the Chaikin oscillator (see ta.cho).",
     ),
     _spec("natr", "volatility", _HLC, ("natr",), 13),
+    _spec(
+        "rvi_volatility",
+        "volatility",
+        _C,
+        ("rvi_volatility",),
+        22,
+        note="Donald Dorsey's Relative Volatility Index, using closing prices. "
+        "stdev_period controls deviation and rsi_period controls Wilder smoothing. "
+        "The Relative Vigor Index remains rvi and takes full OHLC.",
+    ),
     _spec(
         "ultimate_oscillator",
         "volatility",
@@ -716,8 +725,7 @@ _SPECS: tuple[IndicatorSpec, ...] = (
         ("rvi", "signal"),
         15,
         note="TRAP: this is the Relative VIGOR Index and needs full OHLC. The volatility doc's "
-        "ta.rvi(df['close']) raises TypeError. The Relative Volatility Index is imported as "
-        "VolatilityRVI and never exposed on ta.",
+        "ta.rvi(df['close']) raises TypeError. Use rvi_volatility for the Relative Volatility Index.",
     ),
     _spec(
         "cho",
@@ -1050,8 +1058,8 @@ def ta_callables() -> list[str]:
     """List the public method names on the ``ta`` singleton.
 
     Returns:
-        Every attribute of ``ta`` not starting with an underscore. 127 on the
-        pinned openalgo 2.0.3 build.
+        Every attribute of ``ta`` not starting with an underscore. 128 on the
+        pinned openalgo 2.3.0 build.
     """
     return [name for name in dir(ta) if not name.startswith("_")]
 

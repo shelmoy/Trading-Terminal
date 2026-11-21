@@ -93,6 +93,7 @@ DESCRIPTIONS: dict[str, str] = {
     "aroon_oscillator": "Aroon Oscillator: Aroon up minus Aroon down, trend direction.",
     "stochrsi": "Stochastic RSI: a stochastic applied to RSI, a faster overbought gauge.",
     "rvi": "Relative Vigor Index: close against open relative to the bar range.",
+    "rvi_volatility": "Relative Volatility Index: share of smoothed volatility on rising closes.",
     "cho": "Chaikin Oscillator: MACD of the Accumulation Distribution Line.",
     "chop": "Choppiness Index: high means ranging, low means trending.",
     "kst": "Know Sure Thing: smoothed multi-period rate-of-change momentum.",
