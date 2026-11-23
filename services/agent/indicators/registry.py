@@ -1,16 +1,17 @@
 """The 128-entry indicator registry for the ``openalgo.ta`` singleton.
 
 ``from openalgo import ta`` yields a *singleton instance* of
-``TechnicalAnalysis``, not a module. On the pinned openalgo 2.3.0 build
+``TechnicalAnalysis``, not a module. On the pinned openalgo 2.4.0 build
 ``len([m for m in dir(ta) if not m.startswith("_")]) == 128``: 115 indicators
-plus 13 utilities. The introduction doc says "over 80" and the flow reference
-says 116; both are wrong. Every fact below was obtained by executing the
+plus 13 utilities; openalgo 2.1.0 added the 128th, ``rvi_volatility``. The
+introduction doc says "over 80" and the flow reference says 117; both are
+wrong. Every fact below was obtained by executing the
 installed build over OHLCV frames, not by reading a doc page.
 
 Why this is not ``services/indicator_service.py``
 -------------------------------------------------
 
-``indicator_service.list_supported_indicators()`` returns **116**, and the 11 it
+``indicator_service.list_supported_indicators()`` returns **117**, and the 11 it
 leaves out are ``beta``, ``correlation``, ``cross``, ``crossover``,
 ``crossunder``, ``exrem``, ``flip``, ``median_bands``, ``ulcerindex``,
 ``valuewhen`` and ``vi``. That list is correct **for its consumer**: it feeds
@@ -73,8 +74,9 @@ Traps this table encodes, all verified by execution
 * ``ta.psar`` returns a SINGLE series, not the 2-tuple the hybrid doc shows.
 * ``ta.aroon`` default period is 25, not 14.
 * ``ta.stochastic`` hides ``smooth_k`` between ``k_period`` and ``d_period``.
-* ``ta.rvi`` is the Relative *Vigor* Index (OHLC, 2-tuple).
-  ``ta.rvi_volatility`` is the Relative *Volatility* Index (close, one series).
+* ``ta.rvi`` is the Relative *Vigor* Index (OHLC, 2-tuple). The Relative
+  *Volatility* Index is ``ta.rvi_volatility`` (close only, one series), on
+  ``ta`` since openalgo 2.1.0.
 * ``ta.median_bands`` takes ``source`` as its 4th positional parameter, an
   optional override series defaulting to hl2. Pass the tuning parameters by
   keyword or an int binds silently to ``source``.
@@ -573,16 +575,6 @@ _SPECS: tuple[IndicatorSpec, ...] = (
     ),
     _spec("natr", "volatility", _HLC, ("natr",), 13),
     _spec(
-        "rvi_volatility",
-        "volatility",
-        _C,
-        ("rvi_volatility",),
-        22,
-        note="Donald Dorsey's Relative Volatility Index, using closing prices. "
-        "stdev_period controls deviation and rsi_period controls Wilder smoothing. "
-        "The Relative Vigor Index remains rvi and takes full OHLC.",
-    ),
-    _spec(
         "ultimate_oscillator",
         "volatility",
         _HLC,
@@ -623,6 +615,16 @@ _SPECS: tuple[IndicatorSpec, ...] = (
         ("upper_band", "middle_line", "lower_band"),
         14,
         note="Per-band warm-up is 14/4/14.",
+    ),
+    _spec(
+        "rvi_volatility",
+        "volatility",
+        _C,
+        ("rvi_volatility",),
+        22,
+        note="Relative VOLATILITY Index (Dorsey), 0 to 100, from close only. Not ta.rvi, which "
+        "is the Relative Vigor Index on OHLC. Smooths with Wilder's average, as the RSI does, "
+        "not an EMA. First value at bar stdev_period + rsi_period - 2.",
     ),
     # ---- volume (17) -------------------------------------------------------
     _spec("obv", "volume", _CV, ("obv",), 0),
@@ -724,8 +726,9 @@ _SPECS: tuple[IndicatorSpec, ...] = (
         _OHLC,
         ("rvi", "signal"),
         15,
-        note="TRAP: this is the Relative VIGOR Index and needs full OHLC. The volatility doc's "
-        "ta.rvi(df['close']) raises TypeError. Use rvi_volatility for the Relative Volatility Index.",
+        note="TRAP: this is the Relative VIGOR Index and needs full OHLC, so "
+        "ta.rvi(df['close']) raises TypeError. The Relative Volatility Index is "
+        "ta.rvi_volatility.",
     ),
     _spec(
         "cho",
@@ -1059,7 +1062,7 @@ def ta_callables() -> list[str]:
 
     Returns:
         Every attribute of ``ta`` not starting with an underscore. 128 on the
-        pinned openalgo 2.3.0 build.
+        pinned openalgo 2.4.0 build.
     """
     return [name for name in dir(ta) if not name.startswith("_")]
 
