@@ -83,7 +83,11 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-function mount(storageKey = 'oa-trading', chartType = 'renko-v4') {
+function mount(
+  storageKey = 'oa-trading',
+  chartType = 'renko-v4',
+  initialBars = [bar(960, 100), bar(1020, 120)]
+) {
   const container = document.createElement('div')
   const terminal = new TradingTerminal({
     apiKey: 'test',
@@ -113,15 +117,45 @@ function mount(storageKey = 'oa-trading', chartType = 'renko-v4') {
   state.ctype = chartType
   state.volumeOn = false
   state.transformChoices = { 'GLOBAL_INDEX:WORLD_INDEX': { 'renko-v4': { boxSize: 10 } } }
-  state.rawBars = [bar(960, 100), bar(1020, 120)]
+  state.rawBars = initialBars
   state.builder = new CandleBuilder({ intervalSec: 60 })
-  state.builder.seed(state.rawBars[1])
+  state.builder.seed(state.rawBars.at(-1)!)
   state.buildChart()
   state.chart.applySize(800, 600)
   return { terminal, state }
 }
 
 describe('Renko V5 terminal integration', () => {
+  it('prepends older candles as bricks, preserving the ATR size and saved live suffix', () => {
+    const { state } = mount('oa-trading-v5-older', 'renko-v5')
+    const history = Array.from({ length: 18 }, (_, index) => ({
+      ...bar(60 * (index + 1) + 1200, 100), high: 105, low: 95,
+    }))
+    state.rawBars = history
+    state.setPriceData()
+    state.onTick({ ltp: 131, timeSec: 2290 })
+    const live = structuredClone(state.chart.primaryBars())
+    expect(live.map((brick) => brick.close)).toEqual([110, 120, 130])
+    state.rawBars = [bar(1080, 60), bar(1200, 80), ...state.rawBars]
+    state.setPriceData()
+    const extended = structuredClone(state.chart.primaryBars())
+    expect(extended.length).toBeGreaterThan(live.length)
+    expect(extended.slice(-live.length)).toEqual(live)
+    expect(extended.every((brick, i) =>
+      Math.abs(brick.close - brick.open) === 10 && (i === 0 || brick.time > extended[i - 1].time)
+    )).toBe(true)
+    state.setPriceData()
+    expect(state.chart.primaryBars()).toEqual(extended)
+
+    state.flushRenkoV4()
+    const reopened = mount('oa-trading-v5-older', 'renko-v5', state.rawBars)
+    expect(reopened.state.chart.primaryBars()).toEqual(extended)
+    reopened.state.rawBars = [bar(900, 30), ...reopened.state.rawBars]
+    reopened.state.setPriceData()
+    expect(reopened.state.chart.primaryBars().length).toBeGreaterThan(extended.length)
+    expect(reopened.state.chart.primaryBars().slice(-extended.length)).toEqual(extended)
+  })
+
   it('excludes a forming minute from the initial ATR seed and catch-up', () => {
     vi.setSystemTime(new Date(60 * 15 * 1000 + 30_000))
     const { state } = mount('oa-trading-v5-forming', 'renko-v5')

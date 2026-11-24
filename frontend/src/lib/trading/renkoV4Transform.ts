@@ -27,6 +27,8 @@ interface SavedRun {
   latestTime: number
   live: boolean
   bricks: [number, number, number, number][]
+  olderCount?: number
+  backfill?: { before: number; engine: EngineState | null }
 }
 
 function positive(value: number | undefined, fallback: number): number {
@@ -177,6 +179,9 @@ export class RenkoV4Run implements SeriesTransformRun {
   private branch: RenkoV4Run | null = null
   private latestTime = -Infinity
   private latestObservedBar: Bar | null = null
+  private historyStart = Infinity
+  private olderCount = 0
+  private backfillEngine: RenkoV4Transform | null = null
   private live = false
   private liveSnapshot = false
   readonly options: RenkoV4Options
@@ -220,7 +225,9 @@ export class RenkoV4Run implements SeriesTransformRun {
         this.engine.seed(seed.close, { ...this.options, boxSize })
         this.latestTime = seed.time
         this.latestObservedBar = seed
+        this.historyStart = confirmed[0].time
       }
+      this.extendOlderHistory(confirmed)
       for (const bar of confirmed) {
         if (bar.time <= this.latestTime) continue
         this.append(this.engine.pushTick(bar.close, bar.time), this.indexOf(bar.time))
@@ -247,6 +254,42 @@ export class RenkoV4Run implements SeriesTransformRun {
     }
     if (!this.live && newest.time === previous)
       this.append(this.engine.pushTick(newest.close, newest.time), this.bars.length - 1)
+  }
+
+  /**
+   * Work backwards from the existing chart edge at the locked brick size.
+   * Older closes are an approximation. Keep their state separate so adding a
+   * page can never move a brick or change the next live reversal threshold.
+   */
+  private extendOlderHistory(closed: readonly Bar[]): void {
+    const older = closed.filter((bar) => bar.time < this.historyStart)
+    if (!older.length) return
+    const engine = this.backfillEngine?.clone() ?? new RenkoV4Transform(this.options)
+    if (!this.backfillEngine) {
+      const live = this.engine.state()!
+      engine.seed(this.bricks[0]?.open ?? live.anchor, { ...this.options, boxSize: live.box })
+    }
+    const backwards: Bar[] = []
+    for (let index = older.length - 1; index >= 0; index--) {
+      for (const brick of engine.pushTick(older[index].close, older[index].time)) backwards.push(brick)
+    }
+
+    const generated: Bar[] = []
+    const times: number[] = []
+    for (const brick of backwards.reverse()) {
+      const previous = generated.at(-1)?.time ?? -Infinity
+      const step = Math.max(0.000001, Math.abs(previous) * Number.EPSILON * 2)
+      const time = brick.time > previous ? brick.time : previous + step
+      generated.push({ ...brick, time, open: brick.close, close: brick.open })
+      times.push(brick.time)
+    }
+    this.historyStart = older[0].time
+    this.backfillEngine = engine
+    this.olderCount += generated.length
+    this.bricks = [...generated, ...this.bricks]
+    this.completionTimes = [...times, ...this.completionTimes]
+    this.trend = [...generated.map((brick) => this.trendPoint(brick)), ...this.trend]
+    this.reindex()
   }
 
   prepend(bars: readonly Bar[]): void {
@@ -319,6 +362,12 @@ export class RenkoV4Run implements SeriesTransformRun {
       lastBar: { ...lastBar },
       latestTime: this.latestTime,
       live: this.live,
+      ...(this.seedSeconds > 0 ? {
+        olderCount: Math.max(0, this.olderCount - start),
+        ...(start === 0 ? {
+          backfill: { before: this.historyStart, engine: this.backfillEngine?.state() ?? null },
+        } : {}),
+      } : {}),
       bricks: this.bricks
         .slice(start)
         .map((b, i) => [b.time, b.open, b.close, this.completionTimes[start + i]]),
@@ -373,7 +422,18 @@ export class RenkoV4Run implements SeriesTransformRun {
         return false
       previous = brick[0]
     }
-    const final = saved.bricks.at(-1)
+    const olderCount = this.seedSeconds > 0 ? (saved.olderCount ?? 0) : 0
+    if (!Number.isSafeInteger(olderCount) || olderCount < 0 || olderCount > saved.bricks.length)
+      return false
+    const backfill = this.seedSeconds > 0 ? saved.backfill : undefined
+    if (backfill && (!finite(backfill.before) || backfill.before > saved.latestTime)) return false
+    const backwards = backfill?.engine
+    if (backwards && (
+      !finite(backwards.anchor) || backwards.anchor <= 0 ||
+      !Number.isSafeInteger(backwards.level) ||
+      ![-1, 0, 1].includes(backwards.direction) || backwards.box !== engine.box
+    )) return false
+    const final = saved.bricks.length > olderCount ? saved.bricks.at(-1) : undefined
     if (final) {
       const close = Number((engine.anchor + engine.level * engine.box).toPrecision(14))
       if (final[2] !== close || engine.direction !== (final[2] > final[1] ? 1 : -1)) return false
@@ -392,6 +452,12 @@ export class RenkoV4Run implements SeriesTransformRun {
       low: Math.min(open, close),
     }))
     this.completionTimes = saved.bricks.map((b) => b[3])
+    if (this.seedSeconds > 0) {
+      this.historyStart = backfill?.before ?? this.completionTimes[0] ?? this.latestTime
+      this.olderCount = olderCount
+      this.backfillEngine = backwards ? new RenkoV4Transform(this.options) : null
+      if (backwards) this.backfillEngine?.restore(backwards)
+    }
     this.indexes = this.bricks.map(() => 0)
     this.trend = this.bricks.map((brick) => this.trendPoint(brick))
     return true
