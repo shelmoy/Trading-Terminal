@@ -144,6 +144,7 @@ export function IndicatorPickerDialog({
   const rows = useMemo(() => {
     // Featured indicators pinned at top of the list
     const PINNED_IDS = [
+      'oa-rms-true-range-trend',
       'oa-gaussian-filter-trend',
       'oa-supertrend-mtf-ha',
       'oa-supertrend-ai',

@@ -40,6 +40,22 @@ const list = () => screen.getByLabelText('Search indicators').closest('div')?.pa
 beforeEach(() => localStorage.clear())
 
 describe('IndicatorPickerDialog', () => {
+  it('pins RMS True Range Trend above the existing featured studies', async () => {
+    const user = userEvent.setup()
+    const rms = {
+      id: 'oa-rms-true-range-trend',
+      name: 'RMS True Range Trend [BackQuant]',
+      category: 'Trend',
+    }
+    const gaussian = { id: 'oa-gaussian-filter-trend', name: 'Gaussian Filter Trend', category: 'Trend' }
+    const props = renderPicker({ catalog: [...CATALOG, gaussian, rms] })
+    const [first, second] = within(list()).getAllByTitle(/^Add /)
+    expect(first).toHaveAttribute('title', 'Add RMS True Range Trend [BackQuant]')
+    expect(second).toHaveAttribute('title', 'Add Gaussian Filter Trend')
+    await user.click(first)
+    expect(props.onAdd).toHaveBeenCalledWith(rms.id)
+  })
+
   it('builds the rail from the categories the registry actually uses', () => {
     renderPicker()
     // Counted, not guessed: three Trend, two Momentum, one each of the others.
