@@ -40,7 +40,7 @@ const list = () => screen.getByLabelText('Search indicators').closest('div')?.pa
 beforeEach(() => localStorage.clear())
 
 describe('IndicatorPickerDialog', () => {
-  it('pins RMS True Range Trend above the existing featured studies', async () => {
+  it('pins KERT and RMS True Range Trend above the older featured studies', async () => {
     const user = userEvent.setup()
     const rms = {
       id: 'oa-rms-true-range-trend',
@@ -48,12 +48,14 @@ describe('IndicatorPickerDialog', () => {
       category: 'Trend',
     }
     const gaussian = { id: 'oa-gaussian-filter-trend', name: 'Gaussian Filter Trend', category: 'Trend' }
-    const props = renderPicker({ catalog: [...CATALOG, gaussian, rms] })
-    const [first, second] = within(list()).getAllByTitle(/^Add /)
-    expect(first).toHaveAttribute('title', 'Add RMS True Range Trend [BackQuant]')
-    expect(second).toHaveAttribute('title', 'Add Gaussian Filter Trend')
+    const kert = { id: 'oa-kert', name: 'KERT', category: 'Momentum' }
+    const props = renderPicker({ catalog: [...CATALOG, gaussian, rms, kert] })
+    const [first, second, third] = within(list()).getAllByTitle(/^Add /)
+    expect(first).toHaveAttribute('title', 'Add Kaufman Efficiency Ratio TRIX [NJ]')
+    expect(second).toHaveAttribute('title', 'Add RMS True Range Trend [BackQuant]')
+    expect(third).toHaveAttribute('title', 'Add Gaussian Filter Trend')
     await user.click(first)
-    expect(props.onAdd).toHaveBeenCalledWith(rms.id)
+    expect(props.onAdd).toHaveBeenCalledWith(kert.id)
   })
 
   it('builds the rail from the categories the registry actually uses', () => {

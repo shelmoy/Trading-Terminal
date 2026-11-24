@@ -73,7 +73,7 @@ type SectionId = 'active' | 'favourites' | 'recent' | 'all' | string
 
 export function IndicatorPickerDialog({
   open,
-  catalog,
+  catalog: entries,
   active,
   onAdd,
   onRemove,
@@ -85,6 +85,13 @@ export function IndicatorPickerDialog({
   const [favourites, setFavourites] = useState<string[]>([])
   const [recent, setRecent] = useState<string[]>([])
   const searchRef = useRef<HTMLInputElement>(null)
+  // KERT uses its Pine short title on the pane and the full title in the library.
+  const catalog = useMemo(
+    () => entries.map((entry) => entry.id === 'oa-kert'
+      ? { ...entry, name: 'Kaufman Efficiency Ratio TRIX [NJ]' }
+      : entry),
+    [entries]
+  )
 
   // Read storage on open, not on mount: another pane may have starred something
   // since this dialog was last closed.
@@ -144,6 +151,7 @@ export function IndicatorPickerDialog({
   const rows = useMemo(() => {
     // Featured indicators pinned at top of the list
     const PINNED_IDS = [
+      'oa-kert',
       'oa-rms-true-range-trend',
       'oa-gaussian-filter-trend',
       'oa-supertrend-mtf-ha',

@@ -13,6 +13,7 @@
 !supertrend_mtf_ha.js
 !gaussian_filter_trend.js
 !rms_true_range_trend.js
+!kaufman_efficiency_ratio_trix.js
 
 # Ignore backup and editor files
 *.bak
