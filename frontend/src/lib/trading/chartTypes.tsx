@@ -12,6 +12,7 @@ import 'openalgo-charts/transform'
 import './renkoV2Transform'
 import './renkoV3Transform'
 import './renkoV4Transform'
+import './renkoV5Transform'
 import type { ReactNode } from 'react'
 import { ChromeIcon, hasChromeIcon, lineStroke24 } from './glyphs'
 
@@ -107,6 +108,13 @@ export const CHART_TYPE_GROUPS: ChartTypeDef[][] = [
       transform: () => ({ type: 'renko-v4', options: { boxSize: 0 } }),
     },
     {
+      value: 'renko-v5',
+      label: 'Renko Version 5',
+      iconKey: 'renko-v5',
+      series: 'candlestick',
+      transform: () => ({ type: 'renko-v5', options: { mode: 'atr', atrPeriod: 14, atrMultiplier: 1 } }),
+    },
+    {
       value: 'range',
       label: 'Range Bars',
       iconKey: 'chart-range-bars',
@@ -158,10 +166,10 @@ export const CHART_TYPES: Record<string, ChartTypeDef> = Object.fromEntries(
  * The types built from price boxes, which carry a settings dialog of their own
  * beside the chart type: box size and how it is measured, reversal, prices.
  */
-export type BoxChartType = 'renko' | 'renko-v2' | 'renko-v3' | 'renko-v4' | 'point-figure'
+export type BoxChartType = 'renko' | 'renko-v2' | 'renko-v3' | 'renko-v4' | 'renko-v5' | 'point-figure'
 
 export function isBoxChartType(value: string): value is BoxChartType {
-  return ['renko', 'renko-v2', 'renko-v3', 'renko-v4', 'point-figure'].includes(value)
+  return ['renko', 'renko-v2', 'renko-v3', 'renko-v4', 'renko-v5', 'point-figure'].includes(value)
 }
 
 /**
@@ -213,11 +221,12 @@ const s = {
 }
 
 /** Three rounded bricks and a separate version badge, on the toolbar's 16px grid. */
-function RenkoVersionIcon({ version }: { version: 2 | 3 | 4 }) {
+function RenkoVersionIcon({ version }: { version: 2 | 3 | 4 | 5 }) {
   const numeral = {
     2: 'M11 10.5h2.5v1.5L11 14h2.5',
     3: 'M11 10.5h2.5V14H11m.5-1.75h2',
     4: 'M11 10.5v1.75h2.5m0-1.75V14',
+    5: 'M13.5 10.5H11v1.75h2.5V14H11',
   }[version]
   return (
     <svg
@@ -263,6 +272,8 @@ export function chartTypeIcon(iconKey: string): ReactNode {
       return <RenkoVersionIcon version={3} />
     case 'renko-v4':
       return <RenkoVersionIcon version={4} />
+    case 'renko-v5':
+      return <RenkoVersionIcon version={5} />
     case 'tpo':
       return (
         <svg viewBox="0 0 24 24" {...s} strokeWidth={lineStroke24(16)}>

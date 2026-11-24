@@ -47,6 +47,7 @@ const TITLE: Record<BoxChartType, string> = {
   'renko-v2': 'Renko Version 2 settings',
   'renko-v3': 'Renko Version 3 settings',
   'renko-v4': 'Renko Version 4 settings',
+  'renko-v5': 'Renko Version 5 settings',
   'point-figure': 'Point & Figure settings',
 }
 

@@ -1,8 +1,11 @@
 import { registerSeriesTransform, type Bar, type SeriesTransformRun } from 'openalgo-charts'
 import type { ISeriesTransform } from 'openalgo-charts/transform'
+import { calculateRenkoV2BoxSize } from './renkoV2Transform'
 
 export interface RenkoV4Options {
-  mode?: 'percent' | 'points'
+  mode?: 'percent' | 'points' | 'atr'
+  atrPeriod?: number
+  atrMultiplier?: number
   percent?: number
   points?: number
   boxSize?: number
@@ -94,10 +97,10 @@ export class RenkoV4Transform implements ISeriesTransform {
     this.box = state.box
   }
 
-  seed(price: number): void {
+  seed(price: number, sizing = this.options): void {
     if (this.anchor !== null || !Number.isFinite(price) || price <= 0) return
     this.anchor = price
-    this.box = calculateRenkoV4BoxSize(price, this.options)
+    this.box = calculateRenkoV4BoxSize(price, sizing)
   }
 
   push(bar: Bar): Bar[] {
@@ -173,11 +176,14 @@ export class RenkoV4Run implements SeriesTransformRun {
   private trend: Bar[] = []
   private branch: RenkoV4Run | null = null
   private latestTime = -Infinity
+  private latestObservedBar: Bar | null = null
   private live = false
   private liveSnapshot = false
   readonly options: RenkoV4Options
+  private readonly seedSeconds: number
 
-  constructor(options: RenkoV4Options = {}) {
+  constructor(options: RenkoV4Options = {}, seedSeconds = 0) {
+    this.seedSeconds = seedSeconds
     this.options = { ...options }
     this.engine = new RenkoV4Transform(options)
   }
@@ -187,16 +193,42 @@ export class RenkoV4Run implements SeriesTransformRun {
     this.liveSnapshot = false
     if (!bars.length) {
       // Empty replay prefixes must not destroy the live state.
-      if (!authoritative && this.bars.length) this.branch = new RenkoV4Run(this.options)
+      if (!authoritative && this.bars.length) this.branch = new RenkoV4Run(this.options, this.seedSeconds)
       return
     }
     const newest = bars[bars.length - 1]
     if (!authoritative && this.bars.length && newest.time < this.latestTime) {
-      this.branch = new RenkoV4Run(this.options)
+      this.branch = new RenkoV4Run(this.options, this.seedSeconds)
       this.branch.setData(bars)
       return
     }
     this.branch = null
+    if (this.seedSeconds > 0) {
+      // V5 seeds from the earliest confirmed ATR window. Only subsequent
+      // closes may extend the price path during history recovery.
+      const confirmed = bars.filter((bar) => bar.time + this.seedSeconds <= Date.now() / 1000)
+      this.bars = bars.map((bar) => ({ ...bar }))
+      this.reindex()
+      if (!this.engine.state()) {
+        const period = Math.min(500, Math.max(1, Math.floor(positive(this.options.atrPeriod, 14))))
+        const seedCount = this.options.mode === 'atr' ? period + 1 : 1
+        if (confirmed.length < seedCount) return
+        const seed = confirmed[seedCount - 1]
+        const boxSize = this.options.mode === 'atr'
+          ? calculateRenkoV2BoxSize(confirmed.slice(0, seedCount), { ...this.options, atrPeriod: period })
+          : this.options.boxSize
+        this.engine.seed(seed.close, { ...this.options, boxSize })
+        this.latestTime = seed.time
+        this.latestObservedBar = seed
+      }
+      for (const bar of confirmed) {
+        if (bar.time <= this.latestTime) continue
+        this.append(this.engine.pushTick(bar.close, bar.time), this.indexOf(bar.time))
+        this.latestTime = bar.time
+        this.latestObservedBar = bar
+      }
+      return
+    }
     if (!this.bars.length) {
       this.bars = bars.map((bar) => ({ ...bar }))
       for (let i = 0; i < this.bars.length; i++) this.append(this.engine.push(this.bars[i]), i)
@@ -236,8 +268,13 @@ export class RenkoV4Run implements SeriesTransformRun {
     const last = this.bars.at(-1)
     if (last?.time === bar.time) this.bars[this.bars.length - 1] = { ...bar }
     else this.bars.push({ ...bar })
+    if (this.seedSeconds > 0 && !this.engine.state()) {
+      this.setData(this.bars)
+      if (!this.engine.state()) return firstChanged
+    }
     this.live = true
     this.latestTime = bar.time
+    if (this.seedSeconds > 0) this.latestObservedBar = bar
     this.append(this.engine.push(bar), this.bars.length - 1)
     return firstChanged
   }
@@ -272,7 +309,7 @@ export class RenkoV4Run implements SeriesTransformRun {
   /** Compact, bounded cache of the observed path; replay is never persisted. */
   snapshot(): SavedRun | null {
     const engine = this.engine.state()
-    const lastBar = this.bars.at(-1)
+    const lastBar = this.seedSeconds > 0 ? this.latestObservedBar : this.bars.at(-1)
     if (!engine || !lastBar) return null
     const start = Math.max(0, this.bricks.length - 10_000)
     return {
@@ -310,7 +347,12 @@ export class RenkoV4Run implements SeriesTransformRun {
       ![-1, 0, 1].includes(engine.direction) ||
       !finite(engine.box) ||
       engine.box <= 0 ||
-      engine.box !== calculateRenkoV4BoxSize(engine.anchor, this.options) ||
+      engine.box !== calculateRenkoV4BoxSize(
+        engine.anchor,
+        this.seedSeconds > 0 && this.options.mode === 'atr'
+          ? { ...this.options, boxSize: engine.box }
+          : this.options
+      ) ||
       !finite(lastBar.time) ||
       lastBar.time > saved.latestTime ||
       ![lastBar.open, lastBar.high, lastBar.low, lastBar.close].every((n) => finite(n) && n > 0)
@@ -339,6 +381,7 @@ export class RenkoV4Run implements SeriesTransformRun {
     this.engine.restore(engine)
     this.bars = [{ ...lastBar }]
     this.latestTime = saved.latestTime
+    if (this.seedSeconds > 0) this.latestObservedBar = { ...lastBar }
     this.live = saved.live
     this.branch = null
     this.bricks = saved.bricks.map(([time, open, close]) => ({
@@ -407,6 +450,7 @@ export class RenkoV4Run implements SeriesTransformRun {
 // The terminal supplies its pane-owned run during synchronous series creation.
 // Chart recreation can then repaint exactly the same committed live bricks.
 let suppliedRun: RenkoV4Run | null = null
+export const currentRenkoRun = (): RenkoV4Run | null => suppliedRun
 export function withRenkoV4Run<T>(run: RenkoV4Run, create: () => T): T {
   const previous = suppliedRun
   suppliedRun = run

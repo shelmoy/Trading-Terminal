@@ -174,6 +174,7 @@ import {
 import { calculateRenkoV3BoxSize } from './renkoV3Transform'
 import { RenkoV4Run, withRenkoV4Run, type RenkoV4Options } from './renkoV4Transform'
 import { RENKO_V4_DEFAULTS, renkoV4HistoryInterval, renkoV4Options, renkoV4SettingsView } from './renkoV4Settings'
+import { isConfirmedRenko } from './renkoV5Transform'
 import { restoreRenkoV4, saveRenkoV4 } from './renkoV4Persistence'
 import { confirmedRenkoV4History, renkoV4RunKeys } from './renkoV4History'
 
@@ -1311,6 +1312,7 @@ export class TradingTerminal {
   private volumeMA: SeriesApi | null = null
   private renkoV4Run: RenkoV4Run | null = null
   private renkoV4RunKey = ''
+  private renkoCachePrefix = ''
   private renkoV4Trend: SeriesApi | null = null
   private renkoV4TrendCount = 0
   private renkoV4SaveTimer: ReturnType<typeof setTimeout> | null = null
@@ -2015,7 +2017,7 @@ export class TradingTerminal {
     if (!this.price || !this.volume) return
     // Always the raw bars. On a transformed chart type the chart forms the
     // elements from them, so a tick, history paging and replay all speak bars.
-    if (this.ctype === 'renko-v4') this.renkoV4Run?.resumeLive()
+    if (isConfirmedRenko(this.ctype)) this.renkoV4Run?.resumeLive()
     this.price.setData(this.rawBars)
     this.syncRenkoV4Trend(true)
     this.scheduleRenkoV4Save()
@@ -2068,7 +2070,7 @@ export class TradingTerminal {
     if (snapshot.reason === 'live' || snapshot.reason === 'state') return
     // A cache preview may omit the current session. V4 cannot later rewrite
     // those committed bricks, so seed it only after authoritative history.
-    if (this.ctype === 'renko-v4' && snapshot.reason === 'cache') return
+    if (isConfirmedRenko(this.ctype) && snapshot.reason === 'cache') return
 
     // While replay is paused, snapshots deliberately retain the display bars.
     // The controller's live store still accepts refreshes, pages and pushBar,
@@ -2159,7 +2161,7 @@ export class TradingTerminal {
     if (this.transformed()) {
       // Renko bricks have no traded volume. Avoid scanning the complete history
       // for volume on every tick when its overlay is hidden.
-      if (this.ctype === 'renko-v4' && !this.volumeOn) {
+      if (isConfirmedRenko(this.ctype) && !this.volumeOn) {
         this.shownCount = this.shownBars.length
         return true
       }
@@ -2218,8 +2220,9 @@ export class TradingTerminal {
   }
 
   private scheduleRenkoV4Save(): void {
-    if (this.ctype !== 'renko-v4' || !this.renkoV4Run || this.renkoV4SaveTimer !== null
-      || this.preferences !== undefined || this.renkoV4SavedCount === this.renkoV4Run.committedCount)
+    if (!isConfirmedRenko(this.ctype) || !this.renkoV4Run || this.renkoV4SaveTimer !== null
+      || (this.ctype === 'renko-v5' ? this.preparingWorkspace : this.preferences !== undefined)
+      || this.renkoV4SavedCount === this.renkoV4Run.committedCount)
       return
     this.renkoV4SaveTimer = setTimeout(() => this.flushRenkoV4(), 500)
   }
@@ -2227,8 +2230,10 @@ export class TradingTerminal {
   private readonly flushRenkoV4 = (): void => {
     if (this.renkoV4SaveTimer !== null) clearTimeout(this.renkoV4SaveTimer)
     this.renkoV4SaveTimer = null
-    if (!this.renkoV4Run || this.preferences !== undefined) return
-    const prefix = `${this.sk}-renko-v4-cache:`
+    const prefix = this.renkoCachePrefix
+    if (!this.renkoV4Run || !prefix ||
+      (this.preferences !== undefined && !prefix.includes('-renko-v5-cache:')) ||
+      (this.preparingWorkspace && prefix.includes('-renko-v5-cache:'))) return
     saveRenkoV4(this.renkoV4Run, `${prefix}${this.renkoV4RunKey}`, prefix)
     this.renkoV4SavedCount = this.renkoV4Run.committedCount
   }
@@ -2375,7 +2380,7 @@ export class TradingTerminal {
     if (!sym) return []
     const runs = buildChartLegend({
       symbol: formatTradingSymbol(sym.symbol),
-      interval: this.ctype === 'renko-v4' ? 'Price' : this.interval,
+      interval: isConfirmedRenko(this.ctype) ? 'Price' : this.interval,
       exchange: sym.exchange,
       lotsize: sym.lots ? sym.lotsize : null,
       bar:
@@ -2855,7 +2860,7 @@ export class TradingTerminal {
       // ago. A live trading terminal is the case they are for, so this host opts
       // in. The clock reads the exchange's wall time through the chart's
       // configured timezone, which is what a trader is actually watching.
-      axisChrome: { sessionClock: { showOffset: true }, barCountdown: this.ctype !== 'renko-v4' },
+      axisChrome: { sessionClock: { showOffset: true }, barCountdown: !isConfirmedRenko(this.ctype) },
       // The library's built-in screenshot command calls its own
       // `downloadScreenshot()`, which knows nothing about this terminal's DOM
       // OHLC readout or its trade panel. Unbind it and claim the same chord for
@@ -2942,7 +2947,7 @@ export class TradingTerminal {
     // size through ticks, history refreshes and older pages, unless the trader
     // chose options for this instrument in chart settings.
     const rawBase = cfg.transform?.(this.boxOf()) ?? null
-    const base = rawBase?.type === 'renko-v4'
+    const base = rawBase && isConfirmedRenko(rawBase.type)
       ? { ...rawBase, options: { ...renkoV4Options(this.tick()), ...rawBase.options } }
       : rawBase
     this.transformBase = base
@@ -3368,18 +3373,27 @@ export class TradingTerminal {
   }
 
   private withRenkoV4Owner<T>(transform: SeriesTransformSpec | null, create: () => T): T {
-    if (transform?.type !== 'renko-v4') return create()
-    const { runKey, fallbackKey } = renkoV4RunKeys(this.sk, this.transformChoiceKey(), transform)
-    if (!this.renkoV4Run || this.renkoV4RunKey !== runKey) {
+    if (!transform || !isConfirmedRenko(transform.type)) return create()
+    const v5 = transform.type === 'renko-v5'
+    const seedSeconds = v5 ? (intervalSeconds(this.interval) ?? 60) : 0
+    const { runKey, fallbackKey } = v5
+      ? {
+          runKey: `${this.transformChoiceKey()}:${seedSeconds}:${JSON.stringify(
+            Object.entries(transform.options ?? {}).sort(([a], [b]) => a.localeCompare(b))
+          )}`,
+          fallbackKey: undefined,
+        }
+      : renkoV4RunKeys(this.sk, this.transformChoiceKey(), transform)
+    const prefix = `${this.sk}-${transform.type}-cache:`
+    if (!this.renkoV4Run || this.renkoV4RunKey !== runKey || this.renkoCachePrefix !== prefix) {
       this.flushRenkoV4()
-      this.renkoV4Run = new RenkoV4Run(transform.options as RenkoV4Options)
+      this.renkoV4Run = new RenkoV4Run(transform.options as RenkoV4Options, seedSeconds)
       this.renkoV4RunKey = runKey
+      this.renkoCachePrefix = prefix
       this.renkoV4SavedCount = -1
-      if (this.preferences === undefined)
-        restoreRenkoV4(this.renkoV4Run, `${this.sk}-renko-v4-cache:${runKey}`, fallbackKey)
+      if (v5 || this.preferences === undefined)
+        restoreRenkoV4(this.renkoV4Run, `${prefix}${runKey}`, fallbackKey)
       else if (this.initialWorkspacePane && fallbackKey)
-        // Prepared Trading panes keep preferences isolated. Reading the exact
-        // matching Scalper price path is safe; never write into its cache.
         restoreRenkoV4(this.renkoV4Run, fallbackKey)
     }
     if (!this.replayOwnsDisplay()) this.renkoV4Run.resumeLive()
@@ -5387,7 +5401,7 @@ export class TradingTerminal {
     if (this.ctype === 'renko-v3') {
       this.buildChart()
     }
-    if (this.ctype === 'renko-v4') {
+    if (this.ctype === 'renko-v4' || (this.ctype === 'renko-v5' && transformChanged)) {
       this.buildChart()
     }
     if (isProfileKind(this.ctype)) {
@@ -6974,7 +6988,7 @@ export class TradingTerminal {
       typeof e.ltp !== 'number' ||
       !Number.isFinite(e.ltp) ||
       e.ltp <= 0 ||
-      (this.ctype !== 'renko-v4' && e.ltp >= 10000000) ||
+      (!isConfirmedRenko(this.ctype) && e.ltp >= 10000000) ||
       Math.round(e.ltp * 100) / 100 === 21474836.48 ||
       Math.round(e.ltp * 100) / 100 === -21474836.48
     )
@@ -7026,7 +7040,7 @@ export class TradingTerminal {
         // prefix. rawBars keeps accumulating either way, so leaving replay finds
         // the session already caught up.
         if (this.replayOwnsDisplay()) {
-          if (this.ctype === 'renko-v4') this.renkoV4Run?.observeLive(u.bar)
+          if (isConfirmedRenko(this.ctype)) this.renkoV4Run?.observeLive(u.bar)
           this.scheduleRenkoV4Save()
           this.cb.onLtp(e.ltp)
           return
@@ -7036,7 +7050,7 @@ export class TradingTerminal {
       }
     }
     // Daily intervals have no CandleBuilder. Renko still observes every price.
-    if (!this.builder && this.ctype === 'renko-v4' && sessionOpen && !this.replayOwnsDisplay()) {
+    if (!this.builder && isConfirmedRenko(this.ctype) && sessionOpen && !this.replayOwnsDisplay()) {
       const last = this.rawBars.at(-1)
       if (last) this.updateLiveBar({ ...last, close: e.ltp,
         high: Math.max(last.high, e.ltp), low: Math.min(last.low, e.ltp) })
@@ -7640,7 +7654,7 @@ export class TradingTerminal {
     const initialRequest = {
       symbol: pick.symbol, exchange: pick.exchange, interval: this.interval,
       from: historyTo - lookbackDays(this.interval) * 86400, to: historyTo,
-      ...(this.ctype === 'renko-v4' ? { noCache: true } : {}),
+      ...(isConfirmedRenko(this.ctype) ? { noCache: true } : {}),
     }
     // Capture rejection immediately; a strict metadata failure may abandon
     // this load before it consumes the history result.
@@ -7755,7 +7769,7 @@ export class TradingTerminal {
         interval: this.interval,
         from: to - lookbackDays(this.interval) * 86400,
         to,
-        ...(this.ctype === 'renko-v4' ? { noCache: true } : {}),
+        ...(isConfirmedRenko(this.ctype) ? { noCache: true } : {}),
       }
       const memKey = `${this.sym.symbol.toUpperCase()}:${(this.sym.exchange || '').toUpperCase()}:${this.interval}`
       const warmEntry = this.interval.endsWith('s') ? undefined : globalBarMemoryCache.get(memKey)
@@ -7863,10 +7877,10 @@ export class TradingTerminal {
   setInterval(iv: string): string {
     const norm = normalizeCustomInterval(iv) || iv
     if (norm === this.interval) return norm
-    if (this.ctype === 'renko-v4') {
+    if (isConfirmedRenko(this.ctype)) {
       const seed = renkoV4HistoryInterval(this.availableIntervals)
       if (norm !== seed) {
-        this.toast(`Renko V4 forms on price movement. ${seed ?? this.interval} is only its historical seed interval; change brick size in Chart settings.`, '')
+        this.toast(`${CHART_TYPES[this.ctype].label} forms on price movement. ${seed ?? this.interval} is only its historical seed interval; change brick size in Chart settings.`, '')
         return this.interval
       }
     }
@@ -7910,7 +7924,7 @@ export class TradingTerminal {
   }
   setChartType(v: string): string {
     if (!CHART_TYPES[v]) return this.ctype
-    const interval = v === 'renko-v4' ? renkoV4HistoryInterval(this.availableIntervals)
+    const interval = isConfirmedRenko(v) ? renkoV4HistoryInterval(this.availableIntervals)
       : isProfileKind(v) ? this.compatibleProfileInterval(v) : this.interval
     if (!interval) {
       this.toast('The broker has no intraday history interval compatible with this chart', 'err')
@@ -8605,7 +8619,7 @@ export class TradingTerminal {
     const baseCachedBars = withBarCache(this.rest, { ttlMs: 10 * 60_000 })
     const origCachedBars = baseCachedBars.getCachedBars.bind(baseCachedBars)
     baseCachedBars.getCachedBars = async (request): Promise<Bar[] | undefined> => {
-      if (this.ctype === 'renko-v4') return undefined
+      if (isConfirmedRenko(this.ctype)) return undefined
       if (!request.noCache && !request.interval.endsWith('s') &&
           (request.to ?? 0) >= nowSec() - 3600 && (request.to ?? 0) - (request.from ?? 0) >= 3600) {
         const key = `${request.symbol.toUpperCase()}:${(request.exchange || '').toUpperCase()}:${request.interval}`
@@ -8639,7 +8653,7 @@ export class TradingTerminal {
       const isWideWindow = reqTo - reqFrom >= 3600 && reqTo >= nowSec() - 3600
       const isInitialWindow = !request.noCache && isWideWindow
       const memKey = `${request.symbol.toUpperCase()}:${(request.exchange || '').toUpperCase()}:${request.interval}`
-      if (isInitialWindow && this.ctype !== 'renko-v4') {
+      if (isInitialWindow && !isConfirmedRenko(this.ctype)) {
         const hit = globalBarMemoryCache.get(memKey)
         if (hit?.bars?.length && Date.now() - hit.time < 6 * 3600_000) {
           const bars = historyBarsInRange(hit.bars, request)
@@ -8649,7 +8663,7 @@ export class TradingTerminal {
       const requestKey = JSON.stringify([this.apiKey, request.symbol, request.exchange, request.interval, reqFrom, reqTo, Boolean(request.noCache)])
       let pending = isWideWindow ? initialBarRequests.get(requestKey) : undefined
       if (!pending) {
-        pending = this.ctype === 'renko-v4' && isWideWindow
+        pending = isConfirmedRenko(this.ctype) && isWideWindow
           ? confirmedRenkoV4History(origGetBars, request)
           : origGetBars(request)
         if (isWideWindow) {
@@ -8779,7 +8793,7 @@ export class TradingTerminal {
     if (this.bookTimer) clearInterval(this.bookTimer)
     this.bookTimer = setInterval(() => this.pollBook(), 8000)
 
-    if (this.ctype === 'renko-v4') {
+    if (isConfirmedRenko(this.ctype)) {
       const interval = renkoV4HistoryInterval(this.availableIntervals)
       if (interval) this.interval = interval
       else this.ctype = 'candlestick'

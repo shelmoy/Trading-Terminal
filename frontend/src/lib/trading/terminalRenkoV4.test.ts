@@ -83,7 +83,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-function mount(storageKey = 'oa-trading') {
+function mount(storageKey = 'oa-trading', chartType = 'renko-v4') {
   const container = document.createElement('div')
   const terminal = new TradingTerminal({
     apiKey: 'test',
@@ -110,7 +110,7 @@ function mount(storageKey = 'oa-trading') {
   }
   state.interval = '1m'
   state.availableIntervals = ['1m', '5m', 'D']
-  state.ctype = 'renko-v4'
+  state.ctype = chartType
   state.volumeOn = false
   state.transformChoices = { 'GLOBAL_INDEX:WORLD_INDEX': { 'renko-v4': { boxSize: 10 } } }
   state.rawBars = [bar(960, 100), bar(1020, 120)]
@@ -120,6 +120,57 @@ function mount(storageKey = 'oa-trading') {
   state.chart.applySize(800, 600)
   return { terminal, state }
 }
+
+describe('Renko V5 terminal integration', () => {
+  it('excludes a forming minute from the initial ATR seed and catch-up', () => {
+    vi.setSystemTime(new Date(60 * 15 * 1000 + 30_000))
+    const { state } = mount('oa-trading-v5-forming', 'renko-v5')
+    const closed = Array.from({ length: 14 }, (_, index) => ({
+      ...bar(60 * (index + 1), 100), high: 105, low: 95,
+    }))
+    state.rawBars = [...closed, bar(900, 180)]
+    state.setPriceData()
+    expect(state.renkoV4Run.snapshot()).toBeNull()
+    expect(state.chart.primaryBars()).toEqual([])
+
+    vi.setSystemTime(new Date(60 * 16 * 1000 + 500))
+    state.rawBars = [...closed, { ...bar(900, 100), high: 105, low: 95 }, bar(960, 180)]
+    state.setPriceData()
+    expect(state.renkoV4Run.snapshot()?.engine.box).toBe(10)
+    expect(state.chart.primaryBars()).toEqual([])
+  })
+
+  it('retains tick-confirmed bricks and an ATR seed after reload with revised history', () => {
+    const first = mount('oa-trading-v5-fixture', 'renko-v5')
+    first.state.rawBars = Array.from({ length: 18 }, (_, index) => ({
+      ...bar(60 * (index + 1), 100),
+      high: 105,
+      low: 95,
+    }))
+    first.state.setPriceData()
+    expect(first.state.chart.primaryBars()).toEqual([])
+    first.state.onTick({ ltp: 131, timeSec: 1090 })
+    const up = structuredClone(first.state.chart.primaryBars())
+    expect(up.map((brick) => brick.close)).toEqual([110, 120, 130])
+    first.state.onTick({ ltp: 104, timeSec: 1091 })
+    const reversed = structuredClone(first.state.chart.primaryBars())
+    expect(reversed.slice(0, up.length)).toEqual(up)
+    expect(reversed.map((brick) => brick.close)).toEqual([110, 120, 130, 110])
+    first.state.flushRenkoV4()
+    const keys = Object.keys(localStorage)
+    expect(keys.some((key) => key.includes('-renko-v5-cache:'))).toBe(true)
+    expect(keys.some((key) => key.includes('-renko-v4-cache:'))).toBe(false)
+
+    const reopened = mount('oa-trading-v5-fixture', 'renko-v5')
+    reopened.state.rawBars = first.state.rawBars.map((bar) => ({ ...bar, high: bar.high + 50 }))
+    reopened.state.setPriceData()
+    expect(reopened.state.chart.primaryBars()).toEqual(reversed)
+    reopened.state.onTick({ ltp: 99, timeSec: 1092 })
+    expect(reopened.state.chart.primaryBars().map((brick) => brick.close)).toEqual([
+      110, 120, 130, 110, 100,
+    ])
+  })
+})
 
 describe('Renko V4 terminal integration', () => {
   it('clears a prior instrument canvas after a commodity history refusal', () => {
