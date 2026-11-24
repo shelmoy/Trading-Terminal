@@ -283,6 +283,21 @@ describe('Renko V4 terminal integration', () => {
     expect(terminal.setInterval('D')).toBe('1m')
   })
 
+  it('starts with bricks only and can enable and disable the line without changing the bricks', async () => {
+    const { terminal, state } = mount()
+    const bricks = structuredClone(state.chart.primaryBars())
+    expect(bricks.length).toBeGreaterThan(0)
+    expect(state.chart.seriesStyle(state.renkoV4Trend)?.visible).toBe(false)
+
+    await terminal.applyChartSettings({ 'renkov4.showTrend': true })
+    expect(state.chart.seriesStyle(state.renkoV4Trend)?.visible).toBe(true)
+    expect(state.chart.primaryBars()).toEqual(bricks)
+
+    await terminal.applyChartSettings({ 'renkov4.showTrend': false })
+    expect(state.chart.seriesStyle(state.renkoV4Trend)?.visible).toBe(false)
+    expect(state.chart.primaryBars()).toEqual(bricks)
+  })
+
   it('exposes sizing, reversal and optional trend controls', () => {
     const request = {
       tabs: [{ id: 'price', label: 'Price', inputs: [] }],
@@ -290,7 +305,11 @@ describe('Renko V4 terminal integration', () => {
       defaults: {},
     }
     const settings = renkoV4SettingsView(request, 'renko-v4', {})
-    expect(settings.values['renkov4.showTrend']).toBe(true)
+    expect(settings.values['renkov4.showTrend']).toBe(false)
+    expect(settings.defaults['renkov4.showTrend']).toBe(false)
+    expect(renkoV4SettingsView(request, 'renko-v4', { 'renkov4.showTrend': true }).values[
+      'renkov4.showTrend'
+    ]).toBe(true)
     expect(settings.tabs[0].inputs[0].key).toBe('renkov4.showTrend')
     expect(renkoV4SettingsView(request, 'candlestick', {})).toBe(request)
   })

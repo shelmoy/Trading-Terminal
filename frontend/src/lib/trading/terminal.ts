@@ -2967,7 +2967,7 @@ export class TradingTerminal {
       this.renkoV4Trend = this.chart.addSeries('step', {
         paneIndex: 0,
         style: { color: '#26a69a', lineWidth: 2,
-          visible: this.chartSettingsSaved['renkov4.showTrend'] !== false },
+          visible: this.chartSettingsSaved['renkov4.showTrend'] === true },
         priceFormat: { type: 'custom', formatter: (p: number) => p.toFixed(dp) },
       })
     }

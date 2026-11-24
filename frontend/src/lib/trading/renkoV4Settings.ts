@@ -2,7 +2,7 @@ import type { ChartSettingsRequest } from './terminal'
 import type { RenkoV4Options } from './renkoV4Transform'
 import { intervalSeconds } from './intervals'
 
-export const RENKO_V4_DEFAULTS = { 'renkov4.showTrend': true } as const
+export const RENKO_V4_DEFAULTS = { 'renkov4.showTrend': false } as const
 
 /** Keep the historical seed consistent regardless of the previous candle view. */
 export function renkoV4HistoryInterval(intervals: readonly string[]): string | null {
@@ -44,7 +44,7 @@ export function renkoV4SettingsView(
           }
         : tab
     ),
-    values: { ...request.values, 'renkov4.showTrend': saved['renkov4.showTrend'] !== false },
+    values: { ...request.values, 'renkov4.showTrend': saved['renkov4.showTrend'] === true },
     defaults: { ...request.defaults, ...RENKO_V4_DEFAULTS },
   }
 }
