@@ -11,6 +11,7 @@ import { CHART_TYPES } from './chartTypes'
 import { renkoV4HistoryInterval, renkoV4Options, renkoV4SettingsView } from './renkoV4Settings'
 import { renkoV4RunKeys } from './renkoV4History'
 import type { RenkoV4Run } from './renkoV4Transform'
+import type { RenkoQuote } from './renkoV5Quote'
 import { type SymbolView, TradingTerminal } from './terminal'
 
 type State = {
@@ -27,6 +28,7 @@ type State = {
   renkoV4Trend: SeriesApi
   volumeOn: boolean
   transformChoices: Record<string, Record<string, Record<string, number>>>
+  readRenkoV5Quote(): RenkoQuote | null
   buildChart(): void
   setPriceData(): void
   onTick(event: { ltp: number; timeSec: number }): void
@@ -41,6 +43,7 @@ type State = {
 }
 
 const terminals: TradingTerminal[] = []
+const fillText = vi.fn()
 const bar = (time: number, close: number): Bar => ({
   time,
   open: 100,
@@ -52,6 +55,7 @@ const bar = (time: number, close: number): Bar => ({
 beforeEach(() => {
   vi.useFakeTimers()
   localStorage.clear()
+  fillText.mockClear()
   vi.stubGlobal(
     'WebSocket',
     class {
@@ -64,6 +68,7 @@ beforeEach(() => {
   )
   const context = new Proxy(
     {
+      fillText,
       measureText: (text: string) => ({ width: text.length * 7 }),
       createLinearGradient: () => ({ addColorStop() {} }),
       getImageData: () => ({ data: new Uint8ClampedArray([0, 0, 0, 255]) }),
@@ -126,6 +131,34 @@ function mount(
 }
 
 describe('Renko V5 terminal integration', () => {
+  it('shows live LTP and the minute countdown even when no new brick prints', async () => {
+    const { terminal, state } = mount('oa-trading-v5-quote', 'renko-v5')
+    const anchor = Date.parse('2026-11-25T04:30:00Z') / 1000
+    vi.setSystemTime(new Date((anchor + 13) * 1000))
+    state.rawBars = Array.from({ length: 18 }, (_, i) => ({
+      ...bar(anchor - (18 - i) * 60, i === 17 ? 120 : 100),
+      high: i === 17 ? 120 : 105,
+      low: 95,
+    }))
+    state.builder?.seed(state.rawBars.at(-1)!)
+    state.setPriceData()
+    const bricks = structuredClone(state.chart.primaryBars())
+    expect(bricks.at(-1)?.close).toBe(120)
+    state.onTick({ ltp: 123, timeSec: anchor + 13 })
+    expect(state.chart.primaryBars()).toEqual(bricks)
+    expect(state.readRenkoV5Quote()).toMatchObject({ price: 123, countdown: 47 })
+    expect(state.chart.seriesStyle(state.price)?.lastValueVisible).toBe(false)
+    await vi.advanceTimersByTimeAsync(100)
+    expect(fillText.mock.calls.some(([label, x]) => label === '123.00' && x > 700)).toBe(true)
+    expect(fillText.mock.calls.some(([label, x]) => label === '0:47' && x > 700)).toBe(true)
+    fillText.mockClear()
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(state.readRenkoV5Quote()?.countdown).toBe(45)
+    expect(fillText.mock.calls.some(([label, x]) => label === '0:45' && x > 700)).toBe(true)
+    await terminal.applyChartSettings({ 'symbol.lastValueVisible': false })
+    expect(state.readRenkoV5Quote()?.showLabel).toBe(false)
+  })
+
   it('prepends older candles as bricks, preserving the ATR size and saved live suffix', () => {
     const { state } = mount('oa-trading-v5-older', 'renko-v5')
     const history = Array.from({ length: 18 }, (_, index) => ({

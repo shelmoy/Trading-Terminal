@@ -140,6 +140,7 @@ import { parseRangeChoice, type RangeChoice, serializeRangeChoice } from './rang
 import { replayTiming } from './replayTiming'
 import {
   applySessionHours,
+  candleSessionAnchor,
   isTradingSessionOpenForCandles,
   isValidIntradaySessionBar,
   prepareSessionHours,
@@ -172,6 +173,7 @@ import { calculateRenkoV3BoxSize } from './renkoV3Transform'
 import { RenkoV4Run, withRenkoV4Run, type RenkoV4Options } from './renkoV4Transform'
 import { RENKO_V4_DEFAULTS, renkoV4HistoryInterval, renkoV4Options, renkoV4SettingsView } from './renkoV4Settings'
 import { isConfirmedRenko } from './renkoV5Transform'
+import { RenkoV5Quote } from './renkoV5Quote'
 import { restoreRenkoV4, saveRenkoV4 } from './renkoV4Persistence'
 import { confirmedRenkoV4History, renkoV4RunKeys } from './renkoV4History'
 
@@ -1311,6 +1313,7 @@ export class TradingTerminal {
   private renkoV4RunKey = ''
   private renkoCachePrefix = ''
   private renkoV4Trend: SeriesApi | null = null
+  private renkoV5Quote: RenkoV5Quote | null = null
   private renkoV4TrendCount = 0
   private renkoV4SaveTimer: ReturnType<typeof setTimeout> | null = null
   private renkoV4SavedCount = -1
@@ -2847,7 +2850,7 @@ export class TradingTerminal {
       // ago. A live trading terminal is the case they are for, so this host opts
       // in. The clock reads the exchange's wall time through the chart's
       // configured timezone, which is what a trader is actually watching.
-      axisChrome: { sessionClock: { showOffset: true }, barCountdown: !isConfirmedRenko(this.ctype) },
+      axisChrome: { sessionClock: { showOffset: true }, barCountdown: this.ctype === 'renko-v5' || !isConfirmedRenko(this.ctype) },
       // The library's built-in screenshot command calls its own
       // `downloadScreenshot()`, which knows nothing about this terminal's DOM
       // OHLC readout or its trade panel. Unbind it and claim the same chord for
@@ -2999,6 +3002,10 @@ export class TradingTerminal {
     // reason -- `restoreChartSettings` and the grid re-apply further down both
     // write to this chart, and an awaited snapshot would land after them.
     this.snapshotChartDefaults()
+    this.renkoV5Quote = this.ctype === 'renko-v5'
+      ? new RenkoV5Quote(() => this.readRenkoV5Quote())
+      : null
+    if (this.renkoV5Quote) this.chart.addPrimitive(this.renkoV5Quote, { anchor: 'primary-pane' })
     if (!this.preparingWorkspace) void this.restoreChartSettings()
     this.syncPriceAxis()
     // A theme or chart-type switch throws the old Chart away, so membership has
@@ -5238,7 +5245,10 @@ export class TradingTerminal {
             profileSettingsView(
               {
                 tabs,
-                values: { ...readChartSettings(chart) },
+                values: {
+                  ...readChartSettings(chart),
+                  ...(this.renkoV5Quote ? this.renkoV5QuoteSettings() : {}),
+                },
                 defaults: { ...this.chartDefaults },
               },
               this.ctype,
@@ -7031,6 +7041,7 @@ export class TradingTerminal {
     // The legend belongs to the bar on screen. During replay that is the
     // playhead's, written by onReplayChange, not the live one.
     if (!this.replayOwnsDisplay()) {
+      this.renkoV5Quote?.refresh()
       this.refreshLegend()
     }
   }
@@ -8345,10 +8356,43 @@ export class TradingTerminal {
     if (patch) await this.applyChartSettings(patch)
   }
 
+  private renkoV5QuoteSettings() {
+    return {
+      'symbol.priceLineVisible': this.chartSettingsSaved['symbol.priceLineVisible'] !== false,
+      'symbol.lastValueVisible': this.chartSettingsSaved['symbol.lastValueVisible'] !== false,
+    }
+  }
+
+  private readRenkoV5Quote() {
+    if (!this.sym || !this.chart || this.ctype !== 'renko-v5') return null
+    const replay = this.replayOwnsDisplay()
+    const candle = replay ? this.chart.primaryBars().at(-1) : this.rawBars.at(-1)
+    const price = replay ? candle?.close : this.lastLtp ?? candle?.close
+    if (price == null || !Number.isFinite(price)) return null
+    const settings = this.renkoV5QuoteSettings()
+    const now = nowSec()
+    const step = intervalSeconds(this.interval)
+    const countdown = !replay && this.chart.axisChromeOptions().barCountdown && step &&
+      isTradingSessionOpenForCandles(this.sym.exchange, now, now)
+      ? step - ((now - candleSessionAnchor(this.sym.exchange, now)) % step + step) % step
+      : null
+    return {
+      price,
+      rising: price >= (candle?.open ?? price),
+      countdown,
+      showLine: settings['symbol.priceLineVisible'],
+      showLabel: settings['symbol.lastValueVisible'],
+    }
+  }
+
   /** Bring the price scale's levels and side in line with the saved settings. */
   private syncPriceAxis(): void {
     const chart = this.chart
     if (!chart || this.destroyed) return
+    if (this.renkoV5Quote && this.price) {
+      this.price.applyOptions({ priceLineVisible: false, lastValueVisible: false })
+      this.renkoV5Quote.refresh()
+    }
     this.priceAxis.sync(chart, this.chartSettingsSaved)
     // The OHLC readout sits over the plot's top-left corner, so a scale moved
     // to the left would print it over the axis. It moves right by the axis
@@ -8876,6 +8920,7 @@ export class TradingTerminal {
     this.chart = null
     this.renkoV4Run = null
     this.renkoV4Trend = null
+    this.renkoV5Quote = null
     this.ws = null
     this.screenshotExcluded.length = 0
     if (comparisonFailed) throw comparisonError
