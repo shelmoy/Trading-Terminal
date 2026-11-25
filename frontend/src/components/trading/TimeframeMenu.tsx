@@ -102,8 +102,10 @@ export function TimeframeMenu({
   const [, refresh] = useState(0)
   useEffect(() => preferences.subscribe(() => refresh((value) => value + 1)), [preferences])
   ensureCalendarIntervals()
-  const favorites = preferences.favorites(),
-    custom = preferences.custom()
+  // Keep saved choices for other brokers, but hide unavailable seconds here.
+  const showCode = (code: string) => !/^\d+s$/i.test(code) || canSelectInterval(code)
+  const favorites = preferences.favorites().filter(showCode),
+    custom = preferences.custom().filter(showCode)
   const favoriteKeys = new Set(favorites.map(identity)),
     customKeys = new Set(custom.map(identity))
   const codes = unique([

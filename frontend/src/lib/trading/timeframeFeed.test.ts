@@ -1,5 +1,6 @@
 import { type BarsRequest, CandleBuilder, SessionCalendar } from 'openalgo-charts'
 import { describe, expect, it, vi } from 'vitest'
+import { intervalGroups, pickInterval } from './intervals'
 import { createTradingTimeframes } from './timeframeFeed'
 
 const start = Date.parse('2026-10-01T03:45:00Z') / 1000
@@ -20,6 +21,17 @@ const options = (nativeIntervals = ['1m', '5m', 'D']) => ({
 })
 
 describe('broker custom timeframes', () => {
+  it('offers only broker-advertised seconds and falls back from a removed saved interval', () => {
+    const minuteOnly = intervalGroups({ minutes: ['1m', '5m'] })
+    expect(minuteOnly).toEqual([{ label: 'minutes', items: ['1m', '5m'] }])
+    expect(pickInterval(minuteOnly, '20s')).toBe('5m')
+    const native = ['5s', '10s', '15s', '30s', '45s']
+    expect(intervalGroups({ seconds: native, minutes: ['1m'] })[0]).toEqual({
+      label: 'seconds',
+      items: native,
+    })
+  })
+
   it('uses the source exchange timezone for a complete UTC month', async () => {
     const from = Date.parse('2026-10-01T00:00:00Z') / 1000
     const daily = Array.from({ length: 31 }, (_, i) => ({

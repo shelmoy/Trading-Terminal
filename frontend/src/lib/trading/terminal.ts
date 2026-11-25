@@ -138,10 +138,8 @@ import {
 } from './priceAxis'
 import { parseRangeChoice, type RangeChoice, serializeRangeChoice } from './rangeChoice'
 import { replayTiming } from './replayTiming'
-import { loadSecondsHistory, rememberSecondsBar, rememberSecondsTick } from './secondsHistory'
 import {
   applySessionHours,
-  candleSessionAnchor,
   isTradingSessionOpenForCandles,
   isValidIntradaySessionBar,
   prepareSessionHours,
@@ -157,7 +155,6 @@ import {
   parseTerminalWorkspacePane,
   validateWorkspacePaneSupport,
 } from './workspaceState'
-import { normalizeCustomInterval, STANDARD_SECOND_INTERVALS } from './intervals'
 import {
   RENKO_V2_DEFAULTS,
   renkoV2SettingsView,
@@ -1482,13 +1479,7 @@ export class TradingTerminal {
   /** The refusal last said for each study, so a rebuild does not say it again. */
   private readonly reportedRefusals = new Map<string, string>()
   private profileLayer: ProfileLayer | null = null
-  private availableIntervals: string[] = [...STANDARD_SECOND_INTERVALS, '1m', '5m', '15m', '1h', 'D']
-  private nativeSecondIntervals = new Set<string>()
-  private waitingForSecondsTicks = false
-
-  private secondsKey(symbol: string, exchange: string, interval: string): string {
-    return `${this.apiKey}:${symbol.toUpperCase()}:${exchange.toUpperCase()}:${interval}`
-  }
+  private availableIntervals: string[] = ['1m', '5m', '15m', '1h', 'D']
   /** The bottom bar's preset range for this pane, kept while its interval holds. */
   private rangeChoice: RangeChoice | null = null
   /** The load in flight, or the last one: what `showInterval` waits on. */
@@ -2088,10 +2079,6 @@ export class TradingTerminal {
         isValidIntradaySessionBar(sym.exchange, this.interval, b.time)
     )
     if (!next.length) return
-    if (this.waitingForSecondsTicks) {
-      this.waitingForSecondsTicks = false
-      this.cb.onChartState?.(CHART_READY)
-    }
     const chart = this.chart
     const before = snapshot.reason === 'prepend' ? chart?.getVisibleLogicalRange() : null
     const countBefore = this.shownCount
@@ -6143,10 +6130,6 @@ export class TradingTerminal {
     const found = tryResolveInterval(this.interval)
     const step = found?.bucketing.mode === 'interval' ? found.bucketing.seconds : 0
     const now = nowSec()
-    if (step > 0 && this.interval.endsWith('s')) {
-      const anchor = candleSessionAnchor(this.sym?.exchange || '', now)
-      return anchor + Math.floor((now - anchor) / step) * step
-    }
     return step > 0 ? Math.floor(now / step) * step : now
   }
 
@@ -7001,9 +6984,6 @@ export class TradingTerminal {
     if (this.tradeBtns && !this.depthActive) this.tradeBtns.setMark(e.ltp)
     const tickTimeSec = e.timeSec || nowSec()
     const sessionOpen = isTradingSessionOpenForCandles(this.sym.exchange, tickTimeSec, nowSec())
-    if (sessionOpen && !this.sym.synthetic) {
-      rememberSecondsTick(this.secondsKey(this.sym.symbol, this.sym.exchange, '1s'), tickTimeSec, e.ltp)
-    }
     if (this.builder && sessionOpen) {
       let u
       try {
@@ -7013,13 +6993,6 @@ export class TradingTerminal {
       }
       if (u) {
         this.liveBucket = u.bar.time
-        if (this.waitingForSecondsTicks) {
-          this.waitingForSecondsTicks = false
-          this.cb.onChartState?.(CHART_READY)
-        }
-        if (this.interval.endsWith('s')) {
-          rememberSecondsBar(this.secondsKey(this.sym.symbol, this.sym.exchange, this.interval), u.bar)
-        }
         // Key the upsert on time rather than the builder's isNew flag, so a
         // builder that ever disagrees with rawBars about the current bucket
         // overwrites that bar instead of appending a duplicate of it.
@@ -7074,9 +7047,7 @@ export class TradingTerminal {
     // Broker history is already aligned to the instrument's actual session.
     // Using one known bar as the congruent anchor preserves openings such as
     // 09:15 for hourly candles instead of snapping them to the Unix epoch.
-    const sessionAnchorSec = this.interval.endsWith('s')
-      ? candleSessionAnchor(this.sym?.exchange || '', nowSec())
-      : (this.rawBars[this.rawBars.length - 1]?.time ?? 0)
+    const sessionAnchorSec = this.rawBars[this.rawBars.length - 1]?.time ?? 0
     this.builder = sec
       ? new CandleBuilder({
           intervalSec: sec,
@@ -7509,7 +7480,6 @@ export class TradingTerminal {
     const ticket = ++this.loadTicket
     this.lastPick = pick
     this.loadOutcome = null
-    this.waitingForSecondsTicks = false
     // The UI gate suppresses short flashes. Hosts still need the loading event
     // for warm selections so auxiliary fetches cannot jump ahead of candles.
     this.cb.onChartState?.({ kind: 'loading', symbol: pick.symbol, interval: this.interval })
@@ -7535,17 +7505,7 @@ export class TradingTerminal {
         this.syncAlertPause()
         this.showTradeButtons(loaded)
         // A silent load that fails says nothing: its caller falls back.
-        this.waitingForSecondsTicks = loaded && this.interval.endsWith('s') && this.rawBars.length === 0
-        this.cb.onChartState?.(
-          this.waitingForSecondsTicks
-            ? {
-                kind: 'waiting', symbol: pick.symbol, interval: this.interval,
-                message: !isTradingSessionOpenForCandles(pick.exchange || '', nowSec(), nowSec())
-                  ? 'The broker provides minute history, and no saved seconds candles exist for this range. Recorded ticks will be available here after future sessions. You can view the available 1-minute history now.'
-                  : undefined,
-              }
-            : loaded ? CHART_READY : (this.loadOutcome ?? CHART_READY)
-        )
+        this.cb.onChartState?.(loaded ? CHART_READY : (this.loadOutcome ?? CHART_READY))
         if (loaded && !this.preparingWorkspace) {
           // Autosave needs restored drawings and studies, even though candles
           // and order controls can be ready before those modules finish.
@@ -7646,11 +7606,7 @@ export class TradingTerminal {
     // History and symbol metadata are independent. Start the slower broker
     // request immediately instead of adding a metadata round-trip in front.
     this.builder = null
-    const historyStep = intervalSeconds(this.interval)
-    const anchor = this.interval.endsWith('s') ? candleSessionAnchor(pick.exchange || '', nowSec()) : 0
-    const historyTo = this.interval.endsWith('s') && historyStep
-      ? anchor + Math.floor((nowSec() - anchor) / historyStep) * historyStep
-      : this.gridNow()
+    const historyTo = this.gridNow()
     const initialRequest = {
       symbol: pick.symbol, exchange: pick.exchange, interval: this.interval,
       from: historyTo - lookbackDays(this.interval) * 86400, to: historyTo,
@@ -7772,7 +7728,7 @@ export class TradingTerminal {
         ...(isConfirmedRenko(this.ctype) ? { noCache: true } : {}),
       }
       const memKey = `${this.sym.symbol.toUpperCase()}:${(this.sym.exchange || '').toUpperCase()}:${this.interval}`
-      const warmEntry = this.interval.endsWith('s') ? undefined : globalBarMemoryCache.get(memKey)
+      const warmEntry = globalBarMemoryCache.get(memKey)
       let consumedEarlyHistory = false
       const loadFn = async (): Promise<readonly Bar[]> => {
         if (!consumedEarlyHistory && request.symbol === initialRequest.symbol &&
@@ -7793,7 +7749,6 @@ export class TradingTerminal {
         bars = await loadFn()
       } catch (firstErr) {
         if (this.destroyed || ticket !== this.loadTicket) return false
-        if (this.interval.endsWith('s')) throw firstErr
         await new Promise((r) => setTimeout(r, 350))
         if (this.destroyed || ticket !== this.loadTicket) return false
         bars = await loadFn().catch(() => {
@@ -7806,13 +7761,10 @@ export class TradingTerminal {
       }
     } catch (e) {
       if (this.destroyed || ticket !== this.loadTicket) return false
-      bars = []
-      if (!bars?.length && !this.interval.endsWith('s')) {
-        this.rawBars = []
-        if (!opts.silent)
-          this.loadOutcome = chartLoadFailed(this.sym.symbol, this.interval, this.cleanError(e))
-        return false // caller may fall back (e.g. to the default symbol)
-      }
+      this.rawBars = []
+      if (!opts.silent)
+        this.loadOutcome = chartLoadFailed(this.sym.symbol, this.interval, this.cleanError(e))
+      return false // caller may fall back (e.g. to the default symbol)
     }
     // Validate before assigning: an older response must neither overwrite the
     // active session nor recreate a chart after its terminal was destroyed.
@@ -7829,9 +7781,7 @@ export class TradingTerminal {
         b.open > 0 &&
         isValidIntradaySessionBar(symExchange, symInterval, b.time)
     )
-    // An empty seconds history is expected on brokers with minute-only history.
-    // Keep the controller on the selected interval and start its live builder.
-    if (!this.rawBars.length && !this.interval.endsWith('s')) {
+    if (!this.rawBars.length) {
       if (!opts.silent) {
         const error = this.data?.getState().error
         this.loadOutcome = error
@@ -7868,6 +7818,7 @@ export class TradingTerminal {
   /* ── toolbar setters (called by the React page) ───────────────────────── */
   /** Native choices work without a calendar; custom choices require compatible source metadata. */
   supportsInterval(code: string, exchange = this.sym?.exchange ?? 'NSE'): boolean {
+    if (/^\d+s$/i.test(code)) return this.availableIntervals.includes(code.toLowerCase())
     return (
       this.timeframes?.supports(code, { symbol: this.sym?.symbol ?? '', exchange }) ??
       this.availableIntervals.includes(code)
@@ -7875,20 +7826,18 @@ export class TradingTerminal {
   }
 
   setInterval(iv: string): string {
-    const norm = normalizeCustomInterval(iv) || iv
-    if (norm === this.interval) return norm
+    if (iv === this.interval) return iv
     if (isConfirmedRenko(this.ctype)) {
       const seed = renkoV4HistoryInterval(this.availableIntervals)
-      if (norm !== seed) {
+      if (iv !== seed) {
         this.toast(`${CHART_TYPES[this.ctype].label} forms on price movement. ${seed ?? this.interval} is only its historical seed interval; change brick size in Chart settings.`, '')
         return this.interval
       }
     }
-    if (!this.supportsInterval(norm)) {
+    if (!this.supportsInterval(iv)) {
       this.toast(`The connected feed does not support ${iv}`, 'err')
       return this.interval
     }
-    iv = norm
     if (
       isProfileKind(this.ctype) &&
       !profileIntervalSupported(this.ctype, iv, this.profileBlockMinutes())
@@ -7910,17 +7859,6 @@ export class TradingTerminal {
     if (this.link && this.chart) this.link.setInterval(this.chart, iv)
     if (this.sym) this.reloadCurrent()
     return iv
-  }
-  addCustomInterval(iv: string): string {
-    const norm = normalizeCustomInterval(iv)
-    if (!norm) {
-      this.toast(`Invalid interval format: ${iv}`, 'err')
-      return this.interval
-    }
-    if (!this.availableIntervals.includes(norm)) {
-      this.availableIntervals.push(norm)
-    }
-    return this.setInterval(norm)
   }
   setChartType(v: string): string {
     if (!CHART_TYPES[v]) return this.ctype
@@ -8620,7 +8558,7 @@ export class TradingTerminal {
     const origCachedBars = baseCachedBars.getCachedBars.bind(baseCachedBars)
     baseCachedBars.getCachedBars = async (request): Promise<Bar[] | undefined> => {
       if (isConfirmedRenko(this.ctype)) return undefined
-      if (!request.noCache && !request.interval.endsWith('s') &&
+      if (!request.noCache &&
           (request.to ?? 0) >= nowSec() - 3600 && (request.to ?? 0) - (request.from ?? 0) >= 3600) {
         const key = `${request.symbol.toUpperCase()}:${(request.exchange || '').toUpperCase()}:${request.interval}`
         const hit = globalBarMemoryCache.get(key)
@@ -8636,20 +8574,6 @@ export class TradingTerminal {
     baseCachedBars.getBars = async (request): Promise<Bar[]> => {
       const reqFrom = request.from ?? 0
       const reqTo = request.to ?? 0
-      if (request.interval.endsWith('s')) {
-        const key = this.secondsKey(request.symbol, request.exchange || '', request.interval)
-        const supportsNative = this.nativeSecondIntervals.has(request.interval)
-        const [observed, native] = await Promise.all([
-          loadSecondsHistory(key, request.exchange || '', intervalSeconds(request.interval)!, reqFrom, reqTo),
-          supportsNative ? origGetBars(request) : Promise.resolve([] as Bar[]),
-        ])
-        // Standard seconds are offered by the UI even when broker history has
-        // none. Do not send unsupported REST requests or use old minute seeds.
-        if (!supportsNative) return observed
-        const merged = new Map(native.map((bar) => [bar.time, bar]))
-        for (const bar of observed) merged.set(bar.time, bar)
-        return [...merged.values()].sort((a, b) => a.time - b.time)
-      }
       const isWideWindow = reqTo - reqFrom >= 3600 && reqTo >= nowSec() - 3600
       const isInitialWindow = !request.noCache && isWideWindow
       const memKey = `${request.symbol.toUpperCase()}:${(request.exchange || '').toUpperCase()}:${request.interval}`
@@ -8689,7 +8613,6 @@ export class TradingTerminal {
     let capabilitiesKnown = true
     try {
       const j = await this.api<{ data?: IntervalData }>('intervals')
-      this.nativeSecondIntervals = new Set(j.data?.seconds || [])
       groups = intervalGroups(j.data || {})
     } catch (error) {
       if (this.initialWorkspacePane) throw error
@@ -8739,7 +8662,10 @@ export class TradingTerminal {
     this.onVisibilityChange()
 
     if (this.initialWorkspacePane) {
-      const pane = this.initialWorkspacePane
+      const saved = this.initialWorkspacePane
+      const pane = /^\d+s$/i.test(saved.interval) && !this.supportsInterval(saved.interval, saved.exchange)
+        ? { ...saved, interval: pickInterval(groups, saved.interval) }
+        : saved
       // Only what this pane holds: the validation below reads the registry for
       // the pane's own studies, and the rest of the catalogue follows once the
       // chart is up.

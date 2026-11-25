@@ -91,7 +91,7 @@ function IndicatorIcon({ className }: { className?: string }) {
   )
 }
 
-import { normalizeCustomInterval, type IntervalGroup } from '@/lib/trading/intervals'
+import type { IntervalGroup } from '@/lib/trading/intervals'
 import { lotInfoText } from '@/lib/trading/legend'
 import { isProfileKind } from '@/lib/trading/profileSettings'
 import {
@@ -768,31 +768,7 @@ export function ChartPane({
   // The toolbar's switches are undo steps; the terminal records them.
   const changeInterval = (iv: string) => {
     onBeforeSourceChange?.()
-    const terminal = terminalRef.current
-    const next = terminal ? terminal.addCustomInterval(iv) : iv
-    setIntervalState(next)
-    // If it was a custom interval, ensure it appears in the appropriate group
-    const norm = normalizeCustomInterval(iv)
-    if (norm) {
-      setIntervalGroups((prev) => {
-        const isSeconds = norm.endsWith('s')
-        const targetLabel = isSeconds ? 'seconds' : norm.endsWith('m') ? 'minutes' : norm.endsWith('h') ? 'hours' : 'days'
-        const exists = prev.some((g) => g.items.includes(norm))
-        if (exists) return prev
-        return prev.map((g) => {
-          if (g.label === targetLabel) {
-            const arr = Array.from(new Set([...g.items, norm]))
-            arr.sort((a, b) => {
-              const numA = parseInt(a, 10) || 0
-              const numB = parseInt(b, 10) || 0
-              return numA - numB
-            })
-            return { ...g, items: arr }
-          }
-          return g
-        })
-      })
-    }
+    setIntervalState(terminalRef.current?.chooseInterval(iv) ?? iv)
   }
   const changeChartType = (v: string) => {
     onBeforeSourceChange?.()
