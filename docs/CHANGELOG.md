@@ -42,6 +42,19 @@ fix, live in [docs/releases](releases/).
 - `/sandbox/mypnl` shows today's and lifetime charges and the net figures, and a
   charges column on the day-wise and trade tables. The day-wise and trades CSV
   exports gain charges columns at the end.
+- **Pivot Points Standard on every chart.** `/trading`, Historify and the
+  strategy charts now use openalgo-charts 2.7.4 (from 2.7.3), which adds one
+  study and takes the built-in indicators to 113. It draws the pivot with up
+  to five support and resistance pairs, worked out from the last finished
+  period. Choose the type (Traditional, Fibonacci, Woodie, Classic, DeMark or
+  Camarilla) and the period: daily, weekly, monthly, quarterly, yearly, or
+  Auto, which takes the previous session on a chart of 15 minutes or less,
+  the previous week on other intraday charts, the previous month on a daily
+  chart and the previous year above that. The fourth and fifth pairs are
+  switched off to begin with, because they sit far from price. The levels
+  come from finished periods only, so they do not move during the session,
+  and nothing is drawn until the chart has loaded two full periods. The AI
+  agent can add the study to a chart as well.
 
 ### Upgrade notes
 
@@ -71,6 +84,35 @@ fix, live in [docs/releases](releases/).
 
 ### Changed
 
+- The timezone list on `/trading`, in the clock menu on the bottom bar and in
+  Chart settings, grows from 14 zones to 30. Every zone listed before is still
+  there, and the clock menu still finds any other zone by name.
+- A custom chart indicator in `strategies/indicators/` whose id is
+  `pivot-points` now replaces the new built-in study on every chart, as any
+  custom id that matches a built-in does. Rename its id if that is not what
+  you want.
+- Not part of this update: openalgo-charts 2.7.4 also adds, to its own
+  packaged menus and toolbar, moving a study to another pane from its
+  right-click menu, a full screen button and a switch between regular and
+  extended hours. OpenAlgo's charts draw their own menus and toolbar, so
+  these do not appear. Full screen is already on the `/trading` toolbar, no
+  broker feed here serves extended hours as a separate series, and moving a
+  study between panes from the menu is not available yet.
+- The watchlist on `/trading` now opens on four columns: Symbol, Last, Chg and
+  Chg%. Chg is the move from the previous close in price. It was an optional
+  column before, switched off, and easy to miss. A browser that still has the
+  earlier two columns gets Chg added once; a selection you made yourself is
+  left as it was. To hide it, open **Customise columns** (the three dots at
+  the top of the watchlist); that choice is remembered. (#2276)
+- Watchlist prices and moves are shown to the paisa at every size. A price
+  above a thousand used to lose a decimal, so 25,349.65 read 25,349.7 and a
+  move of -2,049.85 read -2,049.8. Currency contracts on CDS and BCD are shown
+  to four decimals. Not changed: an instrument quoted finer than two decimals
+  on any other exchange (some crypto contracts) is still shown to two, so its
+  Chg can read 0.00 while its Chg% shows the move.
+- The watchlist opens a little wider (392 px, it was 340) to hold the extra
+  column, and its narrowest width with the four columns is 342 px. A width you
+  have already dragged it to is kept, unless it is below that.
 - The pinned OpenAlgo Python SDK moves from 2.3.0 to 2.4.1. A Python strategy
   can now run several strategies on one account, in a backtest or a live
   session, including two on one symbol. It also adds optional daily limits
@@ -109,6 +151,15 @@ fix, live in [docs/releases](releases/).
 
 ### Fixed
 
+- An instrument sitting on its previous close is no longer shown as a gain in
+  the `/trading` watchlist. It read `+0.00%` in green. It now reads `0.00` and
+  `0.00%` with no sign and no colour.
+- Adding a column to the watchlist no longer cuts an instrument's name short
+  beside a whole exchange tag (NIFTY read "NI..." next to NSE_INDEX). The name
+  now gets the room first and the exchange shows where both fit. Hold the
+  pointer over a row for the full name and exchange.
+- On a watchlist long enough to scroll, each column label now sits over its
+  figures. The labels were offset to the right by the width of the scrollbar.
 - A crypto contract looked up before the symbol cache had loaded was valued at
   1000 times its worth, because that lookup dropped the contract multiplier.
   Sandbox P&L for such a contract was wrong by the same factor. The multiplier
