@@ -28,6 +28,8 @@ type State = {
   renkoV4Trend: SeriesApi
   volumeOn: boolean
   transformChoices: Record<string, Record<string, Record<string, number>>>
+  api(endpoint: string, body: object): Promise<unknown>
+  acceptKotakRenkoTick(tick: { symbol: string; exchange: string; ltp: number; timeSec: number }): void
   readRenkoV5Quote(): RenkoQuote | null
   buildChart(): void
   setPriceData(): void
@@ -91,11 +93,13 @@ afterEach(() => {
 function mount(
   storageKey = 'oa-trading',
   chartType = 'renko-v4',
-  initialBars = [bar(960, 100), bar(1020, 120)]
+  initialBars = [bar(960, 100), bar(1020, 120)],
+  broker?: string
 ) {
   const container = document.createElement('div')
   const terminal = new TradingTerminal({
     apiKey: 'test',
+    broker,
     wsUrl: 'ws://test.invalid',
     container,
     legendEl: document.createElement('div'),
@@ -106,8 +110,8 @@ function mount(
   terminals.push(terminal)
   const state = terminal as unknown as State
   state.sym = {
-    symbol: 'WORLD_INDEX',
-    exchange: 'GLOBAL_INDEX',
+    symbol: broker ? 'SENSEX' : 'WORLD_INDEX',
+    exchange: broker ? 'BSE_INDEX' : 'GLOBAL_INDEX',
     name: 'World Index',
     lotsize: 1,
     lots: false,
@@ -131,6 +135,47 @@ function mount(
 }
 
 describe('Renko V5 terminal integration', () => {
+  it('keeps Kotak snapshots out of bricks and waits for missing minutes before resuming live', async () => {
+    const minute = Date.parse('2026-11-27T04:39:00Z') / 1000
+    vi.setSystemTime(new Date((minute + 12) * 1000))
+    const history = Array.from({ length: 18 }, (_, i) =>
+      bar(minute - (20 - i) * 60, i === 17 ? 120 : 100)
+    )
+    const { state } = mount('oa-kotak-v5-index', 'renko-v5', history, 'kotak')
+    const savedBricks = structuredClone(state.chart.primaryBars())
+    expect(savedBricks.length).toBeGreaterThan(0)
+    const quote = vi.spyOn(state, 'api').mockResolvedValue({ data: { ltp: 300 } })
+    await vi.advanceTimersByTimeAsync(4001)
+    expect(quote).toHaveBeenCalledWith('quotes', { symbol: 'SENSEX', exchange: 'BSE_INDEX' })
+    expect(state.readRenkoV5Quote()).toMatchObject({ price: 300, countdown: 44 })
+    expect(state.chart.primaryBars()).toEqual(savedBricks)
+
+    const tick = { symbol: 'SENSEX', exchange: 'BSE_INDEX', ltp: 190, timeSec: minute + 16 }
+    state.acceptKotakRenkoTick(tick)
+    expect(state.readRenkoV5Quote()).toMatchObject({ price: 190, rising: false })
+    expect(state.chart.primaryBars()).toEqual(savedBricks)
+    state.acceptKotakRenkoTick({ ...tick, ltp: 400, timeSec: minute + 15 })
+    expect(state.readRenkoV5Quote()?.price).toBe(190)
+
+    state.rawBars = [...state.rawBars, bar(minute - 120, 130), bar(minute - 60, 140)]
+    state.setPriceData()
+    const repaired = structuredClone(state.chart.primaryBars())
+    expect(repaired.length).toBeGreaterThan(savedBricks.length)
+    expect(repaired.slice(0, savedBricks.length)).toEqual(savedBricks)
+    state.acceptKotakRenkoTick(tick)
+    expect(state.chart.primaryBars().length).toBeGreaterThan(repaired.length)
+    expect(state.readRenkoV5Quote()?.price).toBe(190)
+  })
+
+  it('does not start the Kotak quote poll on an FYERS index', async () => {
+    const minute = Date.parse('2026-11-27T04:39:00Z') / 1000
+    vi.setSystemTime(new Date((minute + 12) * 1000))
+    const { state } = mount('oa-fyers-v5-index', 'renko-v5', [bar(minute - 60, 100)], 'fyers')
+    const quote = vi.spyOn(state, 'api')
+    await vi.advanceTimersByTimeAsync(4001)
+    expect(quote).not.toHaveBeenCalled()
+  })
+
   it('shows live LTP and the minute countdown even when no new brick prints', async () => {
     const { terminal, state } = mount('oa-trading-v5-quote', 'renko-v5')
     const anchor = Date.parse('2026-11-25T04:30:00Z') / 1000
