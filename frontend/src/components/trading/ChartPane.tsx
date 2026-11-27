@@ -668,6 +668,7 @@ export function ChartPane({
           // Only the messaging channels of an alert need it, and an empty name
           // is a terminal that works with those two refused by the server.
           username: useAuthStore.getState().user?.username ?? '',
+          broker: useAuthStore.getState().user?.broker,
           wsUrl,
           container: chartRef.current,
           legendEl: legendRef.current,

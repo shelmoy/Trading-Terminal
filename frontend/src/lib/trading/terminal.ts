@@ -1069,6 +1069,7 @@ export interface TerminalOptions {
    * rather than delivered to somebody else.
    */
   username?: string
+  broker?: string | null
   wsUrl: string
   container: HTMLElement
   legendEl: HTMLElement
@@ -1284,6 +1285,7 @@ export class TradingTerminal {
   private historyFailed = false
   private readonly apiKey: string
   private readonly wsUrl: string
+  private readonly broker: string | null
   private readonly container: HTMLElement
   private readonly legendEl: HTMLElement
   private readonly getTheme: () => { mode: ThemeMode; appMode: AppMode }
@@ -1314,6 +1316,9 @@ export class TradingTerminal {
   private renkoCachePrefix = ''
   private renkoV4Trend: SeriesApi | null = null
   private renkoV5Quote: RenkoV5Quote | null = null
+  private kotakRenkoQuoteTimer: ReturnType<typeof setInterval> | null = null
+  private kotakRenkoLastTick = -Infinity
+  private kotakRenkoMark: { price: number; rising: boolean } | null = null
   private renkoV4TrendCount = 0
   private renkoV4SaveTimer: ReturnType<typeof setTimeout> | null = null
   private renkoV4SavedCount = -1
@@ -1752,6 +1757,7 @@ export class TradingTerminal {
     this.preparingWorkspace = initial !== null
     this.apiKey = opts.apiKey
     this.username = opts.username ?? ''
+    this.broker = opts.broker?.toLowerCase() ?? null
     this.wsUrl = opts.wsUrl
     this.container = opts.container
     this.bindDeleteKey()
@@ -3006,6 +3012,7 @@ export class TradingTerminal {
       ? new RenkoV5Quote(() => this.readRenkoV5Quote())
       : null
     if (this.renkoV5Quote) this.chart.addPrimitive(this.renkoV5Quote, { anchor: 'primary-pane' })
+    this.syncKotakRenkoQuotePoll()
     if (!this.preparingWorkspace) void this.restoreChartSettings()
     this.syncPriceAxis()
     // A theme or chart-type switch throws the old Chart away, so membership has
@@ -3378,7 +3385,10 @@ export class TradingTerminal {
           fallbackKey: undefined,
         }
       : renkoV4RunKeys(this.sk, this.transformChoiceKey(), transform)
-    const prefix = `${this.sk}-${transform.type}-cache:`
+    // Rebuild this scope once from confirmed history, retaining the old cache.
+    const prefix = this.usesKotakRenkoIndex()
+      ? `${this.sk}-${transform.type}-index-feed-v1-cache:`
+      : `${this.sk}-${transform.type}-cache:`
     if (!this.renkoV4Run || this.renkoV4RunKey !== runKey || this.renkoCachePrefix !== prefix) {
       this.flushRenkoV4()
       this.renkoV4Run = new RenkoV4Run(transform.options as RenkoV4Options, seedSeconds)
@@ -6916,11 +6926,100 @@ export class TradingTerminal {
     this.replay?.seek(index)
   }
 
+  private usesKotakRenkoIndex(): boolean {
+    return this.broker === 'kotak' && this.ctype === 'renko-v5' &&
+      Boolean(this.sym?.quoteOnly && this.sym.exchange.endsWith('_INDEX'))
+  }
+
+  private publishKotakRenkoMark(price: number): void {
+    const previous = this.kotakRenkoMark?.price ?? this.lastLtp ?? price
+    this.kotakRenkoMark = {
+      price,
+      rising: price === previous ? this.kotakRenkoMark?.rising ?? true : price > previous,
+    }
+    if (!this.replayOwnsDisplay()) this.renkoV5Quote?.refresh()
+  }
+
+  private stopKotakRenkoQuotePoll(): void {
+    if (this.kotakRenkoQuoteTimer !== null) clearInterval(this.kotakRenkoQuoteTimer)
+    this.kotakRenkoQuoteTimer = null
+    this.kotakRenkoLastTick = -Infinity
+    this.kotakRenkoMark = null
+  }
+
+  private syncKotakRenkoQuotePoll(): void {
+    if (!this.usesKotakRenkoIndex()) {
+      this.stopKotakRenkoQuotePoll()
+      return
+    }
+    if (this.kotakRenkoQuoteTimer !== null) return
+    let pending = false
+    const timer = setInterval(async () => {
+      const sym = this.sym
+      const now = nowSec()
+      if (pending || this.destroyed || !sym || !this.usesKotakRenkoIndex() ||
+          this.replayOwnsDisplay() || document.hidden ||
+          !isTradingSessionOpenForCandles(sym.exchange, now, now) ||
+          now - this.kotakRenkoLastTick < 8) return
+      const ticket = this.loadTicket
+      const tickTime = this.kotakRenkoLastTick
+      pending = true
+      try {
+        const { data } = await this.api<{ data?: { ltp?: number } }>('quotes', {
+          symbol: sym.symbol,
+          exchange: sym.exchange,
+        })
+        const price = data?.ltp
+        if (this.kotakRenkoQuoteTimer === timer && !this.destroyed && this.sym === sym &&
+            ticket === this.loadTicket && tickTime === this.kotakRenkoLastTick &&
+            nowSec() - this.kotakRenkoLastTick >= 8 &&
+            this.usesKotakRenkoIndex() && !this.replayOwnsDisplay() &&
+            typeof price === 'number' && Number.isFinite(price) && price > 0 && price < 10000000) {
+          // A spot snapshot updates the quote. History supplies missing minutes.
+          this.publishKotakRenkoMark(price)
+        }
+      } catch {
+        // The next interval will retry the read.
+      } finally {
+        pending = false
+      }
+    }, 4000)
+    this.kotakRenkoQuoteTimer = timer
+  }
+
+  private acceptKotakRenkoTick(tick: LtpEvent): void {
+    const sym = this.sym
+    const now = nowSec()
+    if (!sym || sym.symbol !== tick.symbol || sym.exchange !== tick.exchange ||
+        !Number.isFinite(tick.ltp) || tick.ltp <= 0 || tick.ltp >= 10000000 ||
+        !Number.isFinite(tick.timeSec) || tick.timeSec < this.kotakRenkoLastTick ||
+        now - tick.timeSec >= 8 || tick.timeSec > now ||
+        !isTradingSessionOpenForCandles(sym.exchange, tick.timeSec, now)) return
+    const last = this.rawBars.at(-1)
+    if (last && tick.timeSec < last.time) return
+    this.kotakRenkoLastTick = tick.timeSec
+    this.cb.onWsState('live')
+    const step = intervalSeconds(this.interval)
+    const anchor = candleSessionAnchor(sym.exchange, tick.timeSec)
+    const bucket = step ? anchor + Math.floor((tick.timeSec - anchor) / step) * step : null
+    const prior = last?.time === bucket ? this.rawBars.at(-2) : last
+    if (!last || (step && bucket !== null && bucket > anchor && prior?.time !== bucket - step)) {
+      // Wait for missed source candles before advancing immutable bricks.
+      this.publishKotakRenkoMark(tick.ltp)
+      return
+    }
+    this.kotakRenkoMark = null
+    if (this.builder && (this.builder.current()?.time ?? -Infinity) < last.time)
+      this.builder.seed(last)
+    this.onTick(tick)
+  }
+
   /* ── WS-down fallback: poll quotes so LTP + the forming candle stay live ─ */
   private startLtpFallback() {
+    if (this.usesKotakRenkoIndex()) return
     if (this.ltpPollTimer) return
     this.ltpPollTimer = setInterval(async () => {
-      if (!this.sym) return
+      if (!this.sym || this.usesKotakRenkoIndex()) return
       if (this.sym.synthetic && this.expr) {
         // A combination polls each leg and folds, the same as the socket path.
         try {
@@ -6947,6 +7046,7 @@ export class TradingTerminal {
             exchange: this.sym.exchange,
           }
         )
+        if (this.usesKotakRenkoIndex()) return
         const q = j.data || {}
         if (typeof q.ltp === 'number' && q.ltp > 0)
           this.onTick({ symbol: this.sym.symbol, ltp: q.ltp, timeSec: nowSec() })
@@ -7054,6 +7154,7 @@ export class TradingTerminal {
 
   private connectLive() {
     if (!this.ws || !this.sym) return
+    this.syncKotakRenkoQuotePoll()
     const sec = intervalSeconds(this.interval)
     // Broker history is already aligned to the instrument's actual session.
     // Using one known bar as the congruent anchor preserves openings such as
@@ -7104,12 +7205,16 @@ export class TradingTerminal {
       this.offDepth = null
     }
     this.offLtp = this.ws.onLtp((e: LtpEvent) => {
+      if (this.usesKotakRenkoIndex()) {
+        this.acceptKotakRenkoTick(e)
+        return
+      }
       this.cb.onWsState('live')
       this.stopLtpFallback()
       this.onTick(e)
     })
     this.offDepth = this.ws.onDepth((symbol: string, _exchange: string, depth: MarketDepth) => {
-      if (!this.sym || symbol !== this.sym.symbol) return
+      if (!this.sym || symbol !== this.sym.symbol || this.usesKotakRenkoIndex()) return
       const bid = depth.bids?.[0]?.price
       const ask = depth.asks?.[0]?.price
       this.priceAxis.setQuote(bid, ask)
@@ -7464,6 +7569,7 @@ export class TradingTerminal {
   loadSymbol(pick: SearchRow, opts: { silent?: boolean; strict?: boolean } = {}): Promise<boolean> {
     const key = JSON.stringify([pick.symbol, pick.exchange, this.interval, Boolean(pick.expression), Boolean(opts.strict)])
     if (this.pendingSymbolKey === key) return this.loading
+    this.stopKotakRenkoQuotePoll()
     const run = this.runLoadSymbol(pick, opts)
     this.loading = run
     this.pendingSymbolKey = key
@@ -7714,7 +7820,7 @@ export class TradingTerminal {
       Number.isFinite(bar.time) && [bar.open, bar.high, bar.low, bar.close].every((price) => Number.isFinite(price) && price > 0) &&
       bar.high >= Math.max(bar.open, bar.close) && bar.low <= Math.min(bar.open, bar.close) &&
       isValidIntradaySessionBar(this.sym!.exchange, this.interval, bar.time))
-    if (previewBars?.length) {
+    if (previewBars?.length && !this.usesKotakRenkoIndex()) {
       this.rawBars = previewBars
       this.lastLtp = previewBars.at(-1)!.close
       const key = this.dataKey({ symbol: this.sym.symbol, exchange: this.sym.exchange, interval: this.interval })
@@ -7880,12 +7986,15 @@ export class TradingTerminal {
       return this.ctype
     }
     this.stopReplay()
+    const previous = this.ctype
     this.ctype = v
     this.lsSet('ctype', v)
     this.cb.onChartTypeChange?.(v)
     if (interval !== this.interval) {
       this.setInterval(interval)
       this.toast(`Using ${interval} bars for ${CHART_TYPES[v].label}`, '')
+    } else if (previous !== v && this.usesKotakRenkoIndex() && this.rest) {
+      this.reloadCurrent()
     } else if (this.rawBars.length) this.buildChart()
     return v
   }
@@ -8367,7 +8476,8 @@ export class TradingTerminal {
     if (!this.sym || !this.chart || this.ctype !== 'renko-v5') return null
     const replay = this.replayOwnsDisplay()
     const candle = replay ? this.chart.primaryBars().at(-1) : this.rawBars.at(-1)
-    const price = replay ? candle?.close : this.lastLtp ?? candle?.close
+    const mark = !replay && this.usesKotakRenkoIndex() ? this.kotakRenkoMark : null
+    const price = replay ? candle?.close : mark?.price ?? this.lastLtp ?? candle?.close
     if (price == null || !Number.isFinite(price)) return null
     const settings = this.renkoV5QuoteSettings()
     const now = nowSec()
@@ -8378,7 +8488,7 @@ export class TradingTerminal {
       : null
     return {
       price,
-      rising: price >= (candle?.open ?? price),
+      rising: mark?.rising ?? (price >= (candle?.open ?? price)),
       countdown,
       showLine: settings['symbol.priceLineVisible'],
       showLabel: settings['symbol.lastValueVisible'],
@@ -8886,6 +8996,7 @@ export class TradingTerminal {
     if (this.bookTimer) clearInterval(this.bookTimer)
     this.bookTimer = null
     this.stopLtpFallback()
+    this.stopKotakRenkoQuotePoll()
     this.offLtp?.()
     this.offLtp = null
     this.offDepth?.()
